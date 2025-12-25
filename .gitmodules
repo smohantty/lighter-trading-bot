@@ -1,0 +1,3 @@
+[submodule "vendor/lighter-python"]
+	path = vendor/lighter-python
+	url = ../lighter-python

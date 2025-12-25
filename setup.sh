@@ -16,11 +16,15 @@ fi
 echo "Installing dependencies..."
 ./venv/bin/pip install -r requirements.txt
 
-# 3. Install/Update Local SDK
-echo "Installing local lighter-python SDK..."
-# We use --no-deps to avoid overriding versions specified in requirements (if any)
-# and --force-reinstall to ensure patches in the local folder are picked up.
-./venv/bin/pip install --force-reinstall --no-deps ../lighter-python
+# 2b. Initialize Submodules
+if [ -f ".gitmodules" ]; then
+    echo "Initializing submodules..."
+    git -c protocol.file.allow=always submodule update --init --recursive
+fi
+
+# 3. Install/Update Local SDK (from vendor)
+echo "Installing lighter-python SDK from vendor..."
+./venv/bin/pip install --force-reinstall --no-deps ./vendor/lighter-python
 
 # 4. Config Initialization (Helper)
 if [ ! -f ".env" ]; then
