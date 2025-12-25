@@ -1,0 +1,7 @@
+{
+    "baseUrl": "https://api.lighter.xyz",
+    "accountIndex": 1234,
+    "privateKeys": {
+        "0": "0xYourEd25519ApiKey"
+    }
+}

@@ -54,9 +54,14 @@ class Engine:
         # lighter-python Configuration.get_default() might be set.
         self.api_client = lighter.ApiClient() 
         
-        # 2. Fetch Account Index
-        logger.info(f"Fetching account index for {self.exchange_config.wallet_address}...")
-        account_api = lighter.AccountApi(self.api_client)
+        # 2. Fetch Account Index (Already in Config)
+        if self.exchange_config.wallet_address.isdigit():
+            self.account_index = int(self.exchange_config.wallet_address)
+            logger.info(f"Using Account Index from Config: {self.account_index}")
+        else:
+             # Legacy or address provided?
+             logger.info(f"Fetching account index for {self.exchange_config.wallet_address}...")
+             account_api = lighter.AccountApi(self.api_client)
         try:
             account_info = await account_api.account(by="l1_address", value=self.exchange_config.wallet_address)
             # Response structure: {'index': 65, 'l1_address': '...', ...}

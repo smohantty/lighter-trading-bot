@@ -61,16 +61,19 @@ This project is a direct port of the logic and architecture from the Rust-based 
     ```
 
 2.  **Wallet Config**:
-    Create `wallet_config.json` (or point `LIGHTER_WALLET_CONFIG_FILE` to an existing one) with the following structure, matching the format used by the Rust bot:
+    Lighter uses an **Account Index** and **Ed25519 API Keys** (not your Ethereum Private Key directly) for order signing.
+    
+    Create `wallet_config.json` with the following structure:
     ```json
     {
-      "master_account_address": "0xYourWalletAddress",
-      "agent_private_key": {
-        "mainnet": "0xYourMainnetPrivateKey",
-        "testnet": "0xYourTestnetPrivateKey"
+      "baseUrl": "https://api.lighter.xyz",
+      "accountIndex": 1234,
+      "privateKeys": {
+        "0": "0xYourEd25519ApiKey"
       }
     }
     ```
+    *To obtain these credentials, use the `system_setup.py` example script in `vendor/lighter-python/examples` or export them from the Lighter UI if available.*
 
 3.  **Strategy Config**:
     Edit `config.yaml` to define your grid parameters.

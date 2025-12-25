@@ -60,14 +60,10 @@ class PerpGridConfig:
             raise ValueError("Total investment must be positive.")
 
 @dataclass
-class WalletInfo:
-    mainnet: str
-    testnet: str
-
-@dataclass
 class WalletConfig:
-    master_account_address: str
-    agent_private_key: WalletInfo
+    baseUrl: str
+    accountIndex: int
+    privateKeys: dict
 
 @dataclass
 class ExchangeConfig:
@@ -87,22 +83,23 @@ class ExchangeConfig:
             with open(config_path, "r") as f:
                 data = json.load(f)
             
-            # Parse structure matching Rust bot:
+            # Parse structure matching Lighter SDK:
             # {
-            #   "master_account_address": "...",
-            #   "agent_private_key": { "mainnet": "...", "testnet": "..." }
+            #   "baseUrl": "...",
+            #   "accountIndex": 123,
+            #   "privateKeys": { "0": "..." }
             # }
-            master_address = data["master_account_address"]
-            keys = data["agent_private_key"]
+            base_url = data.get("baseUrl", "https://api.lighter.xyz")
+            account_index = int(data["accountIndex"])
+            private_keys = {int(k): v for k, v in data["privateKeys"].items()}
             
-            network = os.getenv("LIGHTER_NETWORK", "mainnet")
-            
-            if network == "mainnet":
-                pk = keys["mainnet"]
-            else:
-                pk = keys["testnet"]
-                
-            return ExchangeConfig(private_key=pk, wallet_address=master_address, network=network)
+            # Use Key Index 0 by default for single-key setup
+            private_key = private_keys.get(0)
+            if not private_key:
+                # Fallback to first key
+                private_key = next(iter(private_keys.values()))
+
+            return ExchangeConfig(private_key=private_key, wallet_address=str(account_index), network="mainnet")
             
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
