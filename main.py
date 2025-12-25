@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from src.config import load_config, ExchangeConfig
 from src.strategy.perp_grid import PerpGridStrategy
+from src.strategy.spot_grid import SpotGridStrategy
 from src.engine.core import Engine
 
 # Setup Logging
@@ -44,6 +45,8 @@ async def main():
     # Init Strategy
     if config.type == "perp_grid":
         strategy = PerpGridStrategy(config)
+    elif config.type == "spot_grid":
+        strategy = SpotGridStrategy(config)
     else:
         logger.error(f"Strategy type {config.type} not supported yet in main.")
         return
