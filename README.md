@@ -96,6 +96,24 @@ This project is a direct port of the logic and architecture from the Rust-based 
 PYTHONPATH=. ./venv/bin/pytest tests
 ```
 
+## SDK Management
+
+The bot uses a forked version of the SDK via Git Submodules.
+
+**To Update the SDK:**
+Run the helper script:
+```bash
+./update_sdk.sh
+```
+
+**Manual Update:**
+```bash
+cd vendor/lighter-python
+git pull origin main
+cd ../..
+./venv/bin/pip install --force-reinstall --no-deps ./vendor/lighter-python
+```
+
 ## Documentation
 
 - [Deployment Guide](docs/deployment.md): Instructions for running the bot 24/7 using Systemd on Linux/VPS.
