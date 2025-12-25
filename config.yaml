@@ -1,0 +1,11 @@
+type: perp_grid
+symbol: ETH-USDC # Lighter usually uses dash or check actual symbol
+leverage: 1
+upper_price: 3000.0
+lower_price: 2000.0
+grid_type: Arithmetic
+grid_count: 10
+total_investment: 100.0
+grid_bias: Long
+trigger_price: null
+# is_isolated: true # default
