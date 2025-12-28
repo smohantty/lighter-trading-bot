@@ -339,7 +339,7 @@ class Engine:
         
         # Lighter supports up to 50 transactions per batch, but WebSocket has message size limits
         # Reduce batch size to avoid "message too big" errors
-        MAX_BATCH_SIZE = 20
+        MAX_BATCH_SIZE = 10
         
         # Process orders in chunks of MAX_BATCH_SIZE
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
