@@ -390,9 +390,20 @@ class Engine:
         # Process orders array to handle cancellations, sync state, and clean up
         orders = account_data.get("orders", [])
         
-        # Track which orders are currently open on the exchange
-        current_order_cloids = set()
+        # Debug: Log how many orders we received
+        logger.debug(f"[ORDER_RECONCILE] Received {len(orders)} orders from exchange")
         
+        # Track which orders are currently open on the exchange
+        # Build this set FIRST, before any processing
+        current_order_cloids = set()
+        for order in orders:
+            client_order_index = order.get("client_order_index")
+            if client_order_index:
+                current_order_cloids.add(Cloid(client_order_index))
+        
+        logger.debug(f"[ORDER_RECONCILE] Current exchange orders: {len(current_order_cloids)}, Pending local: {len(self.pending_orders)}")
+        
+        # Now process orders for reconciliation
         for order in orders:
             try:
                 client_order_index = order.get("client_order_index")
@@ -400,7 +411,6 @@ class Engine:
                     continue
                 
                 cloid = Cloid(client_order_index)
-                current_order_cloids.add(cloid)
                 
                 # Only process if we're tracking this order
                 if cloid not in self.pending_orders:
@@ -470,6 +480,7 @@ class Engine:
                     f"{self.pending_orders[cloid].target_size}. Removing from pending."
                 )
                 del self.pending_orders[cloid]
+
 
     
     async def process_order_queue(self):
