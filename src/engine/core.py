@@ -263,35 +263,34 @@ class Engine:
             tx_infos.append(tx_info)
             batch_context.append(order)
 
-        if tx_types:
-             # Send Batch via WS
-             # Note: WSClient doesn't have `send_batch_tx` method built-in in the class, 
-             # but Utils has it. We should probably implement it in Engine or use raw ws.
-             
-             # Payload construction matches example
-             payload = {
-                 "type": "jsonapi/sendtxbatch",
-                 "data": {
-                     "id": f"batch_{int(time.time()*1000)}",
-                     "tx_types": json.dumps(tx_types),
-                     "tx_infos": json.dumps(tx_infos)
-                 }
-             }
-             
-             try:
-                 # Ensure we have WS connection
-                 if self.ws_client and self.ws_client.ws:
-                     # ws_client.ws might be Sync protocol if using run() or Async if run_async?
-                     # We assume run_async.
-                     await self.ws_client.ws.send(json.dumps(payload))
-                     # We can wait for response?
-                     # response = await self.ws_client.ws.recv()
-                     # logger.info(f"Batch Sent: {response}")
-                     pass
-                 else:
-                     logger.error("WS Client not connected")
-             except Exception as e:
-                 logger.error(f"Failed to send batch: {e}")
+        # Lighter supports up to 50 transactions per batch
+        MAX_BATCH_SIZE = 50
+        
+        # Process orders in chunks of MAX_BATCH_SIZE
+        for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
+            batch_end = min(batch_start + MAX_BATCH_SIZE, len(tx_types))
+            batch_tx_types = tx_types[batch_start:batch_end]
+            batch_tx_infos = tx_infos[batch_start:batch_end]
+            
+            # Payload construction matches example
+            payload = {
+                "type": "jsonapi/sendtxbatch",
+                "data": {
+                    "id": f"batch_{int(time.time()*1000)}_{batch_start}",
+                    "tx_types": json.dumps(batch_tx_types),
+                    "tx_infos": json.dumps(batch_tx_infos)
+                }
+            }
+            
+            try:
+                # Ensure we have WS connection
+                if self.ws_client and self.ws_client.ws:
+                    await self.ws_client.ws.send(json.dumps(payload))
+                    logger.info(f"Sent batch {batch_start//MAX_BATCH_SIZE + 1} with {len(batch_tx_types)} transactions")
+                else:
+                    logger.error("WS Client not connected")
+            except Exception as e:
+                logger.error(f"Failed to send batch: {e}")
 
     async def run(self):
         await self.initialize()
