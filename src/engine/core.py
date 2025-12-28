@@ -45,6 +45,9 @@ class Engine:
         self.event_queue = asyncio.Queue()
         self._shutdown_event = asyncio.Event()
         
+        # Track last price per symbol to avoid duplicate on_tick calls
+        self.last_price: Dict[str, float] = {}
+        
     async def initialize(self):
         logger.info("Initializing Engine...")
         
@@ -192,11 +195,28 @@ class Engine:
         if not symbol or symbol != self.config.symbol:
             return
 
-        logger.info(f"Price Update: {symbol} @ ${mid_price:.2f}")
-        
         if self.ctx:
+            # Get market info to round price to correct decimals
+            market_info = self.ctx.market_info(symbol)
+            if not market_info:
+                return
+            
+            # Round price to market's price decimals to avoid floating-point precision issues
+            rounded_price = round(mid_price, market_info.price_decimals)
+            
+            # Check if price actually changed
+            last_price = self.last_price.get(symbol)
+            if last_price is not None and rounded_price == last_price:
+                # Price hasn't changed meaningfully, skip processing
+                return
+            
+            # Update last price
+            self.last_price[symbol] = rounded_price
+            
+            logger.info(f"Price Update: {symbol} @ ${rounded_price:.{market_info.price_decimals}f}")
+            
             try:
-                self.strategy.on_tick(mid_price, self.ctx)
+                self.strategy.on_tick(rounded_price, self.ctx)
                 await self.process_order_queue()
             except ValueError as e:
                 # ValueError during initialization indicates a fatal configuration error
@@ -346,7 +366,7 @@ class Engine:
             return
         
         # Lighter supports up to 50 transactions per batch
-        MAX_BATCH_SIZE = 10
+        MAX_BATCH_SIZE = 49
         
         # Process orders in chunks of MAX_BATCH_SIZE using REST API
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
