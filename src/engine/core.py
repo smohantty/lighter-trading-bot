@@ -337,8 +337,9 @@ class Engine:
                     logger.info(f"[SIMULATION] Order {i+1}: CANCEL {order.symbol} cloid={order.cloid}")
             return
         
-        # Lighter supports up to 50 transactions per batch
-        MAX_BATCH_SIZE = 50
+        # Lighter supports up to 50 transactions per batch, but WebSocket has message size limits
+        # Reduce batch size to avoid "message too big" errors
+        MAX_BATCH_SIZE = 20
         
         # Process orders in chunks of MAX_BATCH_SIZE
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
