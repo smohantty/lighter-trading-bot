@@ -344,10 +344,11 @@ class Engine:
             return
         
         # Wait before sending batches to avoid rate limit from previous API calls
-        # (account balance fetch, market metadata, etc.)
+        # Standard accounts: 60 weighted requests per minute
+        # sendTxBatch weight: 6, so max 10 batches/minute = 1 batch per 6 seconds
         if len(tx_types) > 0:
-            logger.info(f"Waiting 3 seconds before sending {len(tx_types)} orders to respect rate limits...")
-            await asyncio.sleep(3.0)
+            logger.info(f"Waiting 6 seconds before sending {len(tx_types)} orders to respect rate limits...")
+            await asyncio.sleep(6.0)
         
         # Lighter supports up to 50 transactions per batch, but WebSocket has message size limits
         # Reduce batch size to avoid "message too big" errors
@@ -377,10 +378,9 @@ class Engine:
                     logger.error(f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}")
                 
                 # Wait between batches to respect rate limits
-                # Lighter allows 40 requests per 60 seconds = 1 request per 1.5s
-                # Use 2s delay to be safe
+                # Standard accounts: max 10 batches/minute = 1 batch per 6 seconds
                 if batch_num < total_batches:
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(6.0)
                     
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
