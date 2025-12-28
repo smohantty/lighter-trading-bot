@@ -83,7 +83,7 @@ class Engine:
         market_id = self.market_map[target_symbol]
         logger.info(f"Connecting WS for Market {market_id}...")
         
-        self.ws_client = lighter.WsClient(
+        self.ws_client = lighter.QueueWsClient(
             order_book_ids=[market_id],
             account_ids=[self.account_index],
             on_order_book_update=None, # Using Queue
