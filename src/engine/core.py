@@ -343,6 +343,12 @@ class Engine:
                     logger.info(f"[SIMULATION] Order {i+1}: CANCEL {order.symbol} cloid={order.cloid}")
             return
         
+        # Wait before sending batches to avoid rate limit from previous API calls
+        # (account balance fetch, market metadata, etc.)
+        if len(tx_types) > 0:
+            logger.info(f"Waiting 3 seconds before sending {len(tx_types)} orders to respect rate limits...")
+            await asyncio.sleep(3.0)
+        
         # Lighter supports up to 50 transactions per batch, but WebSocket has message size limits
         # Reduce batch size to avoid "message too big" errors
         MAX_BATCH_SIZE = 49
