@@ -53,6 +53,17 @@ class OrderFill:
     raw_dir: Optional[str] = None
 
 @dataclass
+class PendingOrder:
+    """Tracks an order that may fill in multiple parts."""
+    target_size: float
+    filled_size: float = 0.0
+    weighted_avg_px: float = 0.0
+    accumulated_fees: float = 0.0
+    reduce_only: bool = False
+    oid: Optional[int] = None
+
+
+@dataclass
 class LimitOrderRequest:
     symbol: str
     side: OrderSide

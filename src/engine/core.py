@@ -7,7 +7,7 @@ import websockets
 import lighter
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, GridState
@@ -27,9 +27,7 @@ class Engine:
         self.market_map: Dict[str, int] = {} # Symbol -> MarketID
         self.reverse_market_map: Dict[int, str] = {} # MarketID -> Symbol
         self.markets: Dict[str, MarketInfo] = {} # Symbol -> MarketInfo
-        
-        self.cloid_to_index: Dict[Cloid, int] = {}
-        self.index_to_cloid: Dict[int, Cloid] = {}
+
         
         # Clients
         self.api_client: Optional[lighter.ApiClient] = None
@@ -39,14 +37,17 @@ class Engine:
         self.account_index: Optional[int] = None
         self.running = False
         
-        # Counters
-        self.order_client_index_counter = int(time.time() * 1000) % 10000000 # Random start
-        
         self.event_queue = asyncio.Queue()
         self._shutdown_event = asyncio.Event()
         
         # Track last price per symbol to avoid duplicate on_tick calls
         self.last_price: Dict[str, float] = {}
+        
+        # Partial fill tracking (mirroring Rust SDK)
+        self.pending_orders: Dict[Cloid, PendingOrder] = {}
+        self.completed_cloids: set[Cloid] = set()
+
+
         
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -227,10 +228,165 @@ class Engine:
                 logger.error(f"Strategy Error on_tick (mid_price): {e}")
 
     async def _handle_account_msg(self, account_id: str, account_data: dict):
-        # Process fills or balance updates if needed
-        pass
+        """
+        Process account updates including order fills.
+        Accumulates partial fills and only notifies strategy when order is fully filled.
+        """
+        # Account data structure from Lighter WS:
+        # {
+        #   "type": "update/account_all" or "subscribed/account_all",
+        #   "channel": "account_all:<account_id>",
+        #   "fills": [...],  # List of fill events
+        #   "orders": [...], # Current open orders
+        #   ...
+        # }
+        
+        fills = account_data.get("fills", [])
+        if not fills:
+            return
+        
+        for fill in fills:
+            # Fill structure (example):
+            # {
+            #   "order_index": 12345,
+            #   "market_id": 1,
+            #   "price": "1.23",
+            #   "size": "10.5",
+            #   "fee": "0.01",
+            #   "is_buyer": true,
+            #   "timestamp": ...
+            # }
+            
+            try:
+                order_index = fill.get("order_index")
+                if not order_index:
+                    logger.warning(f"Fill missing order_index: {fill}")
+                    continue
+                
+                # order_index IS the Cloid (we use Cloid.as_int() as client_order_index)
+                cloid = Cloid(order_index)
 
-        pass
+                
+                # Parse fill data
+                amount = float(fill.get("size", 0))
+                px = float(fill.get("price", 0))
+                fee = float(fill.get("fee", 0))
+                is_buyer = fill.get("is_buyer", True)
+                side = OrderSide.BUY if is_buyer else OrderSide.SELL
+                
+                if amount <= 0 or px <= 0:
+                    logger.warning(f"Invalid fill data: amount={amount}, px={px}")
+                    continue
+                
+                # Idempotency check
+                if cloid and cloid in self.completed_cloids:
+                    logger.debug(f"Ignored duplicate fill for completed cloid: {cloid}")
+                    continue
+                
+                # Process fill
+                if cloid and cloid in self.pending_orders:
+                    # Accumulate partial fill
+                    pending = self.pending_orders[cloid]
+                    
+                    new_total_size = pending.filled_size + amount
+                    
+                    # Calculate weighted average price
+                    pending.weighted_avg_px = (
+                        pending.weighted_avg_px * pending.filled_size + px * amount
+                    ) / new_total_size
+                    
+                    pending.filled_size = new_total_size
+                    pending.accumulated_fees += fee
+                    
+                    # Check if fully filled (using 0.9999 threshold like Rust SDK)
+                    is_fully_filled = pending.filled_size >= pending.target_size * 0.9999
+                    
+                    if is_fully_filled:
+                        # Order is fully filled - notify strategy
+                        logger.info(
+                            f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees})"
+                        )
+                        
+                        final_px = pending.weighted_avg_px
+                        final_sz = pending.filled_size
+                        final_fee = pending.accumulated_fees
+                        pending_reduce_only = pending.reduce_only
+                        
+                        # Remove from pending
+                        del self.pending_orders[cloid]
+                        
+                        # Call strategy callback
+                        try:
+                            self.strategy.on_order_filled(
+                                OrderFill(
+                                    side=side,
+                                    size=final_sz,
+                                    price=final_px,
+                                    fee=final_fee,
+                                    cloid=cloid,
+                                    reduce_only=pending_reduce_only,
+                                    raw_dir=None
+                                ),
+                                self.ctx
+                            )
+                        except Exception as e:
+                            logger.error(f"Strategy on_order_filled error: {e}")
+                        
+                        # Mark as completed for idempotency
+                        self.completed_cloids.add(cloid)
+                    else:
+                        # Partial fill - log but don't notify strategy yet
+                        logger.info(
+                            f"[ORDER_FILL_PARTIAL] {side} {amount} @ {px} (Fee: {fee})"
+                        )
+                
+                elif cloid:
+                    # Untracked order (not in pending_orders) - notify immediately
+                    logger.info(
+                        f"[ORDER_FILL_UNTRACKED] {side} {amount} @ {px} (Fee: {fee})"
+                    )
+                    
+                    try:
+                        self.strategy.on_order_filled(
+                            OrderFill(
+                                side=side,
+                                size=amount,
+                                price=px,
+                                fee=fee,
+                                cloid=cloid,
+                                reduce_only=None,  # Unknown for untracked orders
+                                raw_dir=None
+                            ),
+                            self.ctx
+                        )
+                    except Exception as e:
+                        logger.error(f"Strategy on_order_filled error: {e}")
+                
+                else:
+                    # No cloid - log and notify immediately
+                    logger.info(
+                        f"[ORDER_FILL_NOCLID] {side} {amount} @ {px} (Fee: {fee})"
+                    )
+                    
+                    try:
+                        self.strategy.on_order_filled(
+                            OrderFill(
+                                side=side,
+                                size=amount,
+                                price=px,
+                                fee=fee,
+                                cloid=None,
+                                reduce_only=None,
+                                raw_dir=None
+                            ),
+                            self.ctx
+                        )
+                    except Exception as e:
+                        logger.error(f"Strategy on_order_filled error: {e}")
+                        
+            except Exception as e:
+                logger.error(f"Error processing fill: {e}, fill data: {fill}")
+
     
     async def process_order_queue(self):
         if not self.ctx or not self.ctx.order_queue:
@@ -255,9 +411,6 @@ class Engine:
         
         # Process Orders
         for i, order in enumerate(orders_to_process):
-            self.order_client_index_counter += 1
-            client_order_index = self.order_client_index_counter
-            
             market_id = self.market_map.get(order.symbol)
             if market_id is None:
                 logger.error(f"Market ID not found for {order.symbol}")
@@ -266,6 +419,14 @@ class Engine:
             if not self.signer_client:
                 logger.error("Signer client not initialized")
                 continue
+            
+            # Use Cloid directly as client_order_index
+            # The strategy generates Cloid which is already an integer identifier
+            if not order.cloid:
+                logger.error(f"Order missing cloid: {order}")
+                continue
+            
+            client_order_index = order.cloid.as_int()
             
             # For first order, get a new API key. For subsequent orders, reuse the same key
             # All transactions in a batch must use the same API key but different nonces
@@ -279,9 +440,15 @@ class Engine:
             tx_info = None
             
             if isinstance(order, LimitOrderRequest):
-                if order.cloid:
-                    self.cloid_to_index[order.cloid] = client_order_index
-                    self.index_to_cloid[client_order_index] = order.cloid
+                # Track pending order for partial fill accumulation
+                self.pending_orders[order.cloid] = PendingOrder(
+                    target_size=order.sz,
+                    filled_size=0.0,
+                    weighted_avg_px=0.0,
+                    accumulated_fees=0.0,
+                    reduce_only=order.reduce_only,
+                    oid=None  # Will be set when we get confirmation
+                )
                 
                 info = self.ctx.market_info(order.symbol)
                 if not info:
@@ -301,6 +468,7 @@ class Engine:
                     nonce=nonce,
                     api_key_index=batch_api_key_index
                 )
+
             
             elif isinstance(order, MarketOrderRequest):
                 info = self.ctx.market_info(order.symbol)
@@ -320,29 +488,20 @@ class Engine:
                     reduce_only=order.reduce_only,
                     trigger_price=0,
                     nonce=nonce,
-                    api_key_index=api_key_index
+                    api_key_index=batch_api_key_index
                 )
 
             elif isinstance(order, CancelOrderRequest):
-                # We need order_index (client_order_index) for the order to cancel?
-                # or exchange order ID?
-                # sign_cancel_order takes `order_index`. Is it client index or exchange index?
-                # Lighter uses the index stored in the order tree. 
-                # If we tracked it, we use it.
-                target_index = self.cloid_to_index.get(order.cloid)
-                # Wait, if we use client_order_index, does cancel work by client index?
-                # SDK example: order_index=123 (same as create).
+                # Use the Cloid directly as the order_index to cancel
+                target_index = order.cloid.as_int()
                 
-                if target_index:
-                    tx_type, tx_info, _, error = self.signer_client.sign_cancel_order(
-                        market_index=market_id,
-                        order_index=target_index,
-                        nonce=nonce,
-                        api_key_index=api_key_index
-                    )
-                else:
-                    logger.error(f"Cannot cancel unknown Cloid: {order.cloid}")
-                    continue
+                tx_type, tx_info, _, error = self.signer_client.sign_cancel_order(
+                    market_index=market_id,
+                    order_index=target_index,
+                    nonce=nonce,
+                    api_key_index=batch_api_key_index
+                )
+
 
             if error:
                  logger.error(f"Signing Error: {error}")
