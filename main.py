@@ -82,6 +82,9 @@ async def main():
     except Exception as e:
         logger.error(f"Bot execution failed: {e}")
         raise
+    finally:
+        # Ensure cleanup happens even if an error occurred
+        await engine.stop()
 
 if __name__ == "__main__":
     asyncio.run(main())
