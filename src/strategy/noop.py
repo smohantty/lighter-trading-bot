@@ -16,7 +16,7 @@ class NoOpStrategy(Strategy):
         logger.info("Initializing NoOpStrategy")
 
     def on_tick(self, price: float, ctx: StrategyContext):
-        # logger.debug(f"NoOpStrategy Tick: {price}")
+        logger.info(f"NoOpStrategy Tick: {price}")
         pass
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):

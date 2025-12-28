@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import argparse
+import signal
 from dotenv import load_dotenv
 
 from src.config import load_config, ExchangeConfig
@@ -67,12 +68,17 @@ async def main():
 
     # Init Engine
     engine = Engine(config, exchange_config, strategy)
+
+    # Setup Signal Handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(engine.stop()))
     
     # Start
     try:
         await engine.run()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user.")
+    except asyncio.CancelledError:
+        logger.info("Main task cancelled.")
     except Exception as e:
         logger.error(f"Bot execution failed: {e}")
         raise

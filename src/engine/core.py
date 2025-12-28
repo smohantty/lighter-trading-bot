@@ -43,6 +43,7 @@ class Engine:
         self.order_client_index_counter = int(time.time() * 1000) % 10000000 # Random start
         
         self.event_queue = asyncio.Queue()
+        self._shutdown_event = asyncio.Event()
         
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -91,9 +92,30 @@ class Engine:
 
     async def _message_processor(self):
         logger.info("Message Processor Started...")
-        while self.running:
+        while not self._shutdown_event.is_set():
             try:
-                msg_type, target_id, data = await self.event_queue.get()
+                # Use wait_for or similar to make it interruptible if needed, 
+                # but get() is already an awaitable that can be cancelled.
+                try:
+                    msg_task = asyncio.create_task(self.event_queue.get())
+                    shutdown_task = asyncio.create_task(self._shutdown_event.wait())
+                    
+                    done, pending = await asyncio.wait(
+                        [msg_task, shutdown_task],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    
+                    if self._shutdown_event.is_set():
+                        for p in pending: p.cancel()
+                        break
+                        
+                    if msg_task in done:
+                        msg_type, target_id, data = msg_task.result()
+                    else:
+                        msg_task.cancel()
+                        break
+                except asyncio.CancelledError:
+                    break
                 
                 if msg_type == "order_book":
                     # data is the order book state
@@ -272,10 +294,38 @@ class Engine:
         
         # Start WS Loop and Message Processor
         if self.ws_client:
-            await asyncio.gather(
-                self.ws_client.run_async(),
-                self._message_processor()
-            )
+            tasks = [
+                asyncio.create_task(self.ws_client.run_async()),
+                asyncio.create_task(self._message_processor())
+            ]
+            
+            try:
+                await self._shutdown_event.wait()
+            except asyncio.CancelledError:
+                logger.info("Engine run cancelled.")
+            finally:
+                logger.info("Shutting down engine tasks...")
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Close sessions
+                logger.info("Closing API client sessions...")
+                if self.signer_client and self.signer_client.api_client:
+                    await self.signer_client.api_client.close()
+                if self.api_client:
+                    await self.api_client.close()
+                
+                logger.info("Engine Stopped.")
+
+    async def stop(self):
+        logger.info("Stopping Engine...")
+        self.running = False
+        self._shutdown_event.set()
+        if self.ws_client:
+            # If WS client has a stop method, call it. 
+            # Otherwise task.cancel() in run() handles it.
+            pass
 
     async def _load_markets(self):
         """
