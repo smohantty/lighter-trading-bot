@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from src.strategy.base import Strategy
-from src.engine.context import StrategyContext, MIN_NOTIONAL_VALUE
+from src.engine.context import StrategyContext
 from src.model import Cloid, OrderFill, OrderSide, OrderRequest, LimitOrderRequest
 from src.config import SpotGridConfig
 from src.strategy.types import StrategySummary, SpotGridSummary, GridState, ZoneInfo
@@ -105,8 +105,10 @@ class SpotGridStrategy(Strategy):
         num_zones = self.config.grid_count - 1
         quote_per_zone = self.config.total_investment / float(num_zones)
 
-        if quote_per_zone < MIN_NOTIONAL_VALUE:
-            msg = f"Quote per zone ({quote_per_zone:.2f}) is less than minimum order value ({MIN_NOTIONAL_VALUE}). Increase total_investment or decrease grid_count."
+        # Validation: Check minimum order size
+        min_order_size = market_info.min_quote_amount
+        if quote_per_zone < min_order_size:
+            msg = f"Quote per zone ({quote_per_zone:.2f}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
             logger.error(f"[SPOT_GRID] {msg}")
             raise ValueError(msg)
 
@@ -171,7 +173,7 @@ class SpotGridStrategy(Strategy):
                 elif self.zones:
                     acquisition_price = market_info.round_price(self.zones[0].lower_price)
 
-            rounded_deficit = market_info.clamp_to_min_notional(base_deficit, acquisition_price, MIN_NOTIONAL_VALUE)
+            rounded_deficit = market_info.clamp_to_min_size(base_deficit)
 
             if rounded_deficit > 0.0:
                 estimated_cost = rounded_deficit * acquisition_price
@@ -208,7 +210,7 @@ class SpotGridStrategy(Strategy):
                      acquisition_price = market_info.round_price(self.zones[-1].upper_price)
             
              base_to_sell = quote_deficit / acquisition_price
-             rounded_sell_sz = market_info.clamp_to_min_notional(base_to_sell, acquisition_price, MIN_NOTIONAL_VALUE)
+             rounded_sell_sz = market_info.clamp_to_min_size(base_to_sell)
 
              if rounded_sell_sz > 0.0:
                  if available_base < rounded_sell_sz:

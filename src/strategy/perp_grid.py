@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from src.strategy.base import Strategy
-from src.engine.context import StrategyContext, MIN_NOTIONAL_VALUE
+from src.engine.context import StrategyContext
 from src.model import Cloid, OrderFill, OrderSide, OrderRequest, LimitOrderRequest
 from src.config import PerpGridConfig
 from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo
@@ -78,8 +78,10 @@ class PerpGridStrategy(Strategy):
         num_zones = self.config.grid_count - 1
         investment_per_zone = self.config.total_investment / float(num_zones)
 
-        if investment_per_zone < MIN_NOTIONAL_VALUE:
-            msg = f"Investment per zone ({investment_per_zone:.2f}) is less than minimum order value ({MIN_NOTIONAL_VALUE}). Increase total_investment or decrease grid_count."
+        # Validation: Check minimum order size
+        min_order_size = market_info.min_quote_amount
+        if investment_per_zone < min_order_size:
+            msg = f"Investment per zone ({investment_per_zone:.2f}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
             logger.error(f"[PERP_GRID] {msg}")
             raise ValueError(msg)
 
@@ -104,7 +106,7 @@ class PerpGridStrategy(Strategy):
             mid_price = (lower + upper) / 2.0
 
             raw_size = investment_per_zone / mid_price
-            size = market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
+            size = market_info.clamp_to_min_size(raw_size)
 
             # Zone classification
             if self.config.grid_bias == GridBias.LONG:

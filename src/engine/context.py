@@ -32,24 +32,12 @@ class MarketInfo:
         """Convert float size to SDK integer format."""
         return int(round(sz * (10 ** self.sz_decimals)))
 
-    def clamp_to_min_notional(self, size: float, price: float, min_notional: float) -> float:
+    def clamp_to_min_size(self, size: float) -> float:
         """
-        Ensure size is large enough to meet the minimum notional requirement (quote units).
-        Also respects the exchange-defined min_base_amount and min_quote_amount.
+        Ensure size meets the exchange's minimum base amount requirement.
         """
-        # Minimum quote amount required (notional)
-        target_min_notional = max(min_notional, self.min_quote_amount)
-        
-        # Start with requested size or exchange minimum
-        sz = max(size, self.min_base_amount)
-        
-        # If notional is too low, increase size
-        if price > 0.0 and (sz * price < target_min_notional):
-            sz = target_min_notional / price
-            
-        # Round and ensure we didn't drop below min_base_amount due to rounding
-        rounded_sz = self.round_size(sz)
-        return max(rounded_sz, self.round_size(self.min_base_amount))
+        clamped = max(size, self.min_base_amount)
+        return self.round_size(clamped)
 
 @dataclass
 class Balance:
