@@ -81,10 +81,13 @@ class Engine:
 
         self.ctx = StrategyContext(self.markets)
         
+        # 5. Fetch Account Balances
+        await self._fetch_account_balances()
+        
         market_info = self.ctx.market_info(target_symbol)
         logger.info(f"Market Info: {market_info}")
         
-        # 5. Connect WS
+        # 6. Connect WS
         market_id = self.market_map[target_symbol]
         logger.info(f"Connecting WS for Market {market_id}...")
         
@@ -132,6 +135,56 @@ class Engine:
             except Exception as e:
                 logger.error(f"Error in message processor: {e}")
                 await asyncio.sleep(1)
+
+    async def _fetch_account_balances(self):
+        """Fetch account balances from the API and update StrategyContext."""
+        if not self.api_client or not self.ctx:
+            return
+        
+        try:
+            account_api = lighter.AccountApi(self.api_client)
+            account_data = await account_api.account(
+                by="index",
+                value=str(self.account_index)
+            )
+            
+            if not account_data or not account_data.accounts:
+                logger.warning("No account data returned from API")
+                return
+            
+            # Get the first account (should be our account)
+            account = account_data.accounts[0]
+            
+            # Update spot balances from assets
+            if account.assets:
+                for asset in account.assets:
+                    total_balance = float(asset.balance)
+                    locked_balance = float(asset.locked_balance)
+                    available_balance = total_balance - locked_balance
+                    
+                    self.ctx.update_spot_balance(
+                        asset=asset.symbol,
+                        total=total_balance,
+                        available=available_balance
+                    )
+                    logger.info(f"Spot Balance: {asset.symbol} - Total: {total_balance}, Available: {available_balance}")
+            
+            # Update perp balances (collateral)
+            if account.collateral:
+                collateral = float(account.collateral)
+                available = float(account.available_balance) if account.available_balance else collateral
+                
+                # For perps, we track USDC collateral
+                self.ctx.update_perp_balance(
+                    asset="USDC",
+                    total=collateral,
+                    available=available
+                )
+                logger.info(f"Perp Collateral: USDC - Total: {collateral}, Available: {available}")
+                
+        except Exception as e:
+            logger.error(f"Failed to fetch account balances: {e}")
+            raise
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
