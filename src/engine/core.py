@@ -98,7 +98,8 @@ class Engine:
         self.ws_client = lighter.QueueWsClient(
             order_book_ids=[market_id],
             account_ids=[self.account_index],
-            queue=self.event_queue
+            queue=self.event_queue,
+            signer_client=self.signer_client
         )
 
     async def _message_processor(self):
@@ -134,6 +135,12 @@ class Engine:
                 elif msg_type == "account":
                     # data is the account update
                     await self._handle_account_msg(target_id, data)
+                elif msg_type == "orders":
+                    # data is the orders update from account_all_orders channel
+                    await self._handle_orders_msg(target_id, data)
+                elif msg_type == "trades":
+                    # data is the trades update from account_all_trades channel
+                    await self._handle_trades_msg(target_id, data)
                 
                 self.event_queue.task_done()
             except Exception as e:
@@ -425,6 +432,105 @@ class Engine:
                         self.strategy.on_order_failed(cloid, self.ctx)
                     except Exception as e:
                         logger.error(f"Strategy on_order_failed error: {e}")
+
+    async def _handle_orders_msg(self, account_id: str, orders_data: dict):
+        """
+        Process orders updates from account_all_orders channel.
+        This provides real-time order state for reconciliation.
+        """
+        # Debug: Log the orders message
+        logger.debug(f"[ORDERS_MSG] Received orders update: {json.dumps(orders_data, indent=2)}")
+        
+        # Extract orders from the message
+        # Format: {"channel": "account_all_orders:X", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
+        orders_by_market = orders_data.get("orders", {})
+        
+        # Track which orders are currently open on the exchange
+        current_order_cloids = set()
+        
+        # Process all orders across all markets
+        for market_index, orders_list in orders_by_market.items():
+            for order in orders_list:
+                try:
+                    client_order_index = order.get("client_order_index")
+                    if not client_order_index:
+                        continue
+                    
+                    cloid = Cloid(client_order_index)
+                    current_order_cloids.add(cloid)
+                    
+                    # Only process if we're tracking this order
+                    if cloid not in self.pending_orders:
+                        continue
+                    
+                    pending = self.pending_orders[cloid]
+                    
+                    # Sync filled amount (handles missed fill events)
+                    filled_amount_str = order.get("filled_base_amount", "0")
+                    filled_amount = float(filled_amount_str) if filled_amount_str else 0.0
+                    
+                    # If exchange shows more filled than we have, we missed some fills
+                    if filled_amount > pending.filled_size:
+                        logger.warning(
+                            f"[ORDER_SYNC] {cloid} - Exchange filled: {filled_amount}, "
+                            f"Local filled: {pending.filled_size}. Syncing..."
+                        )
+                        pending.filled_size = filled_amount
+                    
+                    # Check order status for cancellations/failures
+                    status = order.get("status", "")
+                    
+                    # Canceled statuses
+                    canceled_statuses = [
+                        "canceled", "canceled-post-only", "canceled-reduce-only",
+                        "canceled-position-not-allowed", "canceled-margin-not-allowed",
+                        "canceled-too-much-slippage", "canceled-not-enough-liquidity",
+                        "canceled-self-trade", "canceled-expired", "canceled-oco",
+                        "canceled-child", "canceled-liquidation", "canceled-invalid-balance"
+                    ]
+                    
+                    if status in canceled_statuses:
+                        logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
+                        del self.pending_orders[cloid]
+                        
+                        try:
+                            self.strategy.on_order_failed(cloid, self.ctx)
+                        except Exception as e:
+                            logger.error(f"Strategy on_order_failed error: {e}")
+                        
+                        self.completed_cloids.add(cloid)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing order: {e}, order data: {order}")
+        
+        # Clean up orders that disappeared from exchange
+        for cloid in list(self.pending_orders.keys()):
+            if cloid not in current_order_cloids and cloid not in self.completed_cloids:
+                logger.warning(f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders")
+                del self.pending_orders[cloid]
+
+    async def _handle_trades_msg(self, account_id: str, trades_data: dict):
+        """
+        Process trades updates from account_all_trades channel.
+        This provides real-time fill/trade data.
+        """
+        # Debug: Log the trades message
+        logger.debug(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
+        
+        # Extract trades from the message
+        # Format: {"channel": "account_all_trades:X", "trades": {"{MARKET_INDEX}": [Trade]}, "type": "..."}
+        trades_by_market = trades_data.get("trades", {})
+        
+        # Process all trades across all markets
+        for market_index, trades_list in trades_by_market.items():
+            for trade in trades_list:
+                try:
+                    # Trade structure includes order information
+                    # We can use this as an alternative/supplement to fills processing
+                    logger.debug(f"[TRADE] {trade}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing trade: {e}, trade data: {trade}")
 
 
 
