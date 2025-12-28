@@ -307,10 +307,8 @@ class Engine:
         logger.info("Stopping Engine...")
         self.running = False
         self._shutdown_event.set()
-        if self.ws_client:
-            # If WS client has a stop method, call it. 
-            # Otherwise task.cancel() in run() handles it.
-            pass
+        if self.ws_client and hasattr(self.ws_client, 'stop'):
+            self.ws_client.stop()
 
     async def _load_markets(self):
         """
