@@ -26,6 +26,7 @@ class Engine:
         self.ctx: Optional[StrategyContext] = None
         self.market_map: Dict[str, int] = {} # Symbol -> MarketID
         self.reverse_market_map: Dict[int, str] = {} # MarketID -> Symbol
+        self.markets: Dict[str, MarketInfo] = {} # Symbol -> MarketInfo
         
         self.cloid_to_index: Dict[Cloid, int] = {}
         self.index_to_cloid: Dict[int, Cloid] = {}
@@ -65,81 +66,13 @@ class Engine:
         )
         
         # 4. Load Metadata (Markets)
-        logger.info("Loading Market Metadata...")
-        order_api = lighter.OrderApi(self.api_client)
-        order_books_result = await order_api.order_books()
-        # Mypy/SDK: returns (order_books, headers) or similar tuple?
-        # If tuple, take first element.
-        if isinstance(order_books_result, tuple):
-             order_books = order_books_result[0]
-        else:
-             order_books = order_books_result
-        
-        markets_info = {}
-        
-        # Handle order_books structure.
-        # It might be list of dicts.
-        if isinstance(order_books, dict):
-             iterator = order_books.values()
-        else:
-             iterator = order_books
-
-        for ob_raw in iterator:
-            ob: Any = ob_raw
-            # Struct: {'id': 0, 'symbol': 'ETH-USDC', 'price_precision': 2, 'size_precision': 4, ...}
-            # Need to verify actual fields.
-            # Assuming 'symbol' and 'id'.
-            # Based on examples, index=0 implies ID.
-            mid = ob.get('id')
-            symbol = ob.get('symbol')
-            # Lighter might strictly use ID.
-            if mid is not None:
-                # Mocking symbol if not present because SDK examples use ID.
-                # If symbol not in OB, we need static map or fetch another endpoint.
-                # Assuming 'symbol' exists or we can infer.
-                if not symbol: 
-                     # Fallback or error.
-                     # For now, if we match config symbol by ID provided in config? 
-                     # No, config has "ETH/USDC". Lighter might use "ETH-USDC".
-                     # We might need a mapping.
-                     pass
-                
-                # Adapting symbol format
-                normalized_symbol = symbol.replace("-", "/") if symbol else f"Unknown-{mid}"
-                
-                self.market_map[normalized_symbol] = mid
-                self.reverse_market_map[mid] = normalized_symbol
-                
-                # Create MarketInfo
-                # precisions?
-                # Assuming default or fetching from API
-                # ob might have 'pricePrecision', 'sizePrecision'
-                price_decimals = ob.get('pricePrecision', 2)
-                sz_decimals = ob.get('sizePrecision', 4)
-                
-                markets_info[normalized_symbol] = MarketInfo(
-                    symbol=normalized_symbol,
-                    coin=normalized_symbol.split('/')[0],
-                    asset_index=mid,
-                    price_decimals=price_decimals,
-                    sz_decimals=sz_decimals
-                )
+        await self._load_markets()
 
         target_symbol = self.config.symbol
-        if target_symbol not in markets_info:
-             # Try to find partial match
-             found = False
-             for s, info in markets_info.items():
-                 if s.replace("/", "") == target_symbol.replace("/", ""):
-                     markets_info[target_symbol] = info
-                     self.market_map[target_symbol] = info.asset_index
-                     self.reverse_market_map[info.asset_index] = target_symbol
-                     found = True
-                     break
-             if not found:
-                 raise ValueError(f"Symbol {target_symbol} not found in Lighter markets: {list(markets_info.keys())}")
+        if target_symbol not in self.markets:
+             raise ValueError(f"Symbol {target_symbol} not found in Lighter markets: {list(self.markets.keys())}")
 
-        self.ctx = StrategyContext(markets_info)
+        self.ctx = StrategyContext(self.markets)
         
         # 5. Connect WS
         market_id = self.market_map[target_symbol]
@@ -334,3 +267,96 @@ class Engine:
         # Start WS Loop
         if self.ws_client:
             await self.ws_client.run_async()
+
+    async def _load_markets(self):
+        """
+        Populate market_map and markets dictionary from API order books.
+        """
+        logger.info("Loading Market Metadata via OrderApi...")
+        self.market_map = {}
+        self.reverse_market_map = {}
+        self.markets = {} # Symbol -> MarketInfo
+
+        try:
+            order_api = lighter.OrderApi(self.api_client)
+            response = await order_api.order_books()
+            
+            if isinstance(response, tuple):
+                response = response[0]
+            
+            all_details = []
+            
+            # SDK returns OrderBooks object with 'order_books'
+            if hasattr(response, "order_books"):
+                if response.order_books:
+                    all_details.extend(response.order_books)
+                    
+            # Response might be a dict (raw JSON or mock)
+            elif isinstance(response, dict):
+                # Perps
+                perp_details = response.get("order_book_details")
+                if perp_details and isinstance(perp_details, list):
+                    all_details.extend(perp_details)
+                    
+                # Spots
+                spot_details = response.get("spot_order_book_details")
+                if spot_details and isinstance(spot_details, list):
+                    all_details.extend(spot_details)
+            
+            if not all_details:
+                 logger.warning("No market details found in response.")
+            
+            for item in all_details:
+                # Normalize to dict if it's an object (SDK Model)
+                if not isinstance(item, dict):
+                    if hasattr(item, "to_dict"):
+                        item = item.to_dict()
+                    elif hasattr(item, "dict"):
+                        item = item.dict()
+                        
+                # Strict Dict Parsing
+                if isinstance(item, dict):
+                    symbol = item.get("symbol")
+                    market_id = item.get("market_id")
+                    
+                    price_decimals = item.get("price_decimals", 2)
+                    size_decimals = item.get("size_decimals", 4)
+                    
+                    market_type = item.get("market_type", "perp")
+                    base_asset_id = item.get("base_asset_id", 0)
+                    quote_asset_id = item.get("quote_asset_id", 0)
+                    min_base_amount_str = item.get("min_base_amount", "0.0")
+                    min_quote_amount_str = item.get("min_quote_amount", "0.0")
+                    
+                else:
+                        raise ValueError(f"Unknown item type in order_books list: {type(item)}")
+                    
+                if symbol and market_id is not None:
+                    mid_int = int(market_id)
+                    
+                    # Store raw map
+                    self.market_map[symbol] = mid_int
+                    self.reverse_market_map[mid_int] = symbol
+                    
+                    # Create MarketInfo
+                    info = MarketInfo(
+                        symbol=symbol, # Use exact symbol from API
+                        coin=symbol.split('/')[0] if '/' in symbol else symbol,
+                        asset_index=mid_int,
+                        price_decimals=int(price_decimals),
+                        sz_decimals=int(size_decimals),
+                        market_type=market_type,
+                        base_asset_id=int(base_asset_id),
+                        quote_asset_id=int(quote_asset_id),
+                        min_base_amount=float(min_base_amount_str),
+                        min_quote_amount=float(min_quote_amount_str)
+                    )
+                    self.markets[symbol] = info
+
+            logger.info(f"Loaded {len(self.market_map)} symbols into market map.")
+            
+
+            
+        except Exception as e:
+            logger.error(f"Failed to populate market map: {e}")
+            pass

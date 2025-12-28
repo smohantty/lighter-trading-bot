@@ -27,6 +27,11 @@ class MarketInfo:
     asset_index: int
     sz_decimals: int
     price_decimals: int
+    market_type: str
+    base_asset_id: int
+    quote_asset_id: int
+    min_base_amount: float
+    min_quote_amount: float
     last_price: float = 0.0
 
     def round_price(self, price: float) -> float:

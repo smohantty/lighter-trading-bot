@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import argparse
 from dotenv import load_dotenv
 
 from src.config import load_config, ExchangeConfig
@@ -23,14 +24,18 @@ logger = logging.getLogger("main")
 async def main():
     load_dotenv()
     
-    # Load Config
-    config_path = os.getenv("CONFIG_PATH", "config.yaml")
-    if not os.path.exists(config_path):
-        logger.error(f"Config file not found at {config_path}")
+    # Parse Args
+    parser = argparse.ArgumentParser(description="Lighter Trading Bot")
+    parser.add_argument("strategy_config_file", help="Path to the strategy configuration file (YAML)")
+    args = parser.parse_args()
+
+    strategy_config_file = args.strategy_config_file
+    if not os.path.exists(strategy_config_file):
+        logger.error(f"Strategy config file not found at {strategy_config_file}")
         return
 
     try:
-        config = load_config(config_path)
+        config = load_config(strategy_config_file)
         logger.info(f"Loaded config for {config.symbol} ({config.type})")
     except Exception as e:
         logger.error(f"Failed to load config: {e}")

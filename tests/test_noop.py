@@ -46,6 +46,7 @@ async def main():
     logger.info("Initializing Engine with NoOpStrategy...")
     try:
         engine = Engine(config, exchange_config, strategy)
+        await engine.initialize()
         logger.info("Engine Initialized Successfully.")
     except Exception as e:
         logger.error(f"Engine initialization failed: {e}")
