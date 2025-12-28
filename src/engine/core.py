@@ -84,11 +84,6 @@ class Engine:
         # 5. Fetch Account Balances
         await self._fetch_account_balances()
         
-        # Wait 60 seconds to clear rate limit window from initialization API calls
-        # This ensures we don't hit rate limits when placing orders
-        logger.info("Waiting 60 seconds to clear rate limit window from initialization...")
-        await asyncio.sleep(60.0)
-        
         market_info = self.ctx.market_info(target_symbol)
         logger.info(f"Market Info: {market_info}")
         
@@ -197,6 +192,8 @@ class Engine:
         if not symbol or symbol != self.config.symbol:
             return
 
+        logger.info(f"Price Update: {symbol} @ ${mid_price:.2f}")
+        
         if self.ctx:
             try:
                 self.strategy.on_tick(mid_price, self.ctx)
@@ -349,7 +346,7 @@ class Engine:
             return
         
         # Lighter supports up to 50 transactions per batch
-        MAX_BATCH_SIZE = 49
+        MAX_BATCH_SIZE = 10
         
         # Process orders in chunks of MAX_BATCH_SIZE using REST API
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
@@ -373,11 +370,6 @@ class Engine:
                     # We can map client_order_index to tx_hash here
                 else:
                     logger.error(f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}")
-                
-                # Wait between batches to respect rate limits
-                # Standard accounts: max 10 batches/minute = 1 batch per 6 seconds
-                if batch_num < total_batches:
-                    await asyncio.sleep(6.0)
                     
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
