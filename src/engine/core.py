@@ -117,10 +117,7 @@ class Engine:
                 except asyncio.CancelledError:
                     break
                 
-                if msg_type == "order_book":
-                    # data is the order book state
-                    await self._handle_order_book_msg(target_id, data)
-                elif msg_type == "mid_price":
+                if msg_type == "mid_price":
                     # data is the mid price float
                     await self._handle_mid_price_msg(target_id, data)
                 elif msg_type == "account":
@@ -131,11 +128,6 @@ class Engine:
             except Exception as e:
                 logger.error(f"Error in message processor: {e}")
                 await asyncio.sleep(1)
-
-    async def _handle_order_book_msg(self, market_id: str, order_book: dict):
-        # We still store the order book state if needed, but we don't trigger ticks here
-        # as the SDK now sends dedicated mid_price messages.
-        pass
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
