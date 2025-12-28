@@ -26,10 +26,16 @@ async def main():
     
     # Parse Args
     parser = argparse.ArgumentParser(description="Lighter Trading Bot")
-    parser.add_argument("strategy_config_file", help="Path to the strategy configuration file (YAML)")
+    parser.add_argument("strategy_config_file", nargs='?', help="Path to the strategy configuration file (YAML)")
+    parser.add_argument("--config", help="Path to the strategy configuration file (YAML)")
     args = parser.parse_args()
 
-    strategy_config_file = args.strategy_config_file
+    strategy_config_file = args.config or args.strategy_config_file
+    
+    if not strategy_config_file:
+        parser.print_help()
+        return
+
     if not os.path.exists(strategy_config_file):
         logger.error(f"Strategy config file not found at {strategy_config_file}")
         return

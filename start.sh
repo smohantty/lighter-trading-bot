@@ -11,4 +11,4 @@ echo "Starting Lighter Trading Bot..."
 echo "Using Wallet Config: $(grep LIGHTER_WALLET_CONFIG_FILE .env | cut -d= -f2)"
 
 # Run
-./venv/bin/python main.py
+./venv/bin/python main.py "$@"
