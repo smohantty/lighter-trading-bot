@@ -96,7 +96,10 @@ class Engine:
         logger.info(f"Connecting WS for Market {market_id}...")
         
         # Generate auth token for authenticated channels
-        auth_token, error = self.signer_client.create_auth_token_with_expiry()
+        # Use 8 hours (maximum allowed) since this is only for reading data
+        auth_token, error = self.signer_client.create_auth_token_with_expiry(
+            deadline=8 * 60 * 60  # 8 hours in seconds
+        )
         if error:
             logger.error(f"Failed to create auth token: {error}")
             auth_token = None
@@ -105,7 +108,8 @@ class Engine:
             order_book_ids=[market_id],
             account_ids=[self.account_index],
             queue=self.event_queue,
-            auth_token=auth_token
+            auth_token=auth_token,
+            signer_client=self.signer_client  # For token refresh on reconnect
         )
 
     async def _message_processor(self):
