@@ -42,6 +42,8 @@ class Engine:
         # Counters
         self.order_client_index_counter = int(time.time() * 1000) % 10000000 # Random start
         
+        self.event_queue = asyncio.Queue()
+        
     async def initialize(self):
         logger.info("Initializing Engine...")
         
@@ -84,14 +86,30 @@ class Engine:
         self.ws_client = lighter.WsClient(
             order_book_ids=[market_id],
             account_ids=[self.account_index],
-            on_order_book_update=self.on_order_book_update,
-            on_account_update=self.on_account_update
+            on_order_book_update=None, # Using Queue
+            on_account_update=None,    # Using Queue
+            queue=self.event_queue
         )
 
-    def on_order_book_update(self, market_id: str, order_book: dict):
-        # Handle Tick
-        # order_book has 'asks', 'bids'.
-        # Calculate Mid Price
+    async def _message_processor(self):
+        logger.info("Message Processor Started...")
+        while self.running:
+            try:
+                msg_type, target_id, data = await self.event_queue.get()
+                
+                if msg_type == "order_book":
+                    # data is the order book state
+                    await self._handle_order_book_msg(target_id, data)
+                elif msg_type == "account":
+                    # data is the account update
+                    await self._handle_account_msg(target_id, data)
+                
+                self.event_queue.task_done()
+            except Exception as e:
+                logger.error(f"Error in message processor: {e}")
+                await asyncio.sleep(1)
+
+    async def _handle_order_book_msg(self, market_id: str, order_book: dict):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
         if not symbol or symbol != self.config.symbol:
@@ -112,25 +130,17 @@ class Engine:
             mid_price = best_ask
             
         if mid_price > 0:
-            # Run Strategy Tick
-            try:
-                if self.ctx:
+            if self.ctx:
+                try:
                     self.strategy.on_tick(mid_price, self.ctx)
-                    # Ensure pending orders are processed
-                    asyncio.create_task(self.process_order_queue())
-            except Exception as e:
-                logger.error(f"Strategy Error on_tick: {e}")
+                    await self.process_order_queue()
+                except Exception as e:
+                    logger.error(f"Strategy Error on_tick: {e}")
 
-    def on_account_update(self, account_id: str, account_data: dict):
-        # Parse account update for fills and balances
-        # account_data structure: {'orders': [...], 'balances': [...]}
-        # Or detailed event?
-        # Lighter WS sends 'update/account_all' with full state or delta?
-        # SDK ws_client merges state.
-        
-        # Need to detect Fills. 
-        # Typically we diff orders or listen to specific events?
-        # For now, let's look at orders processing.
+    async def _handle_account_msg(self, account_id: str, account_data: dict):
+        # Process fills or balance updates if needed
+        pass
+
         pass
     
     async def process_order_queue(self):
@@ -262,9 +272,12 @@ class Engine:
         self.running = True
         logger.info("Engine Running...")
         
-        # Start WS Loop
+        # Start WS Loop and Message Processor
         if self.ws_client:
-            await self.ws_client.run_async()
+            await asyncio.gather(
+                self.ws_client.run_async(),
+                self._message_processor()
+            )
 
     async def _load_markets(self):
         """
