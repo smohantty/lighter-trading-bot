@@ -27,15 +27,6 @@ class Cloid:
 
     def __hash__(self):
         return hash(self._id)
-    
-    @staticmethod
-    def new_random():
-        """
-        Generate a random client order ID.
-        Note: In production, use a counter or timestamp-based approach.
-        """
-        import random
-        return Cloid(random.randint(1, 2**31 - 1))
 
 
 class OrderSide(Enum):

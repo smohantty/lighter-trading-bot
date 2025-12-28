@@ -51,6 +51,9 @@ class StrategyContext:
         self.perp_balances: Dict[str, Balance] = {}
         self.order_queue: List[OrderRequest] = []
         self.cancellation_queue: List[Cloid] = []
+        
+        # Counter for generating unique client order IDs
+        self._cloid_counter = int(time.time() * 1000) % 10000000
 
     def market_info(self, symbol: str) -> Optional[MarketInfo]:
         return self.markets.get(symbol)
@@ -65,7 +68,9 @@ class StrategyContext:
         self.cancellation_queue.append(cloid)
 
     def generate_cloid(self) -> Cloid:
-        return Cloid.new_random() # type: ignore
+        """Generate a unique client order ID using a counter."""
+        self._cloid_counter += 1
+        return Cloid(self._cloid_counter)
 
     def update_spot_balance(self, asset: str, total: float, available: float):
         self.spot_balances[asset] = Balance(total=total, available=available)
