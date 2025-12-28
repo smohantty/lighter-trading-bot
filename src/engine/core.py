@@ -341,7 +341,7 @@ class Engine:
         # Reduce batch size to avoid "message too big" errors
         MAX_BATCH_SIZE = 10
         
-        # Process orders in chunks of MAX_BATCH_SIZE
+        # Process orders in chunks of MAX_BATCH_SIZE using REST API
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
             batch_end = min(batch_start + MAX_BATCH_SIZE, len(tx_types))
             batch_tx_types = tx_types[batch_start:batch_end]
@@ -349,29 +349,27 @@ class Engine:
             batch_num = (batch_start // MAX_BATCH_SIZE) + 1
             total_batches = (len(tx_types) + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
             
-            # Payload construction matches example
-            payload = {
-                "type": "jsonapi/sendtxbatch",
-                "data": {
-                    "id": f"batch_{int(time.time()*1000)}_{batch_start}",
-                    "tx_types": json.dumps(batch_tx_types),
-                    "tx_infos": json.dumps(batch_tx_infos)
-                }
-            }
-            
             try:
-                # Ensure we have WS connection
-                if self.ws_client and self.ws_client.ws:
-                    await self.ws_client.ws.send(json.dumps(payload))
-                    logger.info(f"Sent batch {batch_num}/{total_batches} with {len(batch_tx_types)} transactions")
+                # Use REST API to send batch and get response
+                response = await self.signer_client.send_tx_batch(
+                    tx_types=batch_tx_types,
+                    tx_infos=batch_tx_infos
+                )
+                
+                if response.code == 200:
+                    logger.info(f"Batch {batch_num}/{total_batches} accepted: {len(response.tx_hash)} orders, tx_hashes: {response.tx_hash[:3]}...")
                     
-                    # Wait between batches to avoid overwhelming the WebSocket
-                    if batch_num < total_batches:
-                        await asyncio.sleep(0.5)  # 500ms delay between batches
+                    # TODO: Track tx_hashes for order confirmation
+                    # We can map client_order_index to tx_hash here
                 else:
-                    logger.error("WS Client not connected")
+                    logger.error(f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}")
+                
+                # Wait between batches to respect rate limits
+                if batch_num < total_batches:
+                    await asyncio.sleep(0.5)
+                    
             except Exception as e:
-                logger.error(f"Failed to send batch {batch_num}: {e}")
+                logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
 
     async def run(self):
         await self.initialize()
