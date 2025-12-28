@@ -227,8 +227,12 @@ class Engine:
         # Context to map back results
         batch_context = [] 
         
+        # Get API key for this batch - all orders must use the same API key
+        # but each needs a unique nonce
+        batch_api_key_index = None
+        
         # Process Orders
-        for order in orders_to_process:
+        for i, order in enumerate(orders_to_process):
             self.order_client_index_counter += 1
             client_order_index = self.order_client_index_counter
             
@@ -241,10 +245,12 @@ class Engine:
                 logger.error("Signer client not initialized")
                 continue
             
-            # nonce_manager.next_nonce() might return tuple (index, nonce)
-            # Review SDK or assuming it returns (api_key_index, nonce)
-            # Mypy checks:
-            api_key_index, nonce = self.signer_client.nonce_manager.next_nonce()
+            # For first order, get a new API key. For subsequent orders, reuse the same key
+            # All transactions in a batch must use the same API key but different nonces
+            if i == 0:
+                batch_api_key_index, nonce = self.signer_client.nonce_manager.next_nonce()
+            else:
+                batch_api_key_index, nonce = self.signer_client.nonce_manager.next_nonce(batch_api_key_index)
             
             error = None
             tx_type = None
@@ -271,7 +277,7 @@ class Engine:
                     reduce_only=order.reduce_only,
                     trigger_price=0,
                     nonce=nonce,
-                    api_key_index=api_key_index
+                    api_key_index=batch_api_key_index
                 )
             
             elif isinstance(order, MarketOrderRequest):
@@ -339,7 +345,7 @@ class Engine:
         
         # Lighter supports up to 50 transactions per batch, but WebSocket has message size limits
         # Reduce batch size to avoid "message too big" errors
-        MAX_BATCH_SIZE = 10
+        MAX_BATCH_SIZE = 49
         
         # Process orders in chunks of MAX_BATCH_SIZE using REST API
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
