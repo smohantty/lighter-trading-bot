@@ -86,8 +86,6 @@ class Engine:
         self.ws_client = lighter.QueueWsClient(
             order_book_ids=[market_id],
             account_ids=[self.account_index],
-            on_order_book_update=None, # Using Queue
-            on_account_update=None,    # Using Queue
             queue=self.event_queue
         )
 
