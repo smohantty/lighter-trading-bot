@@ -74,6 +74,9 @@ class Engine:
 
         self.ctx = StrategyContext(self.markets)
         
+        market_info = self.ctx.market_info(target_symbol)
+        logger.info(f"Market Info: {market_info}")
+        
         # 5. Connect WS
         market_id = self.market_map[target_symbol]
         logger.info(f"Connecting WS for Market {market_id}...")
@@ -109,11 +112,6 @@ class Engine:
             mid_price = best_ask
             
         if mid_price > 0:
-            if self.ctx:
-                info = self.ctx.market_info(symbol)
-                if info:
-                    info.last_price = mid_price
-                
             # Run Strategy Tick
             try:
                 if self.ctx:
@@ -279,18 +277,22 @@ class Engine:
 
         try:
             order_api = lighter.OrderApi(self.api_client)
-            response = await order_api.order_books()
+            response = await order_api.order_book_details()
             
             if isinstance(response, tuple):
                 response = response[0]
             
             all_details = []
             
-            # SDK returns OrderBooks object with 'order_books'
-            if hasattr(response, "order_books"):
-                if response.order_books:
-                    all_details.extend(response.order_books)
-                    
+            # SDK returns OrderBookDetails object
+            if hasattr(response, "order_book_details"):
+                if response.order_book_details:
+                    all_details.extend(response.order_book_details)
+            
+            if hasattr(response, "spot_order_book_details"):
+                if response.spot_order_book_details:
+                    all_details.extend(response.spot_order_book_details)
+            
             # Response might be a dict (raw JSON or mock)
             elif isinstance(response, dict):
                 # Perps
@@ -342,7 +344,7 @@ class Engine:
                     info = MarketInfo(
                         symbol=symbol, # Use exact symbol from API
                         coin=symbol.split('/')[0] if '/' in symbol else symbol,
-                        asset_index=mid_int,
+                        market_id=mid_int,
                         price_decimals=int(price_decimals),
                         sz_decimals=int(size_decimals),
                         market_type=market_type,

@@ -55,7 +55,7 @@ class PerpGridStrategy(Strategy):
         self.position_size = 0.0
         self.avg_entry_price = 0.0
 
-    def initialize_zones(self, ctx: StrategyContext):
+    def initialize_zones(self, price: float, ctx: StrategyContext):
         self.config.validate()
 
         # 1. Get initial data
@@ -63,7 +63,7 @@ class PerpGridStrategy(Strategy):
         if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
         
-        last_price = market_info.last_price
+        last_price = price
 
         # Generate Levels
         prices = common.calculate_grid_prices(
@@ -95,7 +95,7 @@ class PerpGridStrategy(Strategy):
             logger.error(f"[PERP_GRID] {msg}")
             raise ValueError(msg)
 
-        self.zones.clear()
+        self.zones = []
         total_position_required = 0.0
 
         for i in range(num_zones):
@@ -103,14 +103,8 @@ class PerpGridStrategy(Strategy):
             upper = prices[i+1]
             mid_price = (lower + upper) / 2.0
 
-            info = ctx.market_info(self.config.symbol)
-            if not info:
-                logger.error(f"Market info for {self.config.symbol} not available during zone creation.")
-                # Depending on desired behavior, could raise error or skip zone
-                continue # Skip this zone if market info is missing
-            
             raw_size = investment_per_zone / mid_price
-            size = info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
+            size = market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
 
             # Zone classification
             if self.config.grid_bias == GridBias.LONG:
@@ -144,17 +138,21 @@ class PerpGridStrategy(Strategy):
                 roundtrip_count=0
             ))
 
+        # 3. Determine Initial Bias Orders
+        # Trigger Reference
+        self.trigger_reference_price = last_price
+
+        # Initial Entry if already in range
+        if last_price >= self.config.lower_price and last_price <= self.config.upper_price:
+             self.initial_entry_price = last_price
+
         logger.info(f"[PERP_GRID] Setup completed. Net position required: {total_position_required}")
 
         if abs(total_position_required) > 0.0:
             logger.info(f"[PERP_GRID] Acquiring initial position: {total_position_required}")
             cloid = ctx.generate_cloid()
             
-            market_info = ctx.market_info(self.config.symbol)
-            if not market_info:
-                 logger.error(f"Market info not found for {self.config.symbol}")
-                 return
-            market_price = market_info.last_price
+            market_price = last_price
             side = OrderSide.BUY if total_position_required > 0.0 else OrderSide.SELL
 
             if self.config.trigger_price:
@@ -171,12 +169,6 @@ class PerpGridStrategy(Strategy):
             else:
                 # Calculate safe limit price
                 if side.is_buy():
-                    # Max of (grid prices < market) or (market - 0.1%)
-                    # In Rust:
-                    # let grid_price = self.zones...filter(< market).max()
-                    # let limit_price = market * (1.0 - 0.001)
-                    # grid_price.max(limit_price)
-                    
                     candidate_prices = [z.lower_price for z in self.zones if z.lower_price < market_price]
                     grid_price = max(candidate_prices) if candidate_prices else market_price
                     limit_price = market_price * (1.0 - 0.001)
@@ -304,9 +296,7 @@ class PerpGridStrategy(Strategy):
 
     def on_tick(self, price: float, ctx: StrategyContext):
         if self.state == StrategyState.Initializing:
-            market_info = ctx.market_info(self.config.symbol)
-            if market_info and market_info.last_price > 0.0:
-                self.initialize_zones(ctx)
+            self.initialize_zones(price, ctx)
         
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price:
@@ -319,7 +309,7 @@ class PerpGridStrategy(Strategy):
                      logger.info(f"[PERP_GRID] Price {price} crossed trigger {self.config.trigger_price}. Starting.")
                      logger.info("[PERP_GRID] Triggered! Re-initializing zones.")
                      self.zones.clear()
-                     self.initialize_zones(ctx)
+                     self.initialize_zones(price, ctx)
              else:
                  self.state = StrategyState.Running
         

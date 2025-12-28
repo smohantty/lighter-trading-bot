@@ -64,7 +64,7 @@ class SpotGridStrategy(Strategy):
         self.inventory = 0.0
         self.avg_entry_price = 0.0
 
-    def initialize_zones(self, ctx: StrategyContext):
+    def initialize_zones(self, price: float, ctx: StrategyContext):
         self.config.validate()
 
         market_info = ctx.market_info(self.config.symbol)
@@ -72,7 +72,7 @@ class SpotGridStrategy(Strategy):
             raise ValueError(f"No market info for {self.config.symbol}")
         
         # 1. Generate Zones
-        total_base_required, total_quote_required = self.generate_grid_levels(market_info)
+        total_base_required, total_quote_required = self.generate_grid_levels(price, market_info)
 
         logger.info(f"[SPOT_GRID] INITIALIZATION: Asset Required: {self.base_asset} ({total_base_required}), {self.quote_asset} ({total_quote_required})")
 
@@ -82,7 +82,7 @@ class SpotGridStrategy(Strategy):
         self.inventory = available_base
 
         # Validation
-        initial_price = self.config.trigger_price if self.config.trigger_price else market_info.last_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
         total_wallet_value = (available_base * initial_price) + available_quote
         
         if total_wallet_value < self.config.total_investment:
@@ -91,9 +91,9 @@ class SpotGridStrategy(Strategy):
             raise ValueError(msg)
 
         # 2. Check Assets & Rebalance
-        self.check_initial_acquisition(ctx, market_info, total_base_required, total_quote_required)
+        self.check_initial_acquisition(price, ctx, market_info, total_base_required, total_quote_required)
 
-    def generate_grid_levels(self, market_info) -> Tuple[float, float]:
+    def generate_grid_levels(self, price: float, market_info) -> Tuple[float, float]:
         prices = common.calculate_grid_prices(
             self.config.grid_type,
             self.config.lower_price,
@@ -110,7 +110,7 @@ class SpotGridStrategy(Strategy):
             logger.error(f"[SPOT_GRID] {msg}")
             raise ValueError(msg)
 
-        initial_price = self.config.trigger_price if self.config.trigger_price else market_info.last_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
         
         self.zones.clear()
         total_base_required = 0.0
@@ -150,13 +150,13 @@ class SpotGridStrategy(Strategy):
 
         return market_info.round_size(total_base_required), total_quote_required
 
-    def check_initial_acquisition(self, ctx: StrategyContext, market_info, total_base_required: float, total_quote_required: float):
+    def check_initial_acquisition(self, price: float, ctx: StrategyContext, market_info, total_base_required: float, total_quote_required: float):
         available_base = ctx.get_spot_available(self.base_asset)
         available_quote = ctx.get_spot_available(self.quote_asset)
 
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
-        initial_price = self.config.trigger_price if self.config.trigger_price else market_info.last_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
 
         if base_deficit > 0.0:
             acquisition_price = initial_price
@@ -165,7 +165,7 @@ class SpotGridStrategy(Strategy):
             else:
                 # Find nearest level < market to buy, or just use market?
                 # Rust extracts max(lower_price) < market
-                candidates = [z.lower_price for z in self.zones if z.lower_price < market_info.last_price]
+                candidates = [z.lower_price for z in self.zones if z.lower_price < price]
                 if candidates:
                     acquisition_price = market_info.round_price(max(candidates))
                 elif self.zones:
@@ -201,7 +201,7 @@ class SpotGridStrategy(Strategy):
              if self.config.trigger_price:
                  acquisition_price = market_info.round_price(self.config.trigger_price)
              else:
-                 candidates = [z.upper_price for z in self.zones if z.upper_price > market_info.last_price]
+                 candidates = [z.upper_price for z in self.zones if z.upper_price > price]
                  if candidates:
                      acquisition_price = market_info.round_price(min(candidates))
                  elif self.zones:
@@ -234,11 +234,11 @@ class SpotGridStrategy(Strategy):
         # No Deficit
         if self.config.trigger_price:
             logger.info("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.")
-            self.trigger_reference_price = market_info.last_price
+            self.trigger_reference_price = price
             self.state = StrategyState.WaitingForTrigger
         else:
             logger.info("[SPOT_GRID] Assets verified. Starting Grid.")
-            self.initial_entry_price = market_info.last_price
+            self.initial_entry_price = price
             self.state = StrategyState.Running
             try:
                 self.refresh_orders(ctx)
@@ -293,9 +293,7 @@ class SpotGridStrategy(Strategy):
 
     def on_tick(self, price: float, ctx: StrategyContext):
         if self.state == StrategyState.Initializing:
-            market_info = ctx.market_info(self.config.symbol)
-            if market_info and market_info.last_price > 0.0:
-                self.initialize_zones(ctx)
+            self.initialize_zones(price, ctx)
         
         elif self.state == StrategyState.WaitingForTrigger:
             if self.config.trigger_price:

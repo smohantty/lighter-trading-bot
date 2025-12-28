@@ -24,7 +24,7 @@ def round_to_significant_and_decimal(value: float, sig_figs: int, max_decimals: 
 class MarketInfo:
     symbol: str
     coin: str
-    asset_index: int
+    market_id: int
     sz_decimals: int
     price_decimals: int
     market_type: str
@@ -32,7 +32,6 @@ class MarketInfo:
     quote_asset_id: int
     min_base_amount: float
     min_quote_amount: float
-    last_price: float = 0.0
 
     def round_price(self, price: float) -> float:
         # Hyperliquid/Generic rounding logic: 5 significant figures

@@ -10,10 +10,14 @@ def create_test_context(symbol: str = "HYPE/USDC") -> StrategyContext:
         symbol: MarketInfo(
             symbol=symbol,
             coin="HYPE",
-            asset_index=0,
+            market_id=0,
             sz_decimals=2,
             price_decimals=2,
-            last_price=100.0
+            market_type="spot",
+            base_asset_id=1,
+            quote_asset_id=2,
+            min_base_amount=0.1,
+            min_quote_amount=10.0
         )
     }
     ctx = StrategyContext(markets)
@@ -37,7 +41,7 @@ def test_spot_grid_init():
     )
     
     strategy = SpotGridStrategy(config)
-    strategy.initialize_zones(ctx)
+    strategy.initialize_zones(100.0, ctx)
     
     # Grid: 90, 100, 110. (2 zones)
     assert len(strategy.zones) == 2
@@ -79,7 +83,7 @@ def test_spot_grid_rebalance():
     )
     
     strategy = SpotGridStrategy(config)
-    strategy.initialize_zones(ctx)
+    strategy.initialize_zones(100.0, ctx)
     
     # Zones want to BUY (pending_side BUY).
     # Total Quote Required: Zone0(100/95 * 90) + Zone1(100/105 * 100) approx 200 USDC.

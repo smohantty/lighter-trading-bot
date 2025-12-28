@@ -11,10 +11,14 @@ def create_test_context(symbol: str = "HYPE") -> StrategyContext:
         symbol: MarketInfo(
             symbol=symbol,
             coin=symbol,
-            asset_index=0,
+            market_id=0,
             sz_decimals=2,
             price_decimals=2,
-            last_price=100.0
+            market_type="perp",
+            base_asset_id=0,
+            quote_asset_id=0,
+            min_base_amount=0.1,
+            min_quote_amount=10.0
         )
     }
     ctx = StrategyContext(markets)
@@ -39,7 +43,7 @@ def test_perp_grid_init_long_bias():
     )
     
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(ctx)
+    strategy.initialize_zones(100.0, ctx)
     
     # Grid: 90, 100, 110. (2 zones)
     # Zone 0: [90, 100]. Market 100.
@@ -75,7 +79,6 @@ def test_perp_grid_init_long_bias():
 def test_perp_grid_execution_flow():
     symbol = "HYPE"
     ctx = create_test_context(symbol)
-    ctx.market_info(symbol).last_price = 100.0
     
     # Setup simple 2-zone grid: 90-100-110
     config = PerpGridConfig(
@@ -90,7 +93,7 @@ def test_perp_grid_execution_flow():
         trigger_price=None
     )
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(ctx)
+    strategy.initialize_zones(100.0, ctx)
     
     # Expect 2 Buy Orders
     assert len(ctx.order_queue) == 2
@@ -133,7 +136,6 @@ def test_perp_grid_execution_flow():
 def test_perp_grid_short_bias():
     symbol = "HYPE"
     ctx = create_test_context(symbol)
-    ctx.market_info(symbol).last_price = 100.0
     
     config = PerpGridConfig(
         symbol=symbol,
@@ -147,7 +149,7 @@ def test_perp_grid_short_bias():
         trigger_price=None
     )
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(ctx)
+    strategy.initialize_zones(100.0, ctx)
     
     # Short Bias Logic:
     # If upper < initial (100) -> Buy (Close). Else -> Sell (Open).
