@@ -9,16 +9,6 @@ def round_to_decimals(value: float, decimals: int) -> float:
     factor = 10.0 ** decimals
     return round(value * factor) / factor
 
-def round_to_significant_and_decimal(value: float, sig_figs: int, max_decimals: int) -> float:
-    if abs(value) < 1e-9:
-        return 0.0
-    abs_value = abs(value)
-    magnitude = math.floor(math.log10(abs_value))
-    # We want sig_figs. So if magnitude is 2 (100) and sig_figs is 5, we want to resolve to 10^(2-5+1) = 10^-2 = 0.01
-    # scale = 10^(sig_figs - magnitude - 1)
-    scale = 10.0 ** (sig_figs - magnitude - 1)
-    rounded = round(abs_value * scale) / scale
-    return round_to_decimals(math.copysign(rounded, value), max_decimals)
 
 @dataclass
 class MarketInfo:
