@@ -365,8 +365,10 @@ class Engine:
                     logger.error(f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}")
                 
                 # Wait between batches to respect rate limits
+                # Lighter allows 40 requests per 60 seconds = 1 request per 1.5s
+                # Use 2s delay to be safe
                 if batch_num < total_batches:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(2.0)
                     
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
