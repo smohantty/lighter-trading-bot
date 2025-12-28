@@ -1,44 +1,42 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Union
-import uuid
 
 class Cloid:
-    def __init__(self, raw_id: Union[uuid.UUID, str]):
-        if isinstance(raw_id, str):
-            try:
-                # Try parsing as UUID first
-                self._uuid = uuid.UUID(raw_id)
-            except ValueError:
-                # If not a valid UUID string, generate one (fallback) 
-                # or raise error depending on strictness. 
-                # For this port, we assume valid UUID strings.
-                 raise ValueError(f"Invalid UUID string for Cloid: {raw_id}")
-        elif isinstance(raw_id, uuid.UUID):
-            self._uuid = raw_id
-        else:
-            raise TypeError("Cloid must be initialized with UUID or str")
+    """
+    Client Order ID - matches Lighter SDK's client_order_index (integer).
+    """
+    def __init__(self, order_id: int):
+        if not isinstance(order_id, int):
+            raise TypeError(f"Cloid must be initialized with int, got {type(order_id)}")
+        self._id = order_id
 
-    def as_uuid(self) -> uuid.UUID:
-        return self._uuid
+    def as_int(self) -> int:
+        return self._id
 
     def __str__(self) -> str:
-        return str(self._uuid)
+        return str(self._id)
     
     def __repr__(self) -> str:
-        return f"Cloid({self._uuid})"
+        return f"Cloid({self._id})"
 
     def __eq__(self, other):
         if isinstance(other, Cloid):
-            return self._uuid == other._uuid
+            return self._id == other._id
         return False
 
     def __hash__(self):
-        return hash(self._uuid)
+        return hash(self._id)
     
     @staticmethod
     def new_random():
-        return Cloid(uuid.uuid4())
+        """
+        Generate a random client order ID.
+        Note: In production, use a counter or timestamp-based approach.
+        """
+        import random
+        return Cloid(random.randint(1, 2**31 - 1))
+
 
 class OrderSide(Enum):
     BUY = "Buy"
