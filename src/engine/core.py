@@ -45,36 +45,16 @@ class Engine:
         logger.info("Initializing Engine...")
         
         # 1. Setup API Client
-        # Determine host based on some config or default to testnet?
-        # User environment didn't specify. Assuming Testnet for now as getting started.
-        # But should be configurable.
-        # self.api_client = lighter.ApiClient(configuration=lighter.Configuration(host="https://testnet.zklighter.elliot.ai"))
-        # Using default from config if not provided?
-        # Let's assume production/default unless specified.
-        # lighter-python Configuration.get_default() might be set.
-        self.api_client = lighter.ApiClient() 
+        logger.info(f"Initializing API Client with URL: {self.exchange_config.base_url}")
+        api_config = lighter.Configuration(host=self.exchange_config.base_url)
+        self.api_client = lighter.ApiClient(configuration=api_config)
         
         # 2. Fetch Account Index (Already in Config)
         if self.exchange_config.account_index > 0:
             self.account_index = self.exchange_config.account_index
             logger.info(f"Using Account Index from Config: {self.account_index}")
         else:
-             # Legacy or address provided?
-             logger.info(f"Fetching account index for {self.exchange_config.master_account_address}...")
-             account_api = lighter.AccountApi(self.api_client)
-        try:
-            account_info = await account_api.account(by="l1_address", value=self.exchange_config.master_account_address)
-            # Response structure: {'index': 65, 'l1_address': '...', ...}
-            # Or maybe inside a 'data' field?
-            # Assuming direct dict or object. 
-            if isinstance(account_info, dict):
-                self.account_index = int(account_info['index'])
-            else:
-                self.account_index = int(account_info.index) # type: ignore
-            logger.info(f"Account Index: {self.account_index}")
-        except Exception as e:
-            logger.error(f"Failed to fetch account info: {e}")
-            raise
+            raise ValueError("Account Index must be provided in the configuration.")
 
         # 3. Setup Signer Client
         # Using configured API Key Index
