@@ -1,7 +1,16 @@
 {
-    "baseUrl": "https://api.lighter.xyz",
     "accountIndex": 1234,
-    "privateKeys": {
-        "0": "0xYourEd25519ApiKey"
+    "masterAccountAddress": "0xYourMasterAccountAddress",
+    "mainnet": {
+        "baseUrl": "https://api.lighter.xyz",
+        "agentApiKeys": {
+            "0": "0xYourEd25519ApiKey"
+        }
+    },
+    "testnet": {
+        "baseUrl": "https://testnet.zklighter.elliot.ai",
+        "agentApiKeys": {
+            "0": "0xYourEd25519ApiKey"
+        }
     }
 }

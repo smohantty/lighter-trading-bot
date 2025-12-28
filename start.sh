@@ -8,7 +8,6 @@ if [ ! -d "venv" ]; then
 fi
 
 echo "Starting Lighter Trading Bot..."
-echo "Using Configuration: $(grep CONFIG_PATH .env | cut -d= -f2)"
 echo "Using Wallet Config: $(grep LIGHTER_WALLET_CONFIG_FILE .env | cut -d= -f2)"
 
 # Run

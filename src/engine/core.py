@@ -77,10 +77,10 @@ class Engine:
             raise
 
         # 3. Setup Signer Client
-        # Assuming provided private key is for API Key Index 0
+        # Using configured API Key Index
         self.signer_client = lighter.SignerClient(
             account_index=self.account_index,
-            api_private_keys={0: self.exchange_config.private_key}
+            api_private_keys={self.exchange_config.api_key_index: self.exchange_config.private_key}
         )
         
         # 4. Load Metadata (Markets)

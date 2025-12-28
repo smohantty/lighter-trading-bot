@@ -82,9 +82,9 @@ async def main():
         # ExchangeConfig has single private_key.
         
         signer = lighter.SignerClient(
-            url="https://testnet.zklighter.elliot.ai", # Defaulting to Testnet for check
+            url=exchange_config.base_url,
             account_index=config_account_index,
-            api_private_keys={0: exchange_config.private_key} # Assuming index 0
+            api_private_keys={exchange_config.api_key_index: exchange_config.private_key}
         )
         
         err = signer.check_client()

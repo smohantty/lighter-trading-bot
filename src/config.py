@@ -70,6 +70,9 @@ class ExchangeConfig:
     private_key: str
     wallet_address: str
     network: str
+    base_url: str = "https://api.lighter.xyz"
+    api_key_index: int = 0
+    master_account_address: str = ""
 
     @staticmethod
     def from_env():
@@ -79,27 +82,47 @@ class ExchangeConfig:
         if not config_path:
             raise ValueError("LIGHTER_WALLET_CONFIG_FILE environment variable must be set")
         
+        network = os.getenv("LIGHTER_NETWORK", "mainnet").lower()
+        if network not in ["mainnet", "testnet"]:
+            raise ValueError(f"Invalid LIGHTER_NETWORK: {network}. Must be 'mainnet' or 'testnet'.")
+
         try:
             with open(config_path, "r") as f:
-                data = json.load(f)
+                full_config = json.load(f)
             
-            # Parse structure matching Lighter SDK:
-            # {
-            #   "baseUrl": "...",
-            #   "accountIndex": 123,
-            #   "privateKeys": { "0": "..." }
-            # }
-            base_url = data.get("baseUrl", "https://api.lighter.xyz")
-            account_index = int(data["accountIndex"])
-            private_keys = {int(k): v for k, v in data["privateKeys"].items()}
+            # Read shared fields from root
+            account_index = int(full_config["accountIndex"])
+            master_account_address = full_config.get("masterAccountAddress", "") # Optional for now or required?
+
+            if network in full_config:
+                data = full_config[network]
+            else:
+                 raise ValueError(f"Section '{network}' not found in wallet config.")
+
+            base_url = data.get("baseUrl")
+            if not base_url:
+                base_url = "https://api.lighter.xyz" if network == "mainnet" else "https://testnet.zklighter.elliot.ai"
+
+            private_keys = {int(k): v for k, v in data["agentApiKeys"].items()}
             
-            # Use Key Index 0 by default for single-key setup
+            # Use Key Index 0 by default for single-key setup, or first available
+            api_key_index = 0
             private_key = private_keys.get(0)
             if not private_key:
                 # Fallback to first key
-                private_key = next(iter(private_keys.values()))
+                if not private_keys:
+                     raise ValueError("No private keys found in config")
+                api_key_index = next(iter(private_keys.keys()))
+                private_key = private_keys[api_key_index]
 
-            return ExchangeConfig(private_key=private_key, wallet_address=str(account_index), network="mainnet")
+            return ExchangeConfig(
+                private_key=private_key, 
+                wallet_address=str(account_index), 
+                network=network, 
+                base_url=base_url, 
+                api_key_index=api_key_index,
+                master_account_address=master_account_address
+            )
             
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
