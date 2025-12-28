@@ -143,6 +143,12 @@ class Engine:
             try:
                 self.strategy.on_tick(mid_price, self.ctx)
                 await self.process_order_queue()
+            except ValueError as e:
+                # ValueError during initialization indicates a fatal configuration error
+                logger.error(f"Strategy Initialization Error: {e}")
+                logger.error("Bot cannot continue with current configuration. Stopping...")
+                await self.stop()
+                raise
             except Exception as e:
                 logger.error(f"Strategy Error on_tick (mid_price): {e}")
 
