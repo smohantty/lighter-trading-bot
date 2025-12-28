@@ -232,6 +232,10 @@ class Engine:
         Process account updates including order fills.
         Accumulates partial fills and only notifies strategy when order is fully filled.
         """
+        # Debug: Dump the raw account message to see what we're receiving
+        logger.debug(f"[ACCOUNT_MSG] Raw message keys: {list(account_data.keys())}")
+        logger.debug(f"[ACCOUNT_MSG] Full message: {json.dumps(account_data, indent=2)}")
+        
         # Account data structure from Lighter WS:
         # {
         #   "type": "update/account_all" or "subscribed/account_all",
