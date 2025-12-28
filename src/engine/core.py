@@ -346,6 +346,8 @@ class Engine:
             batch_end = min(batch_start + MAX_BATCH_SIZE, len(tx_types))
             batch_tx_types = tx_types[batch_start:batch_end]
             batch_tx_infos = tx_infos[batch_start:batch_end]
+            batch_num = (batch_start // MAX_BATCH_SIZE) + 1
+            total_batches = (len(tx_types) + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
             
             # Payload construction matches example
             payload = {
@@ -361,11 +363,15 @@ class Engine:
                 # Ensure we have WS connection
                 if self.ws_client and self.ws_client.ws:
                     await self.ws_client.ws.send(json.dumps(payload))
-                    logger.info(f"Sent batch {batch_start//MAX_BATCH_SIZE + 1} with {len(batch_tx_types)} transactions")
+                    logger.info(f"Sent batch {batch_num}/{total_batches} with {len(batch_tx_types)} transactions")
+                    
+                    # Wait between batches to avoid overwhelming the WebSocket
+                    if batch_num < total_batches:
+                        await asyncio.sleep(0.5)  # 500ms delay between batches
                 else:
                     logger.error("WS Client not connected")
             except Exception as e:
-                logger.error(f"Failed to send batch: {e}")
+                logger.error(f"Failed to send batch {batch_num}: {e}")
 
     async def run(self):
         await self.initialize()
