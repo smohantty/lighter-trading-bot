@@ -34,19 +34,37 @@ class MarketInfo:
     min_quote_amount: float
 
     def round_price(self, price: float) -> float:
-        # Hyperliquid/Generic rounding logic: 5 significant figures
-        # Lighter might have different rules, but user asked for "Same" logic
-        return round_to_significant_and_decimal(price, 5, self.price_decimals)
+        return round_to_decimals(price, self.price_decimals)
 
     def round_size(self, sz: float) -> float:
         return round_to_decimals(sz, self.sz_decimals)
 
+    def to_sdk_price(self, price: float) -> int:
+        """Convert float price to SDK integer format."""
+        return int(round(price * (10 ** self.price_decimals)))
+
+    def to_sdk_size(self, sz: float) -> int:
+        """Convert float size to SDK integer format."""
+        return int(round(sz * (10 ** self.sz_decimals)))
+
     def clamp_to_min_notional(self, size: float, price: float, min_notional: float) -> float:
-        rounded_size = self.round_size(size)
-        if price > 0.0 and (rounded_size * price < min_notional):
-            return self.round_size(min_notional / price)
-        else:
-            return rounded_size
+        """
+        Ensure size is large enough to meet the minimum notional requirement (quote units).
+        Also respects the exchange-defined min_base_amount and min_quote_amount.
+        """
+        # Minimum quote amount required (notional)
+        target_min_notional = max(min_notional, self.min_quote_amount)
+        
+        # Start with requested size or exchange minimum
+        sz = max(size, self.min_base_amount)
+        
+        # If notional is too low, increase size
+        if price > 0.0 and (sz * price < target_min_notional):
+            sz = target_min_notional / price
+            
+        # Round and ensure we didn't drop below min_base_amount due to rounding
+        rounded_sz = self.round_size(sz)
+        return max(rounded_sz, self.round_size(self.min_base_amount))
 
 @dataclass
 class Balance:

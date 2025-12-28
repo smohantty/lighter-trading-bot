@@ -201,17 +201,38 @@ class Engine:
                 tx_type, tx_info, _, error = self.signer_client.sign_create_order(
                     market_index=market_id,
                     client_order_index=client_order_index,
-                    base_amount=int(order.sz * (10**info.sz_decimals)), # Convert to Atomic Units?
-                    price=int(order.price * (10**info.price_decimals)), # Convert
+                    base_amount=info.to_sdk_size(order.sz),
+                    price=info.to_sdk_price(order.price),
                     is_ask=order.side.is_sell(),
-                    order_type=1, # Limit
-                    time_in_force=200000, # GTC
+                    order_type=self.signer_client.ORDER_TYPE_LIMIT,
+                    time_in_force=self.signer_client.ORDER_TIME_IN_FORCE_GOOD_TILL_TIME, # GTC
                     reduce_only=order.reduce_only,
                     trigger_price=0,
                     nonce=nonce,
                     api_key_index=api_key_index
                 )
             
+            elif isinstance(order, MarketOrderRequest):
+                info = self.ctx.market_info(order.symbol)
+                if not info:
+                     logger.error(f"Market info not found for {order.symbol}")
+                     continue
+
+                # For Market orders, 'price' is the worst acceptable price (slippage limit)
+                tx_type, tx_info, _, error = self.signer_client.sign_create_order(
+                    market_index=market_id,
+                    client_order_index=client_order_index,
+                    base_amount=info.to_sdk_size(order.sz),
+                    price=info.to_sdk_price(order.price),
+                    is_ask=order.side.is_sell(),
+                    order_type=self.signer_client.ORDER_TYPE_MARKET,
+                    time_in_force=self.signer_client.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+                    reduce_only=order.reduce_only,
+                    trigger_price=0,
+                    nonce=nonce,
+                    api_key_index=api_key_index
+                )
+
             elif isinstance(order, CancelOrderRequest):
                 # We need order_index (client_order_index) for the order to cancel?
                 # or exchange order ID?
