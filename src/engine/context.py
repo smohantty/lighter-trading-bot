@@ -3,8 +3,6 @@ from dataclasses import dataclass, field
 import math
 from src.model import Cloid, OrderRequest, CancelOrderRequest
 
-def round_to_decimals(value: float, decimals: int) -> float:
-    return round(value, decimals)
 
 
 @dataclass
@@ -21,10 +19,10 @@ class MarketInfo:
     min_quote_amount: float
 
     def round_price(self, price: float) -> float:
-        return round_to_decimals(price, self.price_decimals)
+        return round(price, self.price_decimals)
 
     def round_size(self, sz: float) -> float:
-        return round_to_decimals(sz, self.sz_decimals)
+        return round(sz, self.sz_decimals)
 
     def to_sdk_price(self, price: float) -> int:
         """Convert float price to SDK integer format."""
