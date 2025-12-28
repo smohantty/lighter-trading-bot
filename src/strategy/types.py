@@ -81,4 +81,4 @@ class SpotGridSummary:
     margin_balance: float
     initial_entry_price: Optional[float]
 
-StrategySummary = Union[PerpGridSummary, SpotGridSummary]
+StrategySummary = Union[PerpGridSummary, SpotGridSummary, None]

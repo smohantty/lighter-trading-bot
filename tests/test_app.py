@@ -25,7 +25,7 @@ async def main():
         logger.info(f"  Network: {config.network}")
         logger.info(f"  Base URL: {config.base_url}")
         logger.info(f"  Account Index: {config.account_index}")
-        logger.info(f"  API Key Index: {config.api_key_index}")
+        logger.info(f"  Agent Key Index: {config.agent_key_index}")
         logger.info(f"  Master Address: {config.master_account_address}")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
@@ -46,7 +46,7 @@ async def main():
         signer_client = lighter.SignerClient(
             url=config.base_url,
             account_index=config.account_index,
-            api_private_keys={config.api_key_index: config.private_key}
+            api_private_keys={config.agent_key_index: config.agent_private_key}
         )
         logger.info("Initialized SignerClient.")
 

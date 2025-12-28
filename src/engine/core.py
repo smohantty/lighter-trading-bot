@@ -60,10 +60,10 @@ class Engine:
             logger.info(f"Using Account Index from Config: {self.account_index}")
         else:
              # Legacy or address provided?
-             logger.info(f"Fetching account index for {self.exchange_config.wallet_address}...")
+             logger.info(f"Fetching account index for {self.exchange_config.master_account_address}...")
              account_api = lighter.AccountApi(self.api_client)
         try:
-            account_info = await account_api.account(by="l1_address", value=self.exchange_config.wallet_address)
+            account_info = await account_api.account(by="l1_address", value=self.exchange_config.master_account_address)
             # Response structure: {'index': 65, 'l1_address': '...', ...}
             # Or maybe inside a 'data' field?
             # Assuming direct dict or object. 
@@ -81,7 +81,7 @@ class Engine:
         self.signer_client = lighter.SignerClient(
             url=self.exchange_config.base_url,
             account_index=self.account_index,
-            api_private_keys={self.exchange_config.api_key_index: self.exchange_config.private_key}
+            api_private_keys={self.exchange_config.agent_key_index: self.exchange_config.agent_private_key}
         )
         
         # 4. Load Metadata (Markets)

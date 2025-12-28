@@ -60,6 +60,15 @@ class PerpGridConfig:
             raise ValueError("Total investment must be positive.")
 
 @dataclass
+class NoOpConfig:
+    symbol: str
+    type: str = "noop"
+
+    def validate(self):
+        if not self.symbol:
+            raise ValueError("Symbol is required for NoOpStrategy.")
+
+@dataclass
 class WalletConfig:
     baseUrl: str
     accountIndex: int
@@ -67,13 +76,17 @@ class WalletConfig:
 
 @dataclass
 class ExchangeConfig:
-    private_key: str
+    # Account Identity
+    master_account_address: str # L1 Address
+    account_index: int          # Account Index (Integer)
+
+    # Agent Credentials
+    agent_private_key: str
+    agent_key_index: int
+
+    # Network Config
     network: str
-    wallet_address: str  # L1 Address (String)
-    account_index: int   # Account Index (Integer)
-    base_url: str = "https://api.lighter.xyz"
-    api_key_index: int = 0
-    master_account_address: str = ""
+    base_url: str
 
     @staticmethod
     def from_env():
@@ -93,7 +106,11 @@ class ExchangeConfig:
             
             # Read shared fields from root
             account_index = int(full_config["accountIndex"])
-            master_account_address = full_config.get("masterAccountAddress", "") # Optional for now or required?
+            
+            # masterAccountAddress is the L1 Address - Now Required
+            master_account_address = full_config.get("masterAccountAddress")
+            if not master_account_address:
+                 raise ValueError("masterAccountAddress is required in wallet config.")
 
             if network in full_config:
                 data = full_config[network]
@@ -102,45 +119,33 @@ class ExchangeConfig:
 
             base_url = data.get("baseUrl")
             if not base_url:
-                base_url = "https://api.lighter.xyz" if network == "mainnet" else "https://testnet.zklighter.elliot.ai"
-
-            # Assuming we only have index stored, so wallet_address in config might be legacy or just redundant if we have masterAddress?
-            # User wants strong typing. 
-            # If wallet_address was storing index before, we now store it in account_index.
-            # We can use master_account_address as the 'wallet_address' (L1 Address) if appropriate, 
-            # or keep wallet_address as a potentially empty string if not strictly needed by Engine for now 
-            # (Engine uses it to fetch index if index is missing, but now we have index).
-            # Let's populate wallet_address with str(account_index) for legacy compat OR master_account_address if set.
-            # Ideally: wallet_address = master_account_address.
-            
-            wallet_address = master_account_address or str(account_index)
+                raise ValueError(f"'baseUrl' is required in the '{network}' section of the wallet config.")
 
             private_keys = {int(k): v for k, v in data["agentApiKeys"].items()}
             
             # Use Key Index 0 by default for single-key setup, or first available
-            api_key_index = 0
-            private_key = private_keys.get(0)
-            if not private_key:
+            agent_key_index = 0
+            agent_private_key = private_keys.get(0)
+            if not agent_private_key:
                 # Fallback to first key
                 if not private_keys:
                      raise ValueError("No private keys found in config")
-                api_key_index = next(iter(private_keys.keys()))
-                private_key = private_keys[api_key_index]
+                agent_key_index = next(iter(private_keys.keys()))
+                agent_private_key = private_keys[agent_key_index]
 
             return ExchangeConfig(
-                private_key=private_key, 
-                wallet_address=wallet_address,
+                agent_private_key=agent_private_key, 
                 account_index=account_index,
                 network=network, 
                 base_url=base_url, 
-                api_key_index=api_key_index,
+                agent_key_index=agent_key_index,
                 master_account_address=master_account_address
             )
             
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
 
-Config = Union[SpotGridConfig, PerpGridConfig]
+Config = Union[SpotGridConfig, PerpGridConfig, NoOpConfig]
 StrategyConfig = Config
 
 def load_config(path: str) -> Config:
@@ -163,5 +168,9 @@ def load_config(path: str) -> Config:
         perp_cfg = PerpGridConfig(**data)
         perp_cfg.validate()
         return perp_cfg
+    elif strategy_type == "noop":
+         noop_cfg = NoOpConfig(**data)
+         noop_cfg.validate()
+         return noop_cfg
     else:
         raise ValueError(f"Unknown strategy type: {strategy_type}")

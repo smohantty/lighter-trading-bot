@@ -26,9 +26,12 @@ async def main():
         logger.error("Ensure .env and wallet_config.json are set up correctly.")
         return
 
+    logger.info(f"Testing Connection for Network: {exchange_config.network}")
+    logger.info(f"Base URL: {exchange_config.base_url}")
+    logger.info(f"Master Address: {exchange_config.master_account_address}")
     config_account_index = exchange_config.account_index
     logger.info(f"Target Account Index: {config_account_index}")
-    logger.info(f"Using Private Key: {exchange_config.private_key[:6]}... (masked)")
+    logger.info(f"Using Private Key: {exchange_config.agent_private_key[:6]}... (masked)")
 
     # Initialize Client
     try:
@@ -43,13 +46,17 @@ async def main():
         logger.error(f"Failed to initialize ApiClient: {e}")
         return
 
-    # Query Account
-    logger.info("Fetching Account Data...")
+    # 3. Query Account Info
+    logger.info("Querying Account Info...")
+    account_api = lighter.AccountApi(client)
+    
     try:
-        account_api = lighter.AccountApi(client)
-        # Fetch by ID (index)
-        # SDK method: account_api.account(by="index", value=config_account_index)?
-        # Let's check API signature. Usually get_account or account.
+        # Use account_index instead of wallet_address if possible, or support both.
+        # But if we rely on typed ExchangeConfig, we have account_index.
+        account_info = await account_api.account(by="index", value=str(config_account_index))
+        logger.info(f"Account Info: {account_info}")
+    except Exception as e:
+        logger.error(f"Failed to query account: {e}")
         # Checking SDK examples/utils usage...
         # response = await account_api.accounts(l1_address=...) or by explicit ID?
         
@@ -81,12 +88,13 @@ async def main():
         # We need the key map
         # ExchangeConfig has single private_key.
         
+        # 2. Setup Signer (Verify Keys)
+        # Using configured API Key Index
         signer = lighter.SignerClient(
             url=exchange_config.base_url,
-            account_index=config_account_index,
-            api_private_keys={exchange_config.api_key_index: exchange_config.private_key}
-        )
-        
+            api_private_keys={exchange_config.agent_key_index: exchange_config.agent_private_key},
+            account_index=config_account_index
+        )    
         err = signer.check_client()
         if err:
             logger.error(f"Signer Check Failed: {err}")
