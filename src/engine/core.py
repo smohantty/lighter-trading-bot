@@ -241,9 +241,8 @@ class Engine:
         #   ...
         # }
         
+        # ===== STEP 1: Process Fills =====
         fills = account_data.get("fills", [])
-        if not fills:
-            return
         
         for fill in fills:
             # Fill structure (example):
@@ -386,6 +385,91 @@ class Engine:
                         
             except Exception as e:
                 logger.error(f"Error processing fill: {e}, fill data: {fill}")
+
+        # ===== STEP 2: Reconcile with Current Order State =====
+        # Process orders array to handle cancellations, sync state, and clean up
+        orders = account_data.get("orders", [])
+        
+        # Track which orders are currently open on the exchange
+        current_order_cloids = set()
+        
+        for order in orders:
+            try:
+                client_order_index = order.get("client_order_index")
+                if not client_order_index:
+                    continue
+                
+                cloid = Cloid(client_order_index)
+                current_order_cloids.add(cloid)
+                
+                # Only process if we're tracking this order
+                if cloid not in self.pending_orders:
+                    continue
+                
+                pending = self.pending_orders[cloid]
+                
+                # Sync filled amount (handles missed fill events)
+                filled_amount_str = order.get("filled_base_amount", "0")
+                filled_amount = float(filled_amount_str) if filled_amount_str else 0.0
+                
+                # If exchange shows more filled than we have, we missed some fills
+                if filled_amount > pending.filled_size:
+                    logger.warning(
+                        f"[ORDER_SYNC] {cloid} - Exchange filled: {filled_amount}, "
+                        f"Local filled: {pending.filled_size}. Syncing..."
+                    )
+                    # Update to exchange's value (we can't reconstruct weighted avg, so use current)
+                    pending.filled_size = filled_amount
+                
+                # Check order status for cancellations/failures
+                status = order.get("status", "")
+                
+                # Canceled statuses from Order model
+                canceled_statuses = [
+                    "canceled",
+                    "canceled-post-only",
+                    "canceled-reduce-only", 
+                    "canceled-position-not-allowed",
+                    "canceled-margin-not-allowed",
+                    "canceled-too-much-slippage",
+                    "canceled-not-enough-liquidity",
+                    "canceled-self-trade",
+                    "canceled-expired",
+                    "canceled-oco",
+                    "canceled-child",
+                    "canceled-liquidation",
+                    "canceled-invalid-balance"
+                ]
+                
+                if status in canceled_statuses:
+                    logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
+                    
+                    # Remove from pending
+                    del self.pending_orders[cloid]
+                    
+                    # Notify strategy of failure
+                    try:
+                        self.strategy.on_order_failed(cloid, self.ctx)
+                    except Exception as e:
+                        logger.error(f"Strategy on_order_failed error: {e}")
+                    
+                    # Mark as completed to prevent reprocessing
+                    self.completed_cloids.add(cloid)
+                
+            except Exception as e:
+                logger.error(f"Error reconciling order: {e}, order data: {order}")
+        
+        # ===== STEP 3: Clean Up Orphaned Entries =====
+        # If an order is in pending_orders but NOT in the current orders array,
+        # and NOT in completed_cloids, it disappeared (likely filled or canceled)
+        for cloid in list(self.pending_orders.keys()):
+            if cloid not in current_order_cloids and cloid not in self.completed_cloids:
+                logger.warning(
+                    f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders. "
+                    f"Filled: {self.pending_orders[cloid].filled_size}/"
+                    f"{self.pending_orders[cloid].target_size}. Removing from pending."
+                )
+                del self.pending_orders[cloid]
 
     
     async def process_order_queue(self):
