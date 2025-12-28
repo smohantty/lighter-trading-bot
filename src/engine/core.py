@@ -307,7 +307,7 @@ class Engine:
         logger.info("Stopping Engine...")
         self.running = False
         self._shutdown_event.set()
-        if self.ws_client and hasattr(self.ws_client, 'stop'):
+        if self.ws_client:
             self.ws_client.stop()
 
     async def _load_markets(self):
