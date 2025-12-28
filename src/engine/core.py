@@ -120,6 +120,9 @@ class Engine:
                 if msg_type == "order_book":
                     # data is the order book state
                     await self._handle_order_book_msg(target_id, data)
+                elif msg_type == "mid_price":
+                    # data is the mid price float
+                    await self._handle_mid_price_msg(target_id, data)
                 elif msg_type == "account":
                     # data is the account update
                     await self._handle_account_msg(target_id, data)
@@ -130,32 +133,22 @@ class Engine:
                 await asyncio.sleep(1)
 
     async def _handle_order_book_msg(self, market_id: str, order_book: dict):
+        # We still store the order book state if needed, but we don't trigger ticks here
+        # as the SDK now sends dedicated mid_price messages.
+        pass
+
+    async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
         if not symbol or symbol != self.config.symbol:
             return
 
-        bids = order_book.get('bids', [])
-        asks = order_book.get('asks', [])
-        
-        best_bid = float(bids[0]['price']) if bids else 0.0
-        best_ask = float(asks[0]['price']) if asks else 0.0
-        
-        mid_price = 0.0
-        if best_bid > 0 and best_ask > 0:
-            mid_price = (best_bid + best_ask) / 2.0
-        elif best_bid > 0:
-            mid_price = best_bid
-        elif best_ask > 0:
-            mid_price = best_ask
-            
-        if mid_price > 0:
-            if self.ctx:
-                try:
-                    self.strategy.on_tick(mid_price, self.ctx)
-                    await self.process_order_queue()
-                except Exception as e:
-                    logger.error(f"Strategy Error on_tick: {e}")
+        if self.ctx:
+            try:
+                self.strategy.on_tick(mid_price, self.ctx)
+                await self.process_order_queue()
+            except Exception as e:
+                logger.error(f"Strategy Error on_tick (mid_price): {e}")
 
     async def _handle_account_msg(self, account_id: str, account_data: dict):
         # Process fills or balance updates if needed
