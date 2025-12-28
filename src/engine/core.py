@@ -108,9 +108,11 @@ class Engine:
             order_book_ids=[market_id],
             account_ids=[self.account_index],
             queue=self.event_queue,
-            auth_token=auth_token,
-            signer_client=self.signer_client  # For token refresh on reconnect
+            auth_token=auth_token
         )
+        
+        # Start periodic auth token refresh task (every 7 hours)
+        self.auth_refresh_task = None
 
     async def _message_processor(self):
         logger.info("Message Processor Started...")
@@ -205,6 +207,29 @@ class Engine:
                 
         except Exception as e:
             logger.error(f"Failed to fetch account balances: {e}")
+    
+    async def _refresh_auth_token_periodically(self):
+        """Refresh auth token every 7 hours to prevent expiry."""
+        while True:
+            try:
+                await asyncio.sleep(7 * 60 * 60)  # 7 hours
+                
+                logger.info("Refreshing auth token...")
+                auth_token, error = self.signer_client.create_auth_token_with_expiry(
+                    deadline=8 * 60 * 60  # 8 hours
+                )
+                
+                if error:
+                    logger.error(f"Failed to refresh auth token: {error}")
+                else:
+                    self.ws_client.update_auth_token(auth_token)
+                    logger.info("Auth token refreshed successfully")
+                    
+            except asyncio.CancelledError:
+                logger.info("Auth token refresh task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in auth token refresh: {e}")
             raise
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
@@ -720,7 +745,8 @@ class Engine:
         if self.ws_client:
             tasks = [
                 asyncio.create_task(self.ws_client.run_async()),
-                asyncio.create_task(self._message_processor())
+                asyncio.create_task(self._message_processor()),
+                asyncio.create_task(self._refresh_auth_token_periodically())
             ]
             
             try:
