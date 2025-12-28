@@ -233,8 +233,8 @@ class Engine:
         Accumulates partial fills and only notifies strategy when order is fully filled.
         """
         # Debug: Dump the raw account message to see what we're receiving
-        logger.debug(f"[ACCOUNT_MSG] Raw message keys: {list(account_data.keys())}")
-        logger.debug(f"[ACCOUNT_MSG] Full message: {json.dumps(account_data, indent=2)}")
+        logger.info(f"[ACCOUNT_MSG] Raw message keys: {list(account_data.keys())}")
+        logger.info(f"[ACCOUNT_MSG] Full message: {json.dumps(account_data, indent=2)}")
         
         # Account data structure from Lighter WS:
         # {
@@ -390,113 +390,41 @@ class Engine:
             except Exception as e:
                 logger.error(f"Error processing fill: {e}, fill data: {fill}")
 
-        # ===== STEP 2: Reconcile with Current Order State =====
-        # Process orders array to handle cancellations, sync state, and clean up
-        orders = account_data.get("orders", [])
+        # ===== STEP 2: Reconciliation Note =====
+        # Lighter's WebSocket does NOT send an 'orders' array in account updates.
+        # We only get 'fills', 'assets', 'positions', 'trades', etc.
+        # Therefore, we rely on:
+        # 1. Fill events for tracking order progress
+        # 2. Grace period to prevent premature cleanup
+        # 3. Periodic REST API calls (if needed) for full reconciliation
         
-        # Debug: Log how many orders we received
-        logger.info(f"[ORDER_RECONCILE] Received {len(orders)} orders from exchange")
+        # For now, we keep pending_orders until:
+        # - They are fully filled (via fills processing above)
+        # - They age out beyond grace period AND we haven't seen fills
         
-        # Track which orders are currently open on the exchange
-        # Build this set FIRST, before any processing
-        current_order_cloids = set()
-        for order in orders:
-            client_order_index = order.get("client_order_index")
-            if client_order_index:
-                current_order_cloids.add(Cloid(client_order_index))
+        # ===== STEP 3: Clean Up Stale Orders =====
+        # Remove orders that are very old and haven't had any fills
+        # This handles cases where orders were rejected/canceled but we missed the event
+        STALE_ORDER_TIMEOUT = 300.0  # 5 minutes
+        current_time = time.time()
         
-        logger.info(f"[ORDER_RECONCILE] Current exchange orders: {len(current_order_cloids)}, Pending local: {len(self.pending_orders)}")
-        
-        # Now process orders for reconciliation
-        for order in orders:
-            try:
-                client_order_index = order.get("client_order_index")
-                if not client_order_index:
-                    continue
-                
-                cloid = Cloid(client_order_index)
-                
-                # Only process if we're tracking this order
-                if cloid not in self.pending_orders:
-                    continue
-                
+        for cloid in list(self.pending_orders.keys()):
+            if cloid not in self.completed_cloids:
                 pending = self.pending_orders[cloid]
+                order_age = current_time - pending.created_at
                 
-                # Sync filled amount (handles missed fill events)
-                filled_amount_str = order.get("filled_base_amount", "0")
-                filled_amount = float(filled_amount_str) if filled_amount_str else 0.0
-                
-                # If exchange shows more filled than we have, we missed some fills
-                if filled_amount > pending.filled_size:
+                # Only remove if order is very old (5+ minutes) with no fills
+                if order_age > STALE_ORDER_TIMEOUT and pending.filled_size == 0.0:
                     logger.warning(
-                        f"[ORDER_SYNC] {cloid} - Exchange filled: {filled_amount}, "
-                        f"Local filled: {pending.filled_size}. Syncing..."
+                        f"[ORDER_STALE] {cloid} - No fills after {order_age:.0f}s. "
+                        f"Likely rejected/canceled. Removing from pending."
                     )
-                    # Update to exchange's value (we can't reconstruct weighted avg, so use current)
-                    pending.filled_size = filled_amount
-                
-                # Check order status for cancellations/failures
-                status = order.get("status", "")
-                
-                # Canceled statuses from Order model
-                canceled_statuses = [
-                    "canceled",
-                    "canceled-post-only",
-                    "canceled-reduce-only", 
-                    "canceled-position-not-allowed",
-                    "canceled-margin-not-allowed",
-                    "canceled-too-much-slippage",
-                    "canceled-not-enough-liquidity",
-                    "canceled-self-trade",
-                    "canceled-expired",
-                    "canceled-oco",
-                    "canceled-child",
-                    "canceled-liquidation",
-                    "canceled-invalid-balance"
-                ]
-                
-                if status in canceled_statuses:
-                    logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
-                    
-                    # Remove from pending
                     del self.pending_orders[cloid]
-                    
-                    # Notify strategy of failure
+                    # Optionally notify strategy
                     try:
                         self.strategy.on_order_failed(cloid, self.ctx)
                     except Exception as e:
                         logger.error(f"Strategy on_order_failed error: {e}")
-                    
-                    # Mark as completed to prevent reprocessing
-                    self.completed_cloids.add(cloid)
-                
-            except Exception as e:
-                logger.error(f"Error reconciling order: {e}, order data: {order}")
-        
-        # ===== STEP 3: Clean Up Orphaned Entries =====
-        # If an order is in pending_orders but NOT in the current orders array,
-        # and NOT in completed_cloids, it disappeared (likely filled or canceled)
-        # BUT: Give newly placed orders a grace period (5 seconds) to appear in the order book
-        GRACE_PERIOD_SECONDS = 5.0
-        current_time = time.time()
-        
-        for cloid in list(self.pending_orders.keys()):
-            if cloid not in current_order_cloids and cloid not in self.completed_cloids:
-                pending = self.pending_orders[cloid]
-                order_age = current_time - pending.created_at
-                
-                # Only remove if order is older than grace period
-                if order_age > GRACE_PERIOD_SECONDS:
-                    logger.warning(
-                        f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders after {order_age:.1f}s. "
-                        f"Filled: {pending.filled_size}/{pending.target_size}. Removing from pending."
-                    )
-                    del self.pending_orders[cloid]
-                else:
-                    logger.debug(
-                        f"[ORDER_GRACE_PERIOD] {cloid} - Not yet in exchange orders, "
-                        f"but only {order_age:.1f}s old. Waiting..."
-                    )
 
 
 
