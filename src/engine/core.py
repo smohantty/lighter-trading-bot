@@ -391,7 +391,7 @@ class Engine:
         orders = account_data.get("orders", [])
         
         # Debug: Log how many orders we received
-        logger.debug(f"[ORDER_RECONCILE] Received {len(orders)} orders from exchange")
+        logger.info(f"[ORDER_RECONCILE] Received {len(orders)} orders from exchange")
         
         # Track which orders are currently open on the exchange
         # Build this set FIRST, before any processing
@@ -401,7 +401,7 @@ class Engine:
             if client_order_index:
                 current_order_cloids.add(Cloid(client_order_index))
         
-        logger.debug(f"[ORDER_RECONCILE] Current exchange orders: {len(current_order_cloids)}, Pending local: {len(self.pending_orders)}")
+        logger.info(f"[ORDER_RECONCILE] Current exchange orders: {len(current_order_cloids)}, Pending local: {len(self.pending_orders)}")
         
         # Now process orders for reconciliation
         for order in orders:
@@ -472,14 +472,28 @@ class Engine:
         # ===== STEP 3: Clean Up Orphaned Entries =====
         # If an order is in pending_orders but NOT in the current orders array,
         # and NOT in completed_cloids, it disappeared (likely filled or canceled)
+        # BUT: Give newly placed orders a grace period (5 seconds) to appear in the order book
+        GRACE_PERIOD_SECONDS = 5.0
+        current_time = time.time()
+        
         for cloid in list(self.pending_orders.keys()):
             if cloid not in current_order_cloids and cloid not in self.completed_cloids:
-                logger.warning(
-                    f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders. "
-                    f"Filled: {self.pending_orders[cloid].filled_size}/"
-                    f"{self.pending_orders[cloid].target_size}. Removing from pending."
-                )
-                del self.pending_orders[cloid]
+                pending = self.pending_orders[cloid]
+                order_age = current_time - pending.created_at
+                
+                # Only remove if order is older than grace period
+                if order_age > GRACE_PERIOD_SECONDS:
+                    logger.warning(
+                        f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders after {order_age:.1f}s. "
+                        f"Filled: {pending.filled_size}/{pending.target_size}. Removing from pending."
+                    )
+                    del self.pending_orders[cloid]
+                else:
+                    logger.debug(
+                        f"[ORDER_GRACE_PERIOD] {cloid} - Not yet in exchange orders, "
+                        f"but only {order_age:.1f}s old. Waiting..."
+                    )
+
 
 
     
@@ -542,7 +556,8 @@ class Engine:
                     weighted_avg_px=0.0,
                     accumulated_fees=0.0,
                     reduce_only=order.reduce_only,
-                    oid=None  # Will be set when we get confirmation
+                    oid=None,  # Will be set when we get confirmation
+                    created_at=time.time()  # Track when order was placed
                 )
                 
                 info = self.ctx.market_info(order.symbol)

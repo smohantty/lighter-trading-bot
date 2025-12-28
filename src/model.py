@@ -61,6 +61,7 @@ class PendingOrder:
     accumulated_fees: float = 0.0
     reduce_only: bool = False
     oid: Optional[int] = None
+    created_at: float = 0.0  # Timestamp when order was placed
 
 
 @dataclass
