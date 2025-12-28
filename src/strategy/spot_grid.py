@@ -385,7 +385,7 @@ class SpotGridStrategy(Strategy):
             self.config.grid_type, self.config.lower_price, self.config.upper_price, self.config.grid_count
          )
          
-         uptime = common.format_uptime(time.monotonic() - self.start_time) # Need timedelta logic but passing float likely fails if common expects timedelta.
+
          # Actually common.format_uptime expects timedelta.
          from datetime import timedelta
          uptime_str = common.format_uptime(timedelta(seconds=time.monotonic() - self.start_time))

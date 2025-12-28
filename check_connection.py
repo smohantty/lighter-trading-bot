@@ -26,7 +26,7 @@ async def main():
         logger.error("Ensure .env and wallet_config.json are set up correctly.")
         return
 
-    config_account_index = int(exchange_config.wallet_address)
+    config_account_index = exchange_config.account_index
     logger.info(f"Target Account Index: {config_account_index}")
     logger.info(f"Using Private Key: {exchange_config.private_key[:6]}... (masked)")
 

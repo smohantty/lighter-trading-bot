@@ -30,7 +30,7 @@ def check_trigger(current_price: float, trigger_price: float, start_price: float
     return False
 
 def calculate_grid_prices(grid_type: GridType, lower_price: float, upper_price: float, grid_count: int) -> List[float]:
-    prices = []
+    prices: List[float] = []
     if grid_count <= 1:
         return prices
     

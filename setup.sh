@@ -32,17 +32,3 @@ if [ ! -f ".env" ]; then
     cp .env.example .env
 fi
 
-if [ ! -f "wallet_config.json" ]; then
-    echo "Creating wallet_config.json template..."
-    # We already created a template in previous step, but good to have check
-    echo '{
-  "master_account_address": "0xYourMasterAddress",
-  "agent_private_key": {
-    "mainnet": "0xYourMainnetKey",
-    "testnet": "0xYourTestnetKey"
-  }
-}' > wallet_config.json
-fi
-
-echo "Setup Complete!"
-echo "Please edit 'wallet_config.json' and 'config.yaml' before running."

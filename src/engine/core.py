@@ -55,8 +55,8 @@ class Engine:
         self.api_client = lighter.ApiClient() 
         
         # 2. Fetch Account Index (Already in Config)
-        if self.exchange_config.wallet_address.isdigit():
-            self.account_index = int(self.exchange_config.wallet_address)
+        if self.exchange_config.account_index > 0:
+            self.account_index = self.exchange_config.account_index
             logger.info(f"Using Account Index from Config: {self.account_index}")
         else:
              # Legacy or address provided?
@@ -70,7 +70,7 @@ class Engine:
             if isinstance(account_info, dict):
                 self.account_index = int(account_info['index'])
             else:
-                self.account_index = int(account_info.index)
+                self.account_index = int(account_info.index) # type: ignore
             logger.info(f"Account Index: {self.account_index}")
         except Exception as e:
             logger.error(f"Failed to fetch account info: {e}")
@@ -79,6 +79,7 @@ class Engine:
         # 3. Setup Signer Client
         # Using configured API Key Index
         self.signer_client = lighter.SignerClient(
+            url=self.exchange_config.base_url,
             account_index=self.account_index,
             api_private_keys={self.exchange_config.api_key_index: self.exchange_config.private_key}
         )
@@ -86,13 +87,25 @@ class Engine:
         # 4. Load Metadata (Markets)
         logger.info("Loading Market Metadata...")
         order_api = lighter.OrderApi(self.api_client)
-        order_books = await order_api.order_books()
+        order_books_result = await order_api.order_books()
+        # Mypy/SDK: returns (order_books, headers) or similar tuple?
+        # If tuple, take first element.
+        if isinstance(order_books_result, tuple):
+             order_books = order_books_result[0]
+        else:
+             order_books = order_books_result
         
         markets_info = {}
         
         # Handle order_books structure.
         # It might be list of dicts.
-        for ob in order_books:
+        if isinstance(order_books, dict):
+             iterator = order_books.values()
+        else:
+             iterator = order_books
+
+        for ob_raw in iterator:
+            ob: Any = ob_raw
             # Struct: {'id': 0, 'symbol': 'ETH-USDC', 'price_precision': 2, 'size_precision': 4, ...}
             # Need to verify actual fields.
             # Assuming 'symbol' and 'id'.
@@ -163,8 +176,8 @@ class Engine:
         # Handle Tick
         # order_book has 'asks', 'bids'.
         # Calculate Mid Price
-        market_id = int(market_id)
-        symbol = self.reverse_market_map.get(market_id)
+        market_id_int = int(market_id)
+        symbol = self.reverse_market_map.get(market_id_int)
         if not symbol or symbol != self.config.symbol:
             return
 
@@ -183,14 +196,17 @@ class Engine:
             mid_price = best_ask
             
         if mid_price > 0:
-            if self.ctx and self.ctx.market_info(symbol):
-                self.ctx.market_info(symbol).last_price = mid_price
+            if self.ctx:
+                info = self.ctx.market_info(symbol)
+                if info:
+                    info.last_price = mid_price
                 
             # Run Strategy Tick
             try:
-                self.strategy.on_tick(mid_price, self.ctx)
-                # Ensure pending orders are processed
-                asyncio.create_task(self.process_order_queue())
+                if self.ctx:
+                    self.strategy.on_tick(mid_price, self.ctx)
+                    # Ensure pending orders are processed
+                    asyncio.create_task(self.process_order_queue())
             except Exception as e:
                 logger.error(f"Strategy Error on_tick: {e}")
 
@@ -233,9 +249,13 @@ class Engine:
                 logger.error(f"Market ID not found for {order.symbol}")
                 continue
                 
-            nonce_res = await self.signer_client.nonce_manager.next_nonce() # Need async? nonce_manager.next_nonce() is sync in SDK?
-            # Review SDK: client.nonce_manager.next_nonce() returns (api_key_index, nonce)
-            # It might be sync.
+            if not self.signer_client:
+                logger.error("Signer client not initialized")
+                continue
+            
+            # nonce_manager.next_nonce() might return tuple (index, nonce)
+            # Review SDK or assuming it returns (api_key_index, nonce)
+            # Mypy checks:
             api_key_index, nonce = self.signer_client.nonce_manager.next_nonce()
             
             error = None
@@ -247,14 +267,19 @@ class Engine:
                     self.cloid_to_index[order.cloid] = client_order_index
                     self.index_to_cloid[client_order_index] = order.cloid
                 
+                info = self.ctx.market_info(order.symbol)
+                if not info:
+                     logger.error(f"Market info not found for {order.symbol}")
+                     continue
+
                 tx_type, tx_info, _, error = self.signer_client.sign_create_order(
                     market_index=market_id,
                     client_order_index=client_order_index,
-                    base_amount=int(order.sz * (10**self.ctx.market_info(order.symbol).sz_decimals)), # Convert to Atomic Units?
-                    price=int(order.price * (10**self.ctx.market_info(order.symbol).price_decimals)), # Convert
+                    base_amount=int(order.sz * (10**info.sz_decimals)), # Convert to Atomic Units?
+                    price=int(order.price * (10**info.price_decimals)), # Convert
                     is_ask=order.side.is_sell(),
-                    order_type=self.signer_client.ORDER_TYPE_LIMIT,
-                    time_in_force=self.signer_client.ORDER_TIME_IN_FORCE_GOOD_TILL_CANCEL,
+                    order_type=1, # Limit
+                    time_in_force=200000, # GTC
                     reduce_only=order.reduce_only,
                     trigger_price=0,
                     nonce=nonce,
@@ -327,4 +352,5 @@ class Engine:
         logger.info("Engine Running...")
         
         # Start WS Loop
-        await self.ws_client.run_async()
+        if self.ws_client:
+            await self.ws_client.run_async()

@@ -61,7 +61,24 @@ class PerpGridSummary:
 
 @dataclass
 class SpotGridSummary:
-    # Placeholder for spot grid summary if needed
     symbol: str
+    price: float
+    state: str
+    uptime: str
+    position_size: float
+    position_side: str
+    avg_entry_price: float
+    realized_pnl: float
+    unrealized_pnl: float
+    total_fees: float
+    leverage: int
+    grid_bias: str
+    grid_count: int
+    range_low: float
+    range_high: float
+    grid_spacing_pct: float
+    roundtrips: int
+    margin_balance: float
+    initial_entry_price: Optional[float]
 
 StrategySummary = Union[PerpGridSummary, SpotGridSummary]

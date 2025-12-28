@@ -70,7 +70,7 @@ class StrategyContext:
         self.cancellation_queue.append(cloid)
 
     def generate_cloid(self) -> Cloid:
-        return Cloid.new_random()
+        return Cloid.new_random() # type: ignore
 
     def update_spot_balance(self, asset: str, total: float, available: float):
         self.spot_balances[asset] = Balance(total=total, available=available)

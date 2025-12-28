@@ -103,9 +103,14 @@ class PerpGridStrategy(Strategy):
             upper = prices[i+1]
             mid_price = (lower + upper) / 2.0
 
-            market_info = ctx.market_info(self.config.symbol) # Should exist
+            info = ctx.market_info(self.config.symbol)
+            if not info:
+                logger.error(f"Market info for {self.config.symbol} not available during zone creation.")
+                # Depending on desired behavior, could raise error or skip zone
+                continue # Skip this zone if market info is missing
+            
             raw_size = investment_per_zone / mid_price
-            size = market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
+            size = info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
 
             # Zone classification
             if self.config.grid_bias == GridBias.LONG:
@@ -146,6 +151,9 @@ class PerpGridStrategy(Strategy):
             cloid = ctx.generate_cloid()
             
             market_info = ctx.market_info(self.config.symbol)
+            if not market_info:
+                 logger.error(f"Market info not found for {self.config.symbol}")
+                 return
             market_price = market_info.last_price
             side = OrderSide.BUY if total_position_required > 0.0 else OrderSide.SELL
 
@@ -231,11 +239,19 @@ class PerpGridStrategy(Strategy):
 
                 logger.info(f"[ORDER_REQUEST] [PERP_GRID] GRID_LVL_{idx}: LIMIT {side} {size} {self.config.symbol} @ {price}{' (RO)' if reduce_only else ''}")
 
+                info = ctx.market_info(self.config.symbol)
+                if not info:
+                    logger.error(f"Market info not found for {self.config.symbol}")
+                    continue
+                
+                price = info.round_price(price)
+                size = info.round_size(size)
+
                 ctx.place_order(LimitOrderRequest(
                     symbol=self.config.symbol,
                     side=side,
-                    price=market_info.round_price(price),
-                    sz=market_info.round_size(size),
+                    price=price,
+                    sz=size,
                     reduce_only=reduce_only,
                     cloid=cloid
                 ))

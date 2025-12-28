@@ -68,8 +68,9 @@ class WalletConfig:
 @dataclass
 class ExchangeConfig:
     private_key: str
-    wallet_address: str
     network: str
+    wallet_address: str  # L1 Address (String)
+    account_index: int   # Account Index (Integer)
     base_url: str = "https://api.lighter.xyz"
     api_key_index: int = 0
     master_account_address: str = ""
@@ -103,6 +104,17 @@ class ExchangeConfig:
             if not base_url:
                 base_url = "https://api.lighter.xyz" if network == "mainnet" else "https://testnet.zklighter.elliot.ai"
 
+            # Assuming we only have index stored, so wallet_address in config might be legacy or just redundant if we have masterAddress?
+            # User wants strong typing. 
+            # If wallet_address was storing index before, we now store it in account_index.
+            # We can use master_account_address as the 'wallet_address' (L1 Address) if appropriate, 
+            # or keep wallet_address as a potentially empty string if not strictly needed by Engine for now 
+            # (Engine uses it to fetch index if index is missing, but now we have index).
+            # Let's populate wallet_address with str(account_index) for legacy compat OR master_account_address if set.
+            # Ideally: wallet_address = master_account_address.
+            
+            wallet_address = master_account_address or str(account_index)
+
             private_keys = {int(k): v for k, v in data["agentApiKeys"].items()}
             
             # Use Key Index 0 by default for single-key setup, or first available
@@ -117,7 +129,8 @@ class ExchangeConfig:
 
             return ExchangeConfig(
                 private_key=private_key, 
-                wallet_address=str(account_index), 
+                wallet_address=wallet_address,
+                account_index=account_index,
                 network=network, 
                 base_url=base_url, 
                 api_key_index=api_key_index,
@@ -127,7 +140,10 @@ class ExchangeConfig:
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
 
-def load_config(path: str) -> Union[SpotGridConfig, PerpGridConfig]:
+Config = Union[SpotGridConfig, PerpGridConfig]
+StrategyConfig = Config
+
+def load_config(path: str) -> Config:
     with open(path, "r") as f:
         data = yaml.safe_load(f)
     
@@ -138,14 +154,14 @@ def load_config(path: str) -> Union[SpotGridConfig, PerpGridConfig]:
         data["grid_type"] = GridType(data["grid_type"])
     
     if strategy_type == "spot_grid":
-        cfg = SpotGridConfig(**data)
-        cfg.validate()
-        return cfg
+        spot_cfg = SpotGridConfig(**data)
+        spot_cfg.validate()
+        return spot_cfg
     elif strategy_type == "perp_grid":
         if "grid_bias" in data:
             data["grid_bias"] = GridBias(data["grid_bias"])
-        cfg = PerpGridConfig(**data)
-        cfg.validate()
-        return cfg
+        perp_cfg = PerpGridConfig(**data)
+        perp_cfg.validate()
+        return perp_cfg
     else:
         raise ValueError(f"Unknown strategy type: {strategy_type}")
