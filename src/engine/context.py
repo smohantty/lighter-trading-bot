@@ -3,11 +3,8 @@ from dataclasses import dataclass, field
 import math
 from src.model import Cloid, OrderRequest, CancelOrderRequest
 
-MIN_NOTIONAL_VALUE = 11.0 # USD
-
 def round_to_decimals(value: float, decimals: int) -> float:
-    factor = 10.0 ** decimals
-    return round(value * factor) / factor
+    return round(value, decimals)
 
 
 @dataclass
