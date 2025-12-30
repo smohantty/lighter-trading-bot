@@ -34,9 +34,6 @@ def calculate_grid_prices(grid_type: GridType, lower_price: float, upper_price: 
     if grid_count <= 1:
         return prices
     
-    # Rust uses grid_count as number of levels? Yes. 
-    # Rust: (grid_count as f64 - 1.0)
-    
     n_minus_1 = float(grid_count - 1)
     
     if grid_type == GridType.ARITHMETIC:
@@ -54,7 +51,6 @@ def calculate_grid_prices(grid_type: GridType, lower_price: float, upper_price: 
     return prices
 
 def calculate_grid_spacing_pct(grid_type: GridType, lower_price: float, upper_price: float, grid_count: int) -> Tuple[float, float]:
-    n = float(grid_count)
     n = float(grid_count)
     
     if grid_type == GridType.GEOMETRIC:
