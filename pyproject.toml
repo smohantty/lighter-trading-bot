@@ -6,7 +6,8 @@ requires-python = ">=3.10"
 dependencies = [
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
-    "lighter-sdk @ git+https://github.com/smohantty/lighter-python.git"
+    "lighter-sdk @ git+https://github.com/smohantty/lighter-python.git",
+    "websockets>=15.0.1",
 ]
 
 [dependency-groups]

@@ -1005,6 +1005,7 @@ dependencies = [
     { name = "lighter-sdk" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -1020,6 +1021,7 @@ requires-dist = [
     { name = "lighter-sdk", git = "https://github.com/smohantty/lighter-python.git" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [package.metadata.requires-dev]

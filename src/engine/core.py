@@ -11,6 +11,8 @@ from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, GridState
+from src.broadcast.server import StatusBroadcaster
+import src.broadcast.types as btypes
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,11 @@ logger = logging.getLogger(__name__)
 RECONNECT_DELAY = 5.0
 
 class Engine:
-    def __init__(self, config: StrategyConfig, exchange_config: ExchangeConfig, strategy: Strategy):
+    def __init__(self, config: StrategyConfig, exchange_config: ExchangeConfig, strategy: Strategy, broadcaster: Optional[StatusBroadcaster] = None):
         self.config = config
         self.exchange_config = exchange_config
         self.strategy = strategy
+        self.broadcaster = broadcaster
         
         self.ctx: Optional[StrategyContext] = None
         self.market_map: Dict[str, int] = {} # Symbol -> MarketID
@@ -111,6 +114,25 @@ class Engine:
             auth_token=auth_token
         )
         
+        if self.broadcaster:
+            # Broadcast Config and Info
+            # Convert config to dict via json dump/load to handle custom types if any
+            # Or assume to_dict/dict() works
+            # We use json default serializer if needed, but config object should be standard
+            try:
+                # Basic config dump
+                config_json = json.loads(json.dumps(self.config.__dict__, default=str))
+                # Add decimals from market info
+                if target_symbol in self.markets:
+                    m = self.markets[target_symbol]
+                    config_json["sz_decimals"] = m.size_decimals
+                    config_json["px_decimals"] = m.price_decimals
+
+                self.broadcaster.send(btypes.config_event(config_json))
+                self.broadcaster.send(btypes.info_event(self.exchange_config.base_url)) # Using URL as Network proxy
+            except Exception as e:
+                logger.error(f"Failed to broadcast initial config: {e}")
+
         # Start periodic auth token refresh task (every 7 hours)
         self.auth_refresh_task = None
 
@@ -229,6 +251,37 @@ class Engine:
                 logger.error(f"Error in auth token refresh: {e}")
             raise
 
+    async def _broadcast_summary_loop(self):
+        """Broadcasts strategy summary and grid state every 1 second."""
+        if not self.broadcaster:
+            return
+            
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                if not self.ctx or not self.strategy:
+                    continue
+                
+                # Summary
+                summary = self.strategy.get_summary(self.ctx)
+                if summary:
+                    # Determine type
+                    if hasattr(summary, "leverage"): # Perp
+                        self.broadcaster.send(btypes.perp_grid_summary_event(summary))
+                    else:
+                        self.broadcaster.send(btypes.spot_grid_summary_event(summary))
+                
+                # Grid State
+                grid_state = self.strategy.get_grid_state(self.ctx)
+                if grid_state:
+                    self.broadcaster.send(btypes.grid_state_event(grid_state))
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in broadcast loop: {e}")
+                await asyncio.sleep(5.0)
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -255,6 +308,9 @@ class Engine:
             
             #logger.info(f"Price Update: {symbol} @ ${rounded_price:.{market_info.price_decimals}f}")
             
+            if self.broadcaster:
+                self.broadcaster.send(btypes.market_update_event(btypes.MarketEvent(price=rounded_price)))
+
             try:
                 self.strategy.on_tick(rounded_price, self.ctx)
                 await self.process_order_queue()
@@ -303,6 +359,18 @@ class Engine:
                     if order_index and not pending.oid:
                         pending.oid = order_index
                         logger.info(f"[ORDER_TRACKING] Linked CLOID {cloid} -> OID {pending.oid}")
+                        
+                        if self.broadcaster:
+                             self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
+                                 oid=order_index,
+                                 cloid=str(cloid),
+                                 side="UNKNOWN", # We don't have side in this message easily without lookup
+                                 price=0.0,
+                                 size=pending.target_size,
+                                 status="OPEN",
+                                 fee=0.0,
+                                 is_taker=False
+                             )))
                     
 
                     
@@ -320,6 +388,19 @@ class Engine:
                     
                     if status in canceled_statuses:
                         logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
+                        
+                        if self.broadcaster:
+                             self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
+                                 oid=pending.oid or 0,
+                                 cloid=str(cloid),
+                                 side="UNKNOWN",
+                                 price=0.0,
+                                 size=pending.filled_size,
+                                 status="CANCELED",
+                                 fee=0.0,
+                                 is_taker=False
+                             )))
+
                         del self.pending_orders[cloid]
                         
                         try:
@@ -436,6 +517,18 @@ class Engine:
                             logger.info(
                                 f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees})"
                             )
+                            
+                            if self.broadcaster:
+                                self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
+                                    oid=pending.oid or 0,
+                                    cloid=str(cloid),
+                                    side=str(side),
+                                    price=pending.weighted_avg_px,
+                                    size=pending.filled_size,
+                                    status="FILLED",
+                                    fee=pending.accumulated_fees,
+                                    is_taker=not is_maker
+                                )))
                             
                             final_px = pending.weighted_avg_px
                             final_sz = pending.filled_size
@@ -696,8 +789,12 @@ class Engine:
             tasks = [
                 asyncio.create_task(self.ws_client.run_async()),
                 asyncio.create_task(self._message_processor()),
-                asyncio.create_task(self._refresh_auth_token_periodically())
+                asyncio.create_task(self._refresh_auth_token_periodically()),
+                asyncio.create_task(self._broadcast_summary_loop())
             ]
+            
+            if self.broadcaster:
+                tasks.append(asyncio.create_task(self.broadcaster.start()))
             
             try:
                 await self._shutdown_event.wait()
@@ -724,6 +821,8 @@ class Engine:
         self._shutdown_event.set()
         if self.ws_client:
             self.ws_client.stop()
+        if self.broadcaster:
+            await self.broadcaster.stop()
 
     async def _load_markets(self):
         """

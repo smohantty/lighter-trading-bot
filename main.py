@@ -55,6 +55,10 @@ async def main():
         logger.error(f"Failed to load exchange config: {e}")
         return
 
+    # Init Broadcast
+    from src.broadcast.server import StatusBroadcaster
+    broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
+
     # Init Strategy
     if config.type == "perp_grid":
         strategy = PerpGridStrategy(config)
@@ -67,7 +71,7 @@ async def main():
         return
 
     # Init Engine
-    engine = Engine(config, exchange_config, strategy)
+    engine = Engine(config, exchange_config, strategy, broadcaster)
 
     # Setup Signal Handlers
     loop = asyncio.get_running_loop()
