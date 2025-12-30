@@ -62,6 +62,7 @@ class PendingOrder:
     reduce_only: bool = False
     oid: Optional[int] = None
     created_at: float = 0.0  # Timestamp when order was placed
+    price: float = 0.0
     side: Optional[OrderSide] = None
 
 

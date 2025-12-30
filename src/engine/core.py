@@ -404,7 +404,7 @@ class Engine:
                                  oid=order_index,
                                  cloid=str(cloid),
                                  side=str(pending.side) if pending.side else "UNKNOWN",
-                                 price=0.0,
+                                 price=pending.price,
                                  size=pending.target_size,
                                  status="OPEN",
                                  fee=0.0,
@@ -713,7 +713,8 @@ class Engine:
                     reduce_only=order.reduce_only,
                     oid=None,  # Will be set when we get confirmation
                     created_at=time.time(),  # Track when order was placed
-                    side=order.side
+                    side=order.side,
+                    price=order.price,
                 )
                 
                 info = self.ctx.market_info(order.symbol)

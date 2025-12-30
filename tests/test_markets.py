@@ -30,6 +30,9 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
             # Mock OrderApi and order_book_details response
             mock_order_api = MagicMock()
             mock_lighter.OrderApi.return_value = mock_order_api
+
+            # Mock create_auth_token_with_expiry
+            mock_signer.create_auth_token_with_expiry.return_value = ("fake_token", None)
             
             # Realistic structure provided by user
             fake_response_dict = {
