@@ -370,7 +370,7 @@ class Engine:
                 try:
                     # Match trade to our account to find CLOID and Side
                     # We need to handle account_id as int for comparison
-                    my_account_id_int = int(self.account_id.split(":")[-1]) # Handle "0x...:123" format or just "123"
+                    my_account_id_int = int(account_id.split(":")[-1]) # Handle "0x...:123" format or just "123"
                     
                     bid_account_id = int(fill.get("bid_account_id", -1))
                     ask_account_id = int(fill.get("ask_account_id", -1))
