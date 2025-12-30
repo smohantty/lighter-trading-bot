@@ -55,29 +55,7 @@ def calculate_grid_prices(grid_type: GridType, lower_price: float, upper_price: 
 
 def calculate_grid_spacing_pct(grid_type: GridType, lower_price: float, upper_price: float, grid_count: int) -> Tuple[float, float]:
     n = float(grid_count)
-    # Rust logic implementation seems slightly inconsistent with "grid_count - 1" levels vs segments? 
-    # Rust common.rs: let n = grid_count as f64;
-    # It divides space by n? 
-    # Actually wait. `calculate_grid_prices` uses `grid_count - 1`.
-    # `calculate_grid_spacing_pct` uses `grid_count`?
-    # Let's check Rust code again.
-    # line 99: let n = grid_count as f64;
-    # line 114: let spacing = (upper_price - lower_price) / n;
-    # That implies there are `n` zones if `grid_count` is the number of lines.
-    # Ah, implementation plan says `num_zones = self.config.grid_count as usize - 1;` in PerpGrid.
-    # So `grid_count` is number of lines (levels).
-    # Then spacing should be over `n - 1` segments if we look at price difference between levels.
-    # But `calculate_grid_spacing_pct` in Rust implementation uses `n`.
-    # Maybe it's an estimation or it's implicitly `grid_count` as "number of zones" in some contexts?
-    # But checking `calculate_grid_prices`, it definitely generates `grid_count` prices.
-    # The Rust code for spacing pct:
-    # 106: let ratio = (upper_price / lower_price).powf(1.0 / n);
-    # That would mean `n` intervals. So `grid_count` + 1 prices?
-    # No, if grid_count is lines, intervals = n - 1.
-    # Using `n` (grid_count) implies grid_count is treated as intervals here?
-    # I should copy the Rust implementation 1:1 regardless of correctness, unless it's obviously a bug I should fix and note.
-    # It seems like a minor discrepancy in the Rust code or I'm misinterpreting. 
-    # I will copy 1:1.
+    n = float(grid_count)
     
     if grid_type == GridType.GEOMETRIC:
         ratio = (upper_price / lower_price) ** (1.0 / n)
