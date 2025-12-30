@@ -121,14 +121,23 @@ class Engine:
             # We use json default serializer if needed, but config object should be standard
             try:
                 # Basic config dump
-                config_json = json.loads(json.dumps(self.config.__dict__, default=str))
+                # Custom serialization for Enums to match frontend schema (lowercase)
+                config_dict = self.config.__dict__.copy()
+                
+                # Convert Enums to lowercase strings explicitly
+                if "grid_type" in config_dict and hasattr(config_dict["grid_type"], "value"):
+                     config_dict["grid_type"] = str(config_dict["grid_type"].value).lower()
+                
+                if "grid_bias" in config_dict and hasattr(config_dict["grid_bias"], "value"):
+                     config_dict["grid_bias"] = str(config_dict["grid_bias"].value).lower()
+
                 # Add decimals from market info
                 if target_symbol in self.markets:
                     m = self.markets[target_symbol]
-                    config_json["sz_decimals"] = m.size_decimals
-                    config_json["px_decimals"] = m.price_decimals
+                    config_dict["sz_decimals"] = m.size_decimals
+                    config_dict["px_decimals"] = m.price_decimals
 
-                self.broadcaster.send(btypes.config_event(config_json))
+                self.broadcaster.send(btypes.config_event(config_dict))
                 self.broadcaster.send(btypes.info_event(self.exchange_config.base_url)) # Using URL as Network proxy
             except Exception as e:
                 logger.error(f"Failed to broadcast initial config: {e}")
