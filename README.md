@@ -100,7 +100,7 @@ The bot uses the `lighter-python` SDK directly from GitHub via `uv`.
 
 **To Update the SDK:**
 ```bash
-uv lock --upgrade-package lighter-python
+uv lock --upgrade-package lighter-sdk
 uv sync
 ```
 
