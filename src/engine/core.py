@@ -153,7 +153,7 @@ class Engine:
                 # Add decimals from market info
                 if target_symbol in self.markets:
                     m = self.markets[target_symbol]
-                    config_dict["sz_decimals"] = m.size_decimals
+                    config_dict["sz_decimals"] = m.sz_decimals
                     config_dict["px_decimals"] = m.price_decimals
 
                 self.broadcaster.send(btypes.config_event(config_dict))
