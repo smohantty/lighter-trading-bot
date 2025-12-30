@@ -14,3 +14,9 @@ wallet_config.json
 
 # Logs
 *.log
+
+# Packaging
+*.egg-info/
+dist/
+build/
+.uv/
