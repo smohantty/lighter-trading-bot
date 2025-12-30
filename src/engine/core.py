@@ -144,15 +144,12 @@ class Engine:
                 if msg_type == "mid_price":
                     # data is the mid price float
                     await self._handle_mid_price_msg(target_id, data)
-                elif msg_type == "account":
-                    # data is the account update
-                    await self._handle_account_msg(target_id, data)
-                elif msg_type == "orders":
+                elif msg_type == "open_orders":
                     # data is the orders update from account_all_orders channel
-                    await self._handle_orders_msg(target_id, data)
-                elif msg_type == "trades":
+                    await self._handle_open_orders_msg(target_id, data)
+                elif msg_type == "user_fills":
                     # data is the trades update from account_all_trades channel
-                    await self._handle_trades_msg(target_id, data)
+                    await self._handle_user_fills_msg(target_id, data)
                 
                 self.event_queue.task_done()
             except Exception as e:
@@ -269,206 +266,8 @@ class Engine:
             except Exception as e:
                 logger.error(f"Strategy Error on_tick (mid_price): {e}")
 
-    async def _handle_account_msg(self, account_id: str, account_data: dict):
-        """
-        Process account updates including order fills.
-        Accumulates partial fills and only notifies strategy when order is fully filled.
-        """
-        # Debug: Dump the raw account message to see what we're receiving
-        logger.info(f"[ACCOUNT_MSG] Raw message keys: {list(account_data.keys())}")
-        logger.info(f"[ACCOUNT_MSG] Full message: {json.dumps(account_data, indent=2)}")
-        
-        # Account data structure from Lighter WS:
-        # {
-        #   "type": "update/account_all" or "subscribed/account_all",
-        #   "channel": "account_all:<account_id>",
-        #   "fills": [...],  # List of fill events
-        #   "orders": [...], # Current open orders
-        #   ...
-        # }
-        
-        # ===== STEP 1: Process Fills =====
-        fills = account_data.get("fills", [])
-        
-        for fill in fills:
-            # Fill structure (example):
-            # {
-            #   "order_index": 12345,
-            #   "market_id": 1,
-            #   "price": "1.23",
-            #   "size": "10.5",
-            #   "fee": "0.01",
-            #   "is_buyer": true,
-            #   "timestamp": ...
-            # }
-            
-            try:
-                order_index = fill.get("order_index")
-                if not order_index:
-                    logger.warning(f"Fill missing order_index: {fill}")
-                    continue
-                
-                # order_index IS the Cloid (we use Cloid.as_int() as client_order_index)
-                cloid = Cloid(order_index)
 
-                
-                # Parse fill data
-                amount = float(fill.get("size", 0))
-                px = float(fill.get("price", 0))
-                fee = float(fill.get("fee", 0))
-                is_buyer = fill.get("is_buyer", True)
-                side = OrderSide.BUY if is_buyer else OrderSide.SELL
-                
-                if amount <= 0 or px <= 0:
-                    logger.warning(f"Invalid fill data: amount={amount}, px={px}")
-                    continue
-                
-                # Idempotency check
-                if cloid and cloid in self.completed_cloids:
-                    logger.info(f"Ignored duplicate fill for completed cloid: {cloid}")
-                    continue
-                
-                # Process fill
-                if cloid and cloid in self.pending_orders:
-                    # Accumulate partial fill
-                    pending = self.pending_orders[cloid]
-                    
-                    new_total_size = pending.filled_size + amount
-                    
-                    # Calculate weighted average price
-                    pending.weighted_avg_px = (
-                        pending.weighted_avg_px * pending.filled_size + px * amount
-                    ) / new_total_size
-                    
-                    pending.filled_size = new_total_size
-                    pending.accumulated_fees += fee
-                    
-                    # Check if fully filled (using 0.9999 threshold like Rust SDK)
-                    is_fully_filled = pending.filled_size >= pending.target_size * 0.9999
-                    
-                    if is_fully_filled:
-                        # Order is fully filled - notify strategy
-                        logger.info(
-                            f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees})"
-                        )
-                        
-                        final_px = pending.weighted_avg_px
-                        final_sz = pending.filled_size
-                        final_fee = pending.accumulated_fees
-                        pending_reduce_only = pending.reduce_only
-                        
-                        # Remove from pending
-                        del self.pending_orders[cloid]
-                        
-                        # Call strategy callback
-                        try:
-                            self.strategy.on_order_filled(
-                                OrderFill(
-                                    side=side,
-                                    size=final_sz,
-                                    price=final_px,
-                                    fee=final_fee,
-                                    cloid=cloid,
-                                    reduce_only=pending_reduce_only,
-                                    raw_dir=None
-                                ),
-                                self.ctx
-                            )
-                        except Exception as e:
-                            logger.error(f"Strategy on_order_filled error: {e}")
-                        
-                        # Mark as completed for idempotency
-                        self.completed_cloids.add(cloid)
-                    else:
-                        # Partial fill - log but don't notify strategy yet
-                        logger.info(
-                            f"[ORDER_FILL_PARTIAL] {side} {amount} @ {px} (Fee: {fee})"
-                        )
-                
-                elif cloid:
-                    # Untracked order (not in pending_orders) - notify immediately
-                    logger.info(
-                        f"[ORDER_FILL_UNTRACKED] {side} {amount} @ {px} (Fee: {fee})"
-                    )
-                    
-                    try:
-                        self.strategy.on_order_filled(
-                            OrderFill(
-                                side=side,
-                                size=amount,
-                                price=px,
-                                fee=fee,
-                                cloid=cloid,
-                                reduce_only=None,  # Unknown for untracked orders
-                                raw_dir=None
-                            ),
-                            self.ctx
-                        )
-                    except Exception as e:
-                        logger.error(f"Strategy on_order_filled error: {e}")
-                
-                else:
-                    # No cloid - log and notify immediately
-                    logger.info(
-                        f"[ORDER_FILL_NOCLID] {side} {amount} @ {px} (Fee: {fee})"
-                    )
-                    
-                    try:
-                        self.strategy.on_order_filled(
-                            OrderFill(
-                                side=side,
-                                size=amount,
-                                price=px,
-                                fee=fee,
-                                cloid=None,
-                                reduce_only=None,
-                                raw_dir=None
-                            ),
-                            self.ctx
-                        )
-                    except Exception as e:
-                        logger.error(f"Strategy on_order_filled error: {e}")
-                        
-            except Exception as e:
-                logger.error(f"Error processing fill: {e}, fill data: {fill}")
-
-        # ===== STEP 2: Reconciliation Note =====
-        # Lighter's WebSocket does NOT send an 'orders' array in account updates.
-        # We only get 'fills', 'assets', 'positions', 'trades', etc.
-        # Therefore, we rely on:
-        # 1. Fill events for tracking order progress
-        # 2. Grace period to prevent premature cleanup
-        # 3. Periodic REST API calls (if needed) for full reconciliation
-        
-        # For now, we keep pending_orders until:
-        # - They are fully filled (via fills processing above)
-        # - They age out beyond grace period AND we haven't seen fills
-        
-        # ===== STEP 3: Clean Up Stale Orders =====
-        # Remove orders that are very old and haven't had any fills
-        # This handles cases where orders were rejected/canceled but we missed the event
-        STALE_ORDER_TIMEOUT = 300.0  # 5 minutes
-        current_time = time.time()
-        
-        for cloid in list(self.pending_orders.keys()):
-            if cloid not in self.completed_cloids:
-                pending = self.pending_orders[cloid]
-                order_age = current_time - pending.created_at
-                
-                # Only remove if order is very old (5+ minutes) with no fills
-                if order_age > STALE_ORDER_TIMEOUT and pending.filled_size == 0.0:
-                    logger.warning(
-                        f"[ORDER_STALE] {cloid} - No fills after {order_age:.0f}s. "
-                        f"Likely rejected/canceled. Removing from pending."
-                    )
-                    del self.pending_orders[cloid]
-                    # Optionally notify strategy
-                    try:
-                        self.strategy.on_order_failed(cloid, self.ctx)
-                    except Exception as e:
-                        logger.error(f"Strategy on_order_failed error: {e}")
-
-    async def _handle_orders_msg(self, account_id: str, orders_data: dict):
+    async def _handle_open_orders_msg(self, account_id: str, orders_data: dict):
         """
         Process orders updates from account_all_orders channel.
         This provides real-time order state for reconciliation.
@@ -538,13 +337,38 @@ class Engine:
                 except Exception as e:
                     logger.error(f"Error processing order: {e}, order data: {order}")
         
+
         # Clean up orders that disappeared from exchange
         for cloid in list(self.pending_orders.keys()):
             if cloid not in current_order_cloids and cloid not in self.completed_cloids:
                 logger.warning(f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders")
                 del self.pending_orders[cloid]
 
-    async def _handle_trades_msg(self, account_id: str, trades_data: dict):
+        # ===== Clean Up Stale Orders =====
+        # Remove orders that are very old and haven't had any fills
+        # This handles cases where orders were rejected/canceled but we missed the event
+        STALE_ORDER_TIMEOUT = 300.0  # 5 minutes
+        current_time = time.time()
+        
+        for cloid in list(self.pending_orders.keys()):
+            if cloid not in self.completed_cloids:
+                pending = self.pending_orders[cloid]
+                order_age = current_time - pending.created_at
+                
+                # Only remove if order is very old (5+ minutes) with no fills
+                if order_age > STALE_ORDER_TIMEOUT and pending.filled_size == 0.0:
+                    logger.warning(
+                        f"[ORDER_STALE] {cloid} - No fills after {order_age:.0f}s. "
+                        f"Likely rejected/canceled. Removing from pending."
+                    )
+                    del self.pending_orders[cloid]
+                    # Optionally notify strategy
+                    try:
+                        self.strategy.on_order_failed(cloid, self.ctx)
+                    except Exception as e:
+                        logger.error(f"Strategy on_order_failed error: {e}")
+
+    async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
         """
         Process trades updates from account_all_trades channel.
         This provides real-time fill/trade data.
@@ -558,14 +382,138 @@ class Engine:
         
         # Process all trades across all markets
         for market_index, trades_list in trades_by_market.items():
-            for trade in trades_list:
+            for fill in trades_list:
                 try:
-                    # Trade structure includes order information
-                    # We can use this as an alternative/supplement to fills processing
-                    logger.info(f"[TRADE] {trade}")
+                    # Logic migrated from _handle_account_msg
+                    order_index = fill.get("order_index")
+                    if not order_index:
+                        # Some trade messages might not have order_index if it's not our order?
+                        # Or maybe it's under a different key. For now assume same structure.
+                        logger.warning(f"Trade missing order_index: {fill}")
+                        continue
                     
+                    # order_index IS the Cloid (we use Cloid.as_int() as client_order_index)
+                    cloid = Cloid(order_index)
+                    
+                    # Parse fill data
+                    amount = float(fill.get("size", 0))
+                    px = float(fill.get("price", 0))
+                    fee = float(fill.get("fee", 0))
+                    is_buyer = fill.get("is_buyer", True)
+                    side = OrderSide.BUY if is_buyer else OrderSide.SELL
+                    
+                    if amount <= 0 or px <= 0:
+                        logger.warning(f"Invalid fill data: amount={amount}, px={px}")
+                        continue
+                    
+                    # Idempotency check
+                    if cloid and cloid in self.completed_cloids:
+                        logger.info(f"Ignored duplicate fill for completed cloid: {cloid}")
+                        continue
+                    
+                    # Process fill
+                    if cloid and cloid in self.pending_orders:
+                        # Accumulate partial fill
+                        pending = self.pending_orders[cloid]
+                        
+                        new_total_size = pending.filled_size + amount
+                        
+                        # Calculate weighted average price
+                        pending.weighted_avg_px = (
+                            pending.weighted_avg_px * pending.filled_size + px * amount
+                        ) / new_total_size
+                        
+                        pending.filled_size = new_total_size
+                        pending.accumulated_fees += fee
+                        
+                        # Check if fully filled (using 0.9999 threshold like Rust SDK)
+                        is_fully_filled = pending.filled_size >= pending.target_size * 0.9999
+                        
+                        if is_fully_filled:
+                            # Order is fully filled - notify strategy
+                            logger.info(
+                                f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees})"
+                            )
+                            
+                            final_px = pending.weighted_avg_px
+                            final_sz = pending.filled_size
+                            final_fee = pending.accumulated_fees
+                            pending_reduce_only = pending.reduce_only
+                            
+                            # Remove from pending
+                            del self.pending_orders[cloid]
+                            
+                            # Call strategy callback
+                            try:
+                                self.strategy.on_order_filled(
+                                    OrderFill(
+                                        side=side,
+                                        size=final_sz,
+                                        price=final_px,
+                                        fee=final_fee,
+                                        cloid=cloid,
+                                        reduce_only=pending_reduce_only,
+                                        raw_dir=None
+                                    ),
+                                    self.ctx
+                                )
+                            except Exception as e:
+                                logger.error(f"Strategy on_order_filled error: {e}")
+                            
+                            # Mark as completed for idempotency
+                            self.completed_cloids.add(cloid)
+                        else:
+                            # Partial fill - log but don't notify strategy yet
+                            logger.info(
+                                f"[ORDER_FILL_PARTIAL] {side} {amount} @ {px} (Fee: {fee})"
+                            )
+                    
+                    elif cloid:
+                        # Untracked order (not in pending_orders) - notify immediately
+                        logger.info(
+                            f"[ORDER_FILL_UNTRACKED] {side} {amount} @ {px} (Fee: {fee})"
+                        )
+                        
+                        try:
+                            self.strategy.on_order_filled(
+                                OrderFill(
+                                    side=side,
+                                    size=amount,
+                                    price=px,
+                                    fee=fee,
+                                    cloid=cloid,
+                                    reduce_only=None,  # Unknown for untracked orders
+                                    raw_dir=None
+                                ),
+                                self.ctx
+                            )
+                        except Exception as e:
+                            logger.error(f"Strategy on_order_filled error: {e}")
+                    
+                    else:
+                        # No cloid - log and notify immediately
+                        logger.info(
+                            f"[ORDER_FILL_NOCLID] {side} {amount} @ {px} (Fee: {fee})"
+                        )
+                        
+                        try:
+                            self.strategy.on_order_filled(
+                                OrderFill(
+                                    side=side,
+                                    size=amount,
+                                    price=px,
+                                    fee=fee,
+                                    cloid=None,
+                                    reduce_only=None,
+                                    raw_dir=None
+                                ),
+                                self.ctx
+                            )
+                        except Exception as e:
+                            logger.error(f"Strategy on_order_filled error: {e}")
+                        
                 except Exception as e:
-                    logger.error(f"Error processing trade: {e}, trade data: {trade}")
+                    logger.error(f"Error processing trade: {e}, trade data: {fill}")
 
 
 
