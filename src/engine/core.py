@@ -275,11 +275,13 @@ class Engine:
                 grid_state = self.strategy.get_grid_state(self.ctx)
                 if grid_state:
                     self.broadcaster.send(btypes.grid_state_event(grid_state))
+                
+                # logger.debug("Broadcasted summary and grid state")
                     
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in broadcast loop: {e}")
+                logger.error(f"Error in broadcast loop: {e}", exc_info=True)
                 await asyncio.sleep(5.0)
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
@@ -364,7 +366,7 @@ class Engine:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
                                  oid=order_index,
                                  cloid=str(cloid),
-                                 side="UNKNOWN", # We don't have side in this message easily without lookup
+                                 side=str(pending.side) if pending.side else "UNKNOWN",
                                  price=0.0,
                                  size=pending.target_size,
                                  status="OPEN",
@@ -393,7 +395,7 @@ class Engine:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
                                  oid=pending.oid or 0,
                                  cloid=str(cloid),
-                                 side="UNKNOWN",
+                                 side=str(pending.side) if pending.side else "UNKNOWN",
                                  price=0.0,
                                  size=pending.filled_size,
                                  status="CANCELED",
@@ -673,7 +675,8 @@ class Engine:
                     accumulated_fees=0.0,
                     reduce_only=order.reduce_only,
                     oid=None,  # Will be set when we get confirmation
-                    created_at=time.time()  # Track when order was placed
+                    created_at=time.time(),  # Track when order was placed
+                    side=order.side
                 )
                 
                 info = self.ctx.market_info(order.symbol)
