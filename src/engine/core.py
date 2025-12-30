@@ -270,19 +270,18 @@ class Engine:
     async def _handle_open_orders_msg(self, account_id: str, orders_data: dict):
         """
         Process orders updates from account_all_orders channel.
-        This provides real-time order state for reconciliation.
+        Updates pending_orders state (OID, info) and handles failures.
+        Fills are handled in _handle_user_fills_msg.
         """
-        # Debug: Log the orders message
-        logger.info(f"[ORDERS_MSG] Received orders update: {json.dumps(orders_data, indent=2)}")
+        msg_type = orders_data.get("type", "")
+        # query_coids = set of cloids present in THIS message
+        current_msg_cloids = set()
         
-        # Extract orders from the message
-        # Format: {"channel": "account_all_orders:X", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
+        # Extract orders
+        # Format: {"channel": "...", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
         orders_by_market = orders_data.get("orders", {})
         
-        # Track which orders are currently open on the exchange
-        current_order_cloids = set()
-        
-        # Process all orders across all markets
+        # Process all orders in the message
         for market_index, orders_list in orders_by_market.items():
             for order in orders_list:
                 try:
@@ -291,7 +290,7 @@ class Engine:
                         continue
                     
                     cloid = Cloid(client_order_index)
-                    current_order_cloids.add(cloid)
+                    current_msg_cloids.add(cloid)
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
@@ -299,22 +298,23 @@ class Engine:
                     
                     pending = self.pending_orders[cloid]
                     
-                    # Sync filled amount (handles missed fill events)
+                    # 1. Update OID if missing (Crucial for later cancellation/audit)
+                    order_index = order.get("order_index")
+                    if order_index and not pending.oid:
+                        pending.oid = order_index
+                    
+                    # 2. Sync filled amount (for state tracking only)
                     filled_amount_str = order.get("filled_base_amount", "0")
                     filled_amount = float(filled_amount_str) if filled_amount_str else 0.0
                     
-                    # If exchange shows more filled than we have, we missed some fills
                     if filled_amount > pending.filled_size:
-                        logger.warning(
-                            f"[ORDER_SYNC] {cloid} - Exchange filled: {filled_amount}, "
-                            f"Local filled: {pending.filled_size}. Syncing..."
-                        )
+                        # Just update state, don't notify
                         pending.filled_size = filled_amount
                     
-                    # Check order status for cancellations/failures
+                    # 3. Check order status
                     status = order.get("status", "")
                     
-                    # Canceled statuses
+                    # Canceled statuses - These are terminal failures, so we handle them here
                     canceled_statuses = [
                         "canceled", "canceled-post-only", "canceled-reduce-only",
                         "canceled-position-not-allowed", "canceled-margin-not-allowed",
@@ -334,15 +334,34 @@ class Engine:
                         
                         self.completed_cloids.add(cloid)
                     
+                    # Note: We intentionally DO NOT handle "filled" or "closed" status here.
+                    # We rely on _handle_user_fills_msg to parse the trade/fill event 
+                    # and trigger on_order_filled. This avoids race conditions and duplicate events.
+
                 except Exception as e:
                     logger.error(f"Error processing order: {e}, order data: {order}")
         
 
-        # Clean up orders that disappeared from exchange
-        for cloid in list(self.pending_orders.keys()):
-            if cloid not in current_order_cloids and cloid not in self.completed_cloids:
-                logger.warning(f"[ORDER_DISAPPEARED] {cloid} - No longer in exchange orders")
-                del self.pending_orders[cloid]
+        # 4. Clean up orders that disappeared from exchange (SNAPSHOT ONLY)
+        # Only if this is a snapshot ("subscribed/" usually), implies full state.
+        # If it's "update/", it's a delta, so missing orders just mean they didn't change.
+        if "subscribed/" in msg_type:
+            for cloid in list(self.pending_orders.keys()):
+                if cloid not in current_msg_cloids and cloid not in self.completed_cloids:
+                    # Logic: If it's a snapshot and our pending order isn't in it, 
+                    # it means it's closed/filled/gone on the exchange.
+                    # Since we rely on user_fills for fills, we should be careful.
+                    # If it was fully filled, we expect a user_fill message.
+                    # If we delete it here, user_fill might treat it as untracked.
+                    # BUT if we leave it, the Stale Order Cleanup will eventually get it.
+                    # Let's log unique warning but maybe NOT delete immediately to allow user_fill to arrive?
+                    # Or assume that if it's gone from snapshot, it's done.
+                    
+                    # User request: "keep track of all pending orders"
+                    # Safe bet: Log it, but let Stale Order Timeout handle the removal 
+                    # if user_fill never comes.
+                    pass 
+                    # logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
 
         # ===== Clean Up Stale Orders =====
         # Remove orders that are very old and haven't had any fills
