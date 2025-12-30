@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "High-performance trading bot for Lighter exchange"
 requires-python = ">=3.10"
 dependencies = [
+    "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "lighter-sdk @ git+https://github.com/smohantty/lighter-python.git"
 ]
