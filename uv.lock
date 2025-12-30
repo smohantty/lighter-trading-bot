@@ -984,7 +984,7 @@ wheels = [
 [[package]]
 name = "lighter-sdk"
 version = "1.0.2"
-source = { git = "https://github.com/smohantty/lighter-python.git#86716393f7c1faed7c63ae8f031fe1abcc46894b" }
+source = { git = "https://github.com/smohantty/lighter-python.git#98cf30837b8c8f91156a879177c340d554f6d9d2" }
 dependencies = [
     { name = "aiohttp" },
     { name = "aiohttp-retry" },
