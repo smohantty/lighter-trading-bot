@@ -253,7 +253,7 @@ class Engine:
             # Update last price
             self.last_price[symbol] = rounded_price
             
-            logger.info(f"Price Update: {symbol} @ ${rounded_price:.{market_info.price_decimals}f}")
+            #logger.info(f"Price Update: {symbol} @ ${rounded_price:.{market_info.price_decimals}f}")
             
             try:
                 self.strategy.on_tick(rounded_price, self.ctx)
@@ -368,22 +368,48 @@ class Engine:
         for market_index, trades_list in trades_by_market.items():
             for fill in trades_list:
                 try:
-                    # Logic migrated from _handle_account_msg
-                    order_index = fill.get("order_index")
-                    if not order_index:
-                        # Some trade messages might not have order_index if it's not our order?
-                        # Or maybe it's under a different key. For now assume same structure.
-                        logger.warning(f"Trade missing order_index: {fill}")
-                        continue
+                    # Match trade to our account to find CLOID and Side
+                    # We need to handle account_id as int for comparison
+                    my_account_id_int = int(self.account_id.split(":")[-1]) # Handle "0x...:123" format or just "123"
                     
-                    # order_index IS the Cloid (we use Cloid.as_int() as client_order_index)
-                    cloid = Cloid(order_index)
+                    bid_account_id = int(fill.get("bid_account_id", -1))
+                    ask_account_id = int(fill.get("ask_account_id", -1))
+                    
+                    cloid_int = None
+                    is_buyer = None
+
+                    if bid_account_id == my_account_id_int:
+                        is_buyer = True
+                        cloid_int = fill.get("bid_client_id")
+                    elif ask_account_id == my_account_id_int:
+                        is_buyer = False
+                        cloid_int = fill.get("ask_client_id")
+                    
+                    if cloid_int is None or is_buyer is None:
+                        # Trade does not involve us or client_id missing (shouldn't happen if account matches)
+                        # Only log if it's strictly weird (e.g. we matched account but no client_id)
+                        if (bid_account_id == my_account_id_int or ask_account_id == my_account_id_int):
+                             logger.warning(f"Trade matched account {my_account_id_int} but missing client_id: {fill}")
+                        continue
+                        
+                    cloid = Cloid(cloid_int)
                     
                     # Parse fill data
                     amount = float(fill.get("size", 0))
                     px = float(fill.get("price", 0))
-                    fee = float(fill.get("fee", 0))
-                    is_buyer = fill.get("is_buyer", True)
+                    
+                    # Determine if we are Maker or Taker
+                    is_maker_ask = fill.get("is_maker_ask", False)
+                    is_maker = False
+                    if is_buyer:
+                         # We are BID. If Ask is Maker, we are Taker.
+                         is_maker = not is_maker_ask 
+                    else:
+                         # We are ASK. If Ask is Maker, we are Maker.
+                         is_maker = is_maker_ask
+                         
+                    fee = float(fill.get("maker_fee", 0)) if is_maker else float(fill.get("taker_fee", 0))
+                    
                     side = OrderSide.BUY if is_buyer else OrderSide.SELL
                     
                     if amount <= 0 or px <= 0:
