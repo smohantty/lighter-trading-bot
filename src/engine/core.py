@@ -302,6 +302,7 @@ class Engine:
                     order_index = order.get("order_index")
                     if order_index and not pending.oid:
                         pending.oid = order_index
+                        logger.info(f"[ORDER_TRACKING] Linked CLOID {cloid} -> OID {pending.oid}")
                     
                     # 2. Sync filled amount (for state tracking only)
                     filled_amount_str = order.get("filled_base_amount", "0")
