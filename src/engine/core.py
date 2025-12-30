@@ -346,7 +346,7 @@ class Engine:
         This provides real-time fill/trade data.
         """
         # Debug: Log the trades message
-        logger.info(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
+        #logger.info(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
         
         # Extract trades from the message
         # Format: {"channel": "account_all_trades:X", "trades": {"{MARKET_INDEX}": [Trade]}, "type": "..."}
@@ -676,7 +676,7 @@ class Engine:
                 )
                 
                 if response.code == 200:
-                    logger.info(f"Batch {batch_num}/{total_batches} accepted: {len(response.tx_hash)} orders, tx_hashes: {response.tx_hash[:3]}...")
+                    logger.info(f"Batch {batch_num}/{total_batches} accepted: {len(response.tx_hash)} orders")
                     
                     # TODO: Track tx_hashes for order confirmation
                     # We can map client_order_index to tx_hash here
