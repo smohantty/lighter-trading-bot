@@ -420,7 +420,7 @@ class PerpGridStrategy(Strategy):
                 
                 self.place_counter_order(zone_idx, next_px, next_side, ctx)
             else:
-                logger.debug(f"[PERP_GRID] Fill for unknown CLOID: {fill.cloid}")
+                logger.info(f"[PERP_GRID] Fill for unknown CLOID: {fill.cloid}")
 
     def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
         pass

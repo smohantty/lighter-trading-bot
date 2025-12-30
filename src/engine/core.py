@@ -325,7 +325,7 @@ class Engine:
                 
                 # Idempotency check
                 if cloid and cloid in self.completed_cloids:
-                    logger.debug(f"Ignored duplicate fill for completed cloid: {cloid}")
+                    logger.info(f"Ignored duplicate fill for completed cloid: {cloid}")
                     continue
                 
                 # Process fill
@@ -474,7 +474,7 @@ class Engine:
         This provides real-time order state for reconciliation.
         """
         # Debug: Log the orders message
-        logger.debug(f"[ORDERS_MSG] Received orders update: {json.dumps(orders_data, indent=2)}")
+        logger.info(f"[ORDERS_MSG] Received orders update: {json.dumps(orders_data, indent=2)}")
         
         # Extract orders from the message
         # Format: {"channel": "account_all_orders:X", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
@@ -550,7 +550,7 @@ class Engine:
         This provides real-time fill/trade data.
         """
         # Debug: Log the trades message
-        logger.debug(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
+        logger.info(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
         
         # Extract trades from the message
         # Format: {"channel": "account_all_trades:X", "trades": {"{MARKET_INDEX}": [Trade]}, "type": "..."}
@@ -562,7 +562,7 @@ class Engine:
                 try:
                     # Trade structure includes order information
                     # We can use this as an alternative/supplement to fills processing
-                    logger.debug(f"[TRADE] {trade}")
+                    logger.info(f"[TRADE] {trade}")
                     
                 except Exception as e:
                     logger.error(f"Error processing trade: {e}, trade data: {trade}")
