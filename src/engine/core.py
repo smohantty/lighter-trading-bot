@@ -119,17 +119,36 @@ class Engine:
             # Convert config to dict via json dump/load to handle custom types if any
             # Or assume to_dict/dict() works
             # We use json default serializer if needed, but config object should be standard
+            # Broadcast Config
             try:
-                # Basic config dump
                 # Custom serialization for Enums to match frontend schema (lowercase)
-                config_dict = self.config.__dict__.copy()
                 
+                # Check if it's a dataclass or object with __dict__
+                if hasattr(self.config, "__dict__"):
+                    config_dict = self.config.__dict__.copy()
+                else:
+                    # Fallback if somehow it's a dict or other
+                    logger.warning(f"Config object {type(self.config)} lacks __dict__, using vars() or dict(self.config)")
+                    try:
+                        config_dict = dict(self.config)
+                    except:
+                        config_dict = vars(self.config)
+
                 # Convert Enums to lowercase strings explicitly
-                if "grid_type" in config_dict and hasattr(config_dict["grid_type"], "value"):
-                     config_dict["grid_type"] = str(config_dict["grid_type"].value).lower()
+                if "grid_type" in config_dict:
+                     val = config_dict["grid_type"]
+                     if hasattr(val, "value"):
+                         config_dict["grid_type"] = str(val.value).lower()
+                     else:
+                         # Already a string or simple type
+                         config_dict["grid_type"] = str(val).lower()
                 
-                if "grid_bias" in config_dict and hasattr(config_dict["grid_bias"], "value"):
-                     config_dict["grid_bias"] = str(config_dict["grid_bias"].value).lower()
+                if "grid_bias" in config_dict:
+                     val = config_dict["grid_bias"]
+                     if hasattr(val, "value"):
+                         config_dict["grid_bias"] = str(val.value).lower()
+                     elif val:
+                         config_dict["grid_bias"] = str(val).lower()
 
                 # Add decimals from market info
                 if target_symbol in self.markets:
@@ -138,9 +157,18 @@ class Engine:
                     config_dict["px_decimals"] = m.price_decimals
 
                 self.broadcaster.send(btypes.config_event(config_dict))
-                self.broadcaster.send(btypes.info_event(self.exchange_config.base_url)) # Using URL as Network proxy
+                logger.info("Broadcasted initial StrategyConfig.")
+
             except Exception as e:
-                logger.error(f"Failed to broadcast initial config: {e}")
+                logger.error(f"Failed to broadcast initial config: {e}", exc_info=True)
+                # print(f"DEBUG: Config Broadcast Failed: {e}") # Fallback output
+
+            # Broadcast Info
+            try:
+                self.broadcaster.send(btypes.info_event(self.exchange_config.base_url)) # Using URL as Network proxy
+                logger.info("Broadcasted initial SystemInfo.")
+            except Exception as e:
+                logger.error(f"Failed to broadcast initial info: {e}", exc_info=True)
 
         # Start periodic auth token refresh task (every 7 hours)
         self.auth_refresh_task = None
