@@ -24,21 +24,14 @@ This project is a direct port of the logic and architecture from the Rust-based 
     cd lighter-trading-bot
     ```
 
-2.  **Set up Virtual Environment**:
+2.  **Install `uv`** (if not already installed):
     ```bash
-    python3 -m venv venv --without-pip
-    curl -sS https://bootstrap.pypa.io/get-pip.py | ./venv/bin/python
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
 3.  **Install Dependencies**:
     ```bash
-    ./venv/bin/pip install -r requirements.txt
-    ```
-
-4.  **Install/Patch SDK**:
-    The bot relies on a local version of `lighter-python` which may have patches (e.g., auto-reconnect).
-    ```bash
-    ./venv/bin/pip install --force-reinstall --no-deps ../lighter-python
+    uv sync
     ```
 
 ## Configuration
@@ -73,7 +66,7 @@ This project is a direct port of the logic and architecture from the Rust-based 
       }
     }
     ```
-    *To obtain these credentials, use the `system_setup.py` example script in `vendor/lighter-python/examples` or export them from the Lighter UI if available.*
+    *To obtain these credentials, use the `system_setup.py` example script in the SDK or export them from the Lighter UI if available.*
 
 3.  **Strategy Config**:
     Edit `config.yaml` to define your grid parameters.
@@ -91,30 +84,24 @@ This project is a direct port of the logic and architecture from the Rust-based 
 
 **Run Manually:**
 ```bash
-./venv/bin/python main.py
+./start.sh
+# OR
+uv run python main.py
 ```
 
 **Run Tests:**
 ```bash
-PYTHONPATH=. ./venv/bin/pytest tests
+uv run pytest tests
 ```
 
 ## SDK Management
 
-The bot uses a forked version of the SDK via Git Submodules.
+The bot uses the `lighter-python` SDK directly from GitHub via `uv`.
 
 **To Update the SDK:**
-Run the helper script:
 ```bash
-./update_sdk.sh
-```
-
-**Manual Update:**
-```bash
-cd vendor/lighter-python
-git pull origin main
-cd ../..
-./venv/bin/pip install --force-reinstall --no-deps ./vendor/lighter-python
+uv lock --upgrade-package lighter-python
+uv sync
 ```
 
 ## Documentation

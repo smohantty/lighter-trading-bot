@@ -1,3 +1,0 @@
-[submodule "vendor/lighter-python"]
-	path = vendor/lighter-python
-	url = https://github.com/smohantty/lighter-python

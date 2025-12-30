@@ -31,18 +31,18 @@ graph TD
 ## Development & Execution
 
 ### Environment Management
-- **Virtual Environment**: This project **requires** the use of a virtual environment located in the `venv/` directory.
-- **NEVER** install packages system-wide.
-- **NEVER** use `pip install` without prefixing with `venv/bin/`.
+- **Package Manager**: This project uses `uv` for dependency management.
+- **Virtual Environment**: Managed automatically by `uv`.
+- **NEVER** use `pip install` directly. Use `uv add` or `uv sync`.
 
 ### Common Commands
-- **Initialization**: `bash setup.sh`
-- **Starting the Bot**: `venv/bin/python main.py <config_file>`
-- **Running Tests**: `venv/bin/python -m pytest tests/`
-- **Linting**: `bash run_mypy.sh`
+- **Initialization**: `uv sync`
+- **Starting the Bot**: `uv run python main.py <config_file>`
+- **Running Tests**: `uv run pytest tests/`
+- **Linting**: `uv run mypy src tests`
 
 ## Rules for Coding Agents
-1. **Tool Usage**: Always use `venv/bin/python` or `venv/bin/pip`.
+1.  **Tool Usage**: Always use `uv run python` or `uv run <command>`.
 2. **Code Style**:
     - Use type hints consistently.
     - Follow the existing pattern of using `StrategyContext` to queue orders rather than calling API methods directly from strategies.

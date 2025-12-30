@@ -1,4 +1,0 @@
-./vendor/lighter-python
-pyyaml
-pytest
-pytest-asyncio

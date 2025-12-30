@@ -1,0 +1,20 @@
+[project]
+name = "lighter-trading-bot"
+version = "0.1.0"
+description = "High-performance trading bot for Lighter exchange"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "lighter-python @ git+https://github.com/smohantty/lighter-python.git"
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "mypy>=1.0.0", 
+    "types-pyyaml",
+]
+
+[tool.uv]
+package = true
