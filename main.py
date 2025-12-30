@@ -13,11 +13,18 @@ from src.strategy.noop import NoOpStrategy
 from src.engine.core import Engine
 
 # Setup Logging
+from logging.handlers import TimedRotatingFileHandler
+
+# Ensure logs directory exists
+os.makedirs("logs", exist_ok=True)
+
+# Setup Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stdout),
+        TimedRotatingFileHandler("logs/lighter-trading-bot.log", when="midnight", interval=1, backupCount=30)
     ]
 )
 logger = logging.getLogger("main")
