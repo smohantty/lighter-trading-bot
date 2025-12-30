@@ -9,7 +9,7 @@ This guide describes how to deploy the Lighter Trading Bot using `tmux`. This me
 ## Quick Start
 
 ### 1. Start the Bot
-Run the start script. By default, it uses `spot_LIT.yaml`.
+Run the start script. By default, it uses `configs/spot_LIT.yaml`.
 
 ```bash
 ./deployment/start.sh
@@ -42,6 +42,6 @@ Gracefully stop the bot and close the session:
 
 - **Session not found**: The bot might have crashed immediately. Try running without tmux to debug:
   ```bash
-  uv run python main.py --config spot_LIT.yaml
+  uv run python main.py --config configs/spot_LIT.yaml
   ```
 - **"Address already in use"**: Ensure no other instance is running. The `stop.sh` script attempts to kill the session, but check manually with `ps aux | grep main.py` or similar if issues persist.

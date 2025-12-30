@@ -6,7 +6,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
 # Default config path
-CONFIG_PATH="spot_LIT.yaml"
+CONFIG_PATH="configs/spot_LIT.yaml"
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do

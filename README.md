@@ -82,11 +82,14 @@ This project is a direct port of the logic and architecture from the Rust-based 
 
 ## Usage
 
-**Run Manually:**
+**Run Manually (Deployment):**
 ```bash
-./start.sh
-# OR
-uv run python main.py
+./deployment/start.sh
+```
+
+**Run Manually (Dev):**
+```bash
+uv run python main.py --config configs/spot_LIT.yaml
 ```
 
 **Run Tests:**
@@ -106,4 +109,22 @@ uv sync
 
 ## Documentation
 
-- [Deployment Guide](docs/deployment.md): Instructions for running the bot 24/7 using Systemd on Linux/VPS.
+- [Deployment Guide](DEPLOYMENT.md): Instructions for running the bot 24/7 using tmux.
+
+## Broadcast Server Verification
+
+The bot runs a WebSocket server on port **9001** (default) that broadcasts real-time status, order updates, and strategy summaries.
+
+**To verify it is working from the command line:**
+
+1.  **Using Python (Recommended)**:
+    Since `websockets` is already installed, you can use its interactive client:
+    ```bash
+    uv run python -m websockets ws://localhost:9001
+    ```
+    You should see JSON messages streaming in immediately (Config, System Info, Summary).
+
+2.  **Using `wscat`** (if installed):
+    ```bash
+    wscat -c ws://localhost:9001
+    ```
