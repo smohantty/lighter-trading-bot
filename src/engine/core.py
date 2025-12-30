@@ -361,8 +361,7 @@ class Engine:
                     # User request: "keep track of all pending orders"
                     # Safe bet: Log it, but let Stale Order Timeout handle the removal 
                     # if user_fill never comes.
-                    pass 
-                    # logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
+                    logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
 
 
     async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
