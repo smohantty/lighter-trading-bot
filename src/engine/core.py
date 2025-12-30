@@ -408,7 +408,11 @@ class Engine:
                          # We are ASK. If Ask is Maker, we are Maker.
                          is_maker = is_maker_ask
                          
-                    fee = float(fill.get("maker_fee", 0)) if is_maker else float(fill.get("taker_fee", 0))
+                    
+                    # Fee calculation is currently incorrect (raw units vs token decimals). 
+                    # User requested to set to 0 for now and fix in a later patch.
+                    # fee = float(fill.get("maker_fee", 0)) if is_maker else float(fill.get("taker_fee", 0))
+                    fee = 0.0
                     
                     side = OrderSide.BUY if is_buyer else OrderSide.SELL
                     
