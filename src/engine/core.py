@@ -364,29 +364,6 @@ class Engine:
                     pass 
                     # logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
 
-        # ===== Clean Up Stale Orders =====
-        # Remove orders that are very old and haven't had any fills
-        # This handles cases where orders were rejected/canceled but we missed the event
-        STALE_ORDER_TIMEOUT = 300.0  # 5 minutes
-        current_time = time.time()
-        
-        for cloid in list(self.pending_orders.keys()):
-            if cloid not in self.completed_cloids:
-                pending = self.pending_orders[cloid]
-                order_age = current_time - pending.created_at
-                
-                # Only remove if order is very old (5+ minutes) with no fills
-                if order_age > STALE_ORDER_TIMEOUT and pending.filled_size == 0.0:
-                    logger.warning(
-                        f"[ORDER_STALE] {cloid} - No fills after {order_age:.0f}s. "
-                        f"Likely rejected/canceled. Removing from pending."
-                    )
-                    del self.pending_orders[cloid]
-                    # Optionally notify strategy
-                    try:
-                        self.strategy.on_order_failed(cloid, self.ctx)
-                    except Exception as e:
-                        logger.error(f"Strategy on_order_failed error: {e}")
 
     async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
         """
