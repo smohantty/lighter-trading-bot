@@ -165,7 +165,7 @@ class Engine:
 
             # Broadcast Info
             try:
-                self.broadcaster.send(btypes.info_event(self.exchange_config.base_url)) # Using URL as Network proxy
+                self.broadcaster.send(btypes.info_event(self.exchange_config.network)) # Using Network Name
                 logger.info("Broadcasted initial SystemInfo.")
             except Exception as e:
                 logger.error(f"Failed to broadcast initial info: {e}", exc_info=True)
