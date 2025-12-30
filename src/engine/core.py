@@ -343,13 +343,7 @@ class Engine:
                     logger.error(f"Error processing order: {e}, order data: {order}")
         
 
-        # 4. Clean up orders that disappeared from exchange (SNAPSHOT ONLY)
-        # Only if this is a snapshot ("subscribed/" usually), implies full state.
-        # If it's "update/", it's a delta, so missing orders just mean they didn't change.
-        if "subscribed/" in msg_type:
-            for cloid in list(self.pending_orders.keys()):
-                if cloid not in current_msg_cloids and cloid not in self.completed_cloids:
-                    logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
+
 
 
     async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
