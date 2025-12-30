@@ -70,7 +70,7 @@ class PerpGridSummary:
     grid_count: int
     range_low: float
     range_high: float
-    grid_spacing_pct: float
+    grid_spacing_pct: Any
     roundtrips: int
     margin_balance: float
     initial_entry_price: Optional[float]
@@ -82,19 +82,17 @@ class SpotGridSummary:
     state: str
     uptime: str
     position_size: float
-    position_side: str
     avg_entry_price: float
     realized_pnl: float
     unrealized_pnl: float
     total_fees: float
-    leverage: int
-    grid_bias: str
+    initial_entry_price: Optional[float]
     grid_count: int
     range_low: float
     range_high: float
-    grid_spacing_pct: float
+    grid_spacing_pct: Any # (min, max)
     roundtrips: int
-    margin_balance: float
-    initial_entry_price: Optional[float]
+    base_balance: float
+    quote_balance: float
 
 StrategySummary = Union[PerpGridSummary, SpotGridSummary, None]

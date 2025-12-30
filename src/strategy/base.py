@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from src.engine.context import StrategyContext
 from src.model import OrderFill, Cloid
 from src.strategy.types import StrategySummary, GridState
+from typing import Union
 
 class Strategy(ABC):
     @abstractmethod

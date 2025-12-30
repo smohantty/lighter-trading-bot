@@ -61,6 +61,8 @@ class SpotGridStrategy(Strategy):
         
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: float = 0.0
+        
+        self.current_price = 0.0
 
     def initialize_zones(self, price: float, ctx: StrategyContext):
         # 1. Get initial data
@@ -252,6 +254,7 @@ class SpotGridStrategy(Strategy):
                 ))
 
     def on_tick(self, price: float, ctx: StrategyContext):
+        self.current_price = price
         if self.state == StrategyState.Initializing:
              self.initialize_zones(price, ctx)
         elif self.state == StrategyState.WaitingForTrigger:
@@ -344,10 +347,8 @@ class SpotGridStrategy(Strategy):
              self.zones[idx].order_id = None
              logger.warning(f"[SPOT_GRID] Order failed for Zone {idx}")
 
-    def get_summary(self, ctx: StrategyContext) -> StrategySummary:
-        current_price = 0.0
-        if m := ctx.market_info(self.symbol):
-             current_price = m.last_price
+    def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
+        current_price = self.current_price
              
         # Approx unrealized pnl
         unrealized = 0.0
@@ -361,32 +362,28 @@ class SpotGridStrategy(Strategy):
             self.config.grid_count
         )
              
-        return StrategySummary(
-             spot_grid=SpotGridSummary(
-                symbol=self.symbol,
-                price=current_price,
-                state=self.state.name,
-                uptime=common.format_uptime(time.time() - self.start_time),
-                position_size=self.position_size,
-                avg_entry_price=self.avg_entry_price,
-                realized_pnl=self.realized_pnl,
-                unrealized_pnl=unrealized,
-                total_fees=self.total_fees,
-                initial_entry_price=self.initial_entry_price,
-                grid_count=len(self.zones),
-                range_low=self.config.lower_price,
-                range_high=self.config.upper_price,
-                grid_spacing_pct=grid_spacing_pct,
-                roundtrips=sum(z.roundtrip_count for z in self.zones),
-                base_balance=ctx.get_spot_available(self.symbol.split('/')[0] if '/' in self.symbol else self.symbol), # Approx
-                quote_balance=ctx.get_spot_available("USDC")
-             )
+        return SpotGridSummary(
+            symbol=self.symbol,
+            price=current_price,
+            state=self.state.name,
+            uptime=common.format_uptime(time.time() - self.start_time),
+            position_size=self.position_size,
+            avg_entry_price=self.avg_entry_price,
+            realized_pnl=self.realized_pnl,
+            unrealized_pnl=unrealized,
+            total_fees=self.total_fees,
+            initial_entry_price=self.initial_entry_price,
+            grid_count=len(self.zones),
+            range_low=self.config.lower_price,
+            range_high=self.config.upper_price,
+            grid_spacing_pct=grid_spacing_pct,
+            roundtrips=sum(z.roundtrip_count for z in self.zones),
+            base_balance=ctx.get_spot_available(self.symbol.split('/')[0] if '/' in self.symbol else self.symbol), # Approx
+            quote_balance=ctx.get_spot_available("USDC")
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
-        current_price = 0.0
-        if m := ctx.market_info(self.symbol):
-             current_price = m.last_price
+        current_price = self.current_price
              
         zones_info = [
              ZoneInfo(

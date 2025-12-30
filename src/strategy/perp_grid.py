@@ -55,6 +55,8 @@ class PerpGridStrategy(Strategy):
         # Position Tracking
         self.position_size = 0.0
         self.avg_entry_price = 0.0
+        
+        self.current_price = 0.0
 
     def initialize_zones(self, price: float, ctx: StrategyContext):
         self.config.validate()
@@ -298,6 +300,7 @@ class PerpGridStrategy(Strategy):
         ))
 
     def on_tick(self, price: float, ctx: StrategyContext):
+        self.current_price = price
         if self.state == StrategyState.Initializing:
             self.initialize_zones(price, ctx)
         
@@ -426,9 +429,8 @@ class PerpGridStrategy(Strategy):
     def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
         pass
 
-    def get_summary(self, ctx: StrategyContext) -> StrategySummary:
-        market_info = ctx.market_info(self.config.symbol)
-        current_price = market_info.last_price if market_info else 0.0
+    def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
+        current_price = self.current_price
         
         total_roundtrips = sum(z.roundtrip_count for z in self.zones)
         
@@ -470,8 +472,7 @@ class PerpGridStrategy(Strategy):
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
-        market_info = ctx.market_info(self.config.symbol)
-        current_price = market_info.last_price if market_info else 0.0
+        current_price = self.current_price
         
         zones_info = []
         for z in self.zones:
