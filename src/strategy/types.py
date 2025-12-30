@@ -15,7 +15,7 @@ class ZoneMode(Enum):
     # NEUTRAL = "Neutral"
 
 from dataclasses import dataclass
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Any, Optional, Union, Any
 
 @dataclass
 class ZoneInfo:
@@ -28,6 +28,22 @@ class ZoneInfo:
     is_reduce_only: bool
     entry_price: float
     roundtrip_count: int
+
+class ZoneStatus(Enum):
+    Idle = auto()
+    Active = auto()
+
+@dataclass
+class GridZone:
+    index: int
+    lower_price: float
+    upper_price: float
+    size: float
+    pending_side: Any # OrderSide
+    mode: Optional[ZoneMode] = None
+    entry_price: float = 0.0
+    order_id: Optional[Any] = None # Cloid
+    roundtrip_count: int = 0
 
 @dataclass
 class GridState:

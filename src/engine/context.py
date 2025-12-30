@@ -40,6 +40,21 @@ class MarketInfo:
         clamped = max(size, self.min_base_amount)
         return self.round_size(clamped)
 
+    def clamp_to_min_notional(self, size: float, price: float) -> float:
+        """
+        Ensure size * price >= min_notional (min_quote_amount).
+        If size is too small, returns a size s.t. size * price >= min_quote_amount.
+        """
+        if size * price >= self.min_quote_amount:
+            return self.round_size(size)
+        
+        # Calculate required size
+        if price == 0: return self.round_size(size) # Prevent div/0
+
+        required_size = self.min_quote_amount / price
+        # Round up to ensure we meet the threshold
+        return self.round_size(max(size, required_size) * 1.01) # Add tiny buffer
+
 @dataclass
 class Balance:
     total: float

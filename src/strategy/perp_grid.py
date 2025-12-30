@@ -1,6 +1,7 @@
 import logging
 import time
 from typing import List, Dict, Optional, Tuple
+from datetime import timedelta
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -106,7 +107,7 @@ class PerpGridStrategy(Strategy):
             mid_price = (lower + upper) / 2.0
 
             raw_size = investment_per_zone / mid_price
-            size = market_info.clamp_to_min_size(raw_size)
+            size = market_info.clamp_to_min_notional(raw_size, mid_price)
 
             # Zone classification
             if self.config.grid_bias == GridBias.LONG:
@@ -445,7 +446,6 @@ class PerpGridStrategy(Strategy):
         )
         
         uptime = common.format_uptime(timedelta(seconds=time.monotonic() - self.start_time))
-        from datetime import timedelta # Imported inside method, ugly but works. Should be top level.
         
         return PerpGridSummary(
             symbol=self.config.symbol,
