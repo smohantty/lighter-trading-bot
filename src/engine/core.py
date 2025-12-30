@@ -349,18 +349,6 @@ class Engine:
         if "subscribed/" in msg_type:
             for cloid in list(self.pending_orders.keys()):
                 if cloid not in current_msg_cloids and cloid not in self.completed_cloids:
-                    # Logic: If it's a snapshot and our pending order isn't in it, 
-                    # it means it's closed/filled/gone on the exchange.
-                    # Since we rely on user_fills for fills, we should be careful.
-                    # If it was fully filled, we expect a user_fill message.
-                    # If we delete it here, user_fill might treat it as untracked.
-                    # BUT if we leave it, the Stale Order Cleanup will eventually get it.
-                    # Let's log unique warning but maybe NOT delete immediately to allow user_fill to arrive?
-                    # Or assume that if it's gone from snapshot, it's done.
-                    
-                    # User request: "keep track of all pending orders"
-                    # Safe bet: Log it, but let Stale Order Timeout handle the removal 
-                    # if user_fill never comes.
                     logger.warning(f"[ORDER_NOT_IN_SNAPSHOT] {cloid} - Not in exchange open orders. Waiting for fill or timeout.")
 
 
