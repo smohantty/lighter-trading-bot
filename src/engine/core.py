@@ -5,6 +5,7 @@ import time
 from typing import Dict, List, Optional, Any
 import websockets
 import lighter
+from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
 from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder
@@ -76,7 +77,8 @@ class Engine:
         self.signer_client = lighter.SignerClient(
             url=self.exchange_config.base_url,
             account_index=self.account_index,
-            api_private_keys={self.exchange_config.agent_key_index: self.exchange_config.agent_private_key}
+            api_private_keys={self.exchange_config.agent_key_index: self.exchange_config.agent_private_key},
+            nonce_management_type=NonceManagerType.API
         )
         
         # 4. Load Metadata (Markets)
