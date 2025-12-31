@@ -699,7 +699,9 @@ class Engine:
             if i == 0:
                 batch_api_key_index, nonce = self.signer_client.nonce_manager.next_nonce()
             else:
-                batch_api_key_index, nonce = self.signer_client.nonce_manager.next_nonce(batch_api_key_index)
+                # Using ApiNonceManager, next_nonce() fetches from server which hasn't seen our txs yet
+                # So we must manually increment the nonce for the batch
+                nonce += 1
             
             error = None
             tx_type = None
