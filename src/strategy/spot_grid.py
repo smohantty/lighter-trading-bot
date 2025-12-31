@@ -114,7 +114,7 @@ class SpotGridStrategy(Strategy):
 
         # Upfront Total Investment Validation
         total_wallet_value = (avail_base * initial_price) + avail_quote
-        if total_wallet_value < self.config.total_investment * 0.95: # 5% buffer
+        if total_wallet_value < self.config.total_investment:
              msg = f"Insufficient Total Portfolio Value! Required: {self.config.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
              logger.error(f"[SPOT_GRID] {msg}")
              raise ValueError(msg)
@@ -179,7 +179,7 @@ class SpotGridStrategy(Strategy):
             self.acquisition_cloid = cloid
             self.acquisition_target_size = base_deficit
             
-            activation_price = market_info.round_price(acquisition_price * 1.05) # Aggressive
+            activation_price = market_info.round_price(acquisition_price) 
             
             ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
@@ -205,7 +205,7 @@ class SpotGridStrategy(Strategy):
              self.acquisition_cloid = cloid
              self.acquisition_target_size = base_to_sell
              
-             activation_price = market_info.round_price(initial_price * 0.95) # Aggressive
+             activation_price = market_info.round_price(initial_price)
              
              ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
