@@ -166,70 +166,153 @@ class SpotGridStrategy(Strategy):
         base_deficit = required_base - avail_base
         quote_deficit = required_quote - avail_quote
         
-        if base_deficit > 0.0:
-            # Case 1: Need Base. Buy it.
-            acquisition_price = initial_price
-            estimated_cost = base_deficit * acquisition_price
-            
-            if avail_quote < estimated_cost:
-                 msg = f"Insufficient Quote to buy Base deficit. Need {estimated_cost:.2f}, Have {avail_quote:.2f}"
-                 logger.error(f"[SPOT_GRID] {msg}")
-                 raise ValueError(msg)
-            
-            logger.info(f"[SPOT_GRID] Acquiring {base_deficit} {base_asset}...")
-            cloid = ctx.generate_cloid()
-            self.state = StrategyState.AcquiringAssets
-            self.acquisition_cloid = cloid
-            self.acquisition_target_size = base_deficit
-            
-            activation_price = market_info.round_price(acquisition_price) 
-            
-            ctx.place_order(LimitOrderRequest(
-                symbol=self.config.symbol,
-                side=OrderSide.BUY,
-                price=activation_price,
-                sz=market_info.round_size(base_deficit),
-                reduce_only=False,
-                cloid=cloid
-            ))
-            return 
-            
-        elif quote_deficit > 0.0:
-             # Case 2: Need Quote. Sell Base.
-             base_to_sell = quote_deficit / initial_price
-             if avail_base < base_to_sell:
-                  msg = f"Insufficient Base to sell for Quote deficit. Need to sell {base_to_sell:.4f}, Have {avail_base:.4f}"
-                  logger.error(f"[SPOT_GRID] {msg}")
-                  raise ValueError(msg)
-             
-             logger.info(f"[SPOT_GRID] Selling {base_to_sell} {base_asset} for Quote...")
-             cloid = ctx.generate_cloid()
-             self.state = StrategyState.AcquiringAssets
-             self.acquisition_cloid = cloid
-             self.acquisition_target_size = base_to_sell
-             
-             activation_price = market_info.round_price(initial_price)
-             
-             ctx.place_order(LimitOrderRequest(
-                symbol=self.config.symbol,
-                side=OrderSide.SELL,
-                price=activation_price,
-                sz=market_info.round_size(base_to_sell),
-                reduce_only=False,
-                cloid=cloid
-             ))
-             return
+        self.check_initial_acquisition(ctx, market_info, required_base, required_quote)
 
-        # No Deficit
+    def check_initial_acquisition(
+        self, 
+        ctx: StrategyContext, 
+        market_info: MarketInfo, 
+        total_base_required: float, 
+        total_quote_required: float
+    ) -> None:
+        available_base = ctx.get_spot_available(self.symbol.split('/')[0] if '/' in self.symbol else self.symbol) # Approximate asset extraction if needed, but easier to just use what we had
+        # Re-fetch balances to be safe or pass them in? Rust passes ctx.
+        # In initialize_zones we had local vars avail_base/avail_quote.
+        # Let's re-fetch from ctx to be clean, or rely on what's in ctx.
+        # Note: initialize_zones used local vars but didn't update ctx. 
+        # Actually context has the balances.
+        
+        # Parse symbol again or store assets in __init__? 
+        # initialize_zones did parsing. Let's do it robustly or use the ones from config if available.
+        try:
+            base_asset, quote_asset = self.config.symbol.split("/")
+        except ValueError:
+            base_asset = self.config.symbol
+            quote_asset = "USDC"
+            
+        available_base = ctx.get_spot_available(base_asset)
+        available_quote = ctx.get_spot_available(quote_asset)
+
+        base_deficit = total_base_required - available_base
+        quote_deficit = total_quote_required - available_quote
+
+        # Use trigger_price if available, otherwise last_price (or current_price)
+        # In initialize_zones we had 'initial_price' passed in or calculated.
+        # Rust uses self.config.trigger_price.unwrap_or(market_info.last_price)
+        # We don't have market_info.last_price directly attached to market_info usually in this bot (it's in Strategy.current_price or passed in).
+        # But we can use self.current_price if initialized, or pass it.
+        # However, initialize_zones has 'price' argument. 
+        # Let's use self.current_price which is updated in on_tick before initialize_zones is called.
+        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
+
+        if base_deficit > 0.0:
+            # Case 1: Not enough base asset. Need to BUY base asset.
+            acquisition_price = initial_price
+
+            if self.config.trigger_price:
+                acquisition_price = market_info.round_price(self.config.trigger_price)
+            else:
+                # Find nearest level LOWER than market to buy at?
+                # Rust logic: 
+                # let nearest_level = self.zones.iter().filter(|z| z.lower_price < market_info.last_price).map(|z| z.lower_price).fold(0.0, f64::max);
+                nearest_level = 0.0
+                candidates = [z.lower_price for z in self.zones if z.lower_price < self.current_price]
+                if candidates:
+                    nearest_level = max(candidates)
+                
+                if nearest_level > 0.0:
+                    acquisition_price = market_info.round_price(nearest_level)
+                elif self.zones:
+                     # Fallback to first zone lower price
+                    acquisition_price = market_info.round_price(self.zones[0].lower_price)
+
+            rounded_deficit = market_info.clamp_to_min_notional(base_deficit, acquisition_price)
+
+            if rounded_deficit > 0.0:
+                estimated_cost = rounded_deficit * acquisition_price
+                
+                if available_quote < estimated_cost:
+                    msg = f"Insufficient Quote Balance for acquisition! Need ~{estimated_cost:.2f} {quote_asset}, Have {available_quote:.2f} {quote_asset}. Base Deficit: {rounded_deficit} {base_asset}"
+                    logger.error(f"[SPOT_GRID] {msg}")
+                    raise ValueError(msg)
+
+                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {rounded_deficit} {base_asset} @ {acquisition_price}")
+                cloid = ctx.generate_cloid()
+                self.state = StrategyState.AcquiringAssets
+                self.acquisition_cloid = cloid
+                self.acquisition_target_size = rounded_deficit
+
+                ctx.place_order(LimitOrderRequest(
+                    symbol=self.config.symbol,
+                    side=OrderSide.BUY,
+                    price=acquisition_price,
+                    sz=rounded_deficit,
+                    reduce_only=False,
+                    cloid=cloid
+                ))
+                return
+
+        elif quote_deficit > 0.0:
+            # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
+            acquisition_price = initial_price
+
+            if self.config.trigger_price:
+                 acquisition_price = market_info.round_price(self.config.trigger_price)
+            else:
+                 # Find nearest level ABOVE market to sell at
+                 # Rust: self.zones.iter().filter(|z| z.upper_price > market_info.last_price).map(|z| z.upper_price).fold(f64::INFINITY, f64::min);
+                 nearest_sell_level = float('inf')
+                 candidates = [z.upper_price for z in self.zones if z.upper_price > self.current_price]
+                 if candidates:
+                     nearest_sell_level = min(candidates)
+                
+                 if nearest_sell_level != float('inf'):
+                     acquisition_price = market_info.round_price(nearest_sell_level)
+                 elif self.zones:
+                     # Fallback to last zone upper price
+                     acquisition_price = market_info.round_price(self.zones[-1].upper_price)
+
+            base_to_sell = quote_deficit / acquisition_price
+            rounded_sell_sz = market_info.clamp_to_min_notional(base_to_sell, acquisition_price)
+
+            if rounded_sell_sz > 0.0:
+                 estimated_proceeds = rounded_sell_sz * acquisition_price
+                 logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {quote_asset}, need to sell ~{rounded_sell_sz} {base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
+
+                 if available_base < rounded_sell_sz:
+                      msg = f"Insufficient Base Balance for rebalancing! Need to sell {rounded_sell_sz} {base_asset}, Have {available_base} {base_asset}. Quote Deficit: {quote_deficit} {quote_asset}"
+                      logger.error(f"[SPOT_GRID] {msg}")
+                      raise ValueError(msg)
+
+                 logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {rounded_sell_sz} {base_asset} @ {acquisition_price}")
+                 cloid = ctx.generate_cloid()
+                 self.state = StrategyState.AcquiringAssets
+                 self.acquisition_cloid = cloid
+                 self.acquisition_target_size = rounded_sell_sz
+
+                 ctx.place_order(LimitOrderRequest(
+                    symbol=self.config.symbol,
+                    side=OrderSide.SELL,
+                    price=acquisition_price,
+                    sz=rounded_sell_sz,
+                    reduce_only=False,
+                    cloid=cloid
+                 ))
+                 return
+
+        # No Deficit (or negligible)
         if self.config.trigger_price:
-             logger.info("[SPOT_GRID] Waiting for trigger...")
-             self.trigger_reference_price = last_price
+             # Passive Wait Mode
+             logger.info("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.")
+             self.trigger_reference_price = self.current_price
              self.state = StrategyState.WaitingForTrigger
         else:
-             logger.info("[SPOT_GRID] Starting Grid.")
-             self.initial_entry_price = last_price
+             # No Trigger, Assets OK -> Running
+             logger.info("[SPOT_GRID] Assets verified. Starting Grid.")
+             self.initial_entry_price = self.current_price
              self.state = StrategyState.Running
              self.refresh_orders(ctx)
+
 
     def refresh_orders(self, ctx: StrategyContext):
         market_info = ctx.market_info(self.config.symbol)
