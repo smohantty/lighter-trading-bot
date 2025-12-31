@@ -103,14 +103,11 @@ class SpotGridStrategy(Strategy):
         # Seed inventory
         avail_base = ctx.get_spot_available(base_asset)
         avail_quote = ctx.get_spot_available(quote_asset)
-        self.position_size = avail_base
+
         
         initial_price = self.config.trigger_price if self.config.trigger_price else last_price
         
-        if self.position_size > 0.0:
-            # Mark to Market existing inventory
-            self.avg_entry_price = initial_price
-            logger.info(f"[SPOT_GRID] Initial inventory detected: {self.position_size} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
+
 
         # Upfront Total Investment Validation
         total_wallet_value = (avail_base * initial_price) + avail_quote
@@ -158,6 +155,12 @@ class SpotGridStrategy(Strategy):
             ))
 
         logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {base_asset}, {required_quote:.2f} {quote_asset}")
+        self.position_size = min(avail_base, required_base)
+        
+        if self.position_size > 0.0:
+            # Mark to Market existing inventory
+            self.avg_entry_price = initial_price
+            logger.info(f"[SPOT_GRID] Initial Position Size: {self.position_size} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
         
         # Check Assets & Rebalance
         base_deficit = required_base - avail_base
