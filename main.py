@@ -25,7 +25,8 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler(sys.stdout),
         TimedRotatingFileHandler("logs/lighter-trading-bot.log", when="midnight", interval=1, backupCount=30)
-    ]
+    ],
+    force=True
 )
 logger = logging.getLogger("main")
 
