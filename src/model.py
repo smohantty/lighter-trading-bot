@@ -43,11 +43,17 @@ class OrderSide(Enum):
         return self.value
 
 @dataclass
+class TradeRole(Enum):
+    MAKER = "Maker"
+    TAKER = "Taker"
+
+@dataclass
 class OrderFill:
     side: OrderSide
     size: float
     price: float
     fee: float
+    role: Optional[TradeRole] = None
     cloid: Optional[Cloid] = None
     reduce_only: Optional[bool] = None
     raw_dir: Optional[str] = None

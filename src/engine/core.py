@@ -9,7 +9,7 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade, TradeRole
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
@@ -623,11 +623,10 @@ class Engine:
                     # If is_maker_ask is True, WE (ASK) are MAKER.
                     # If is_maker_ask is False, WE (ASK) are TAKER.
                     
-                    is_maker = False
                     if side.is_buy():
-                        is_maker = not trade.is_maker_ask
+                        role = TradeRole.MAKER if not trade.is_maker_ask else TradeRole.TAKER
                     else:
-                        is_maker = trade.is_maker_ask
+                        role = TradeRole.MAKER if trade.is_maker_ask else TradeRole.TAKER
                         
                     # Fee calculation
                     # User requested 0.0 for now
@@ -679,7 +678,7 @@ class Engine:
                                     size=pending.filled_size,
                                     status="FILLED",
                                     fee=pending.accumulated_fees,
-                                    is_taker=not is_maker
+                                    is_taker=(role == TradeRole.TAKER)
                                 )))
                             
                             final_px = pending.weighted_avg_px
@@ -698,6 +697,7 @@ class Engine:
                                         size=final_sz,
                                         price=final_px,
                                         fee=final_fee,
+                                        role=role,
                                         cloid=cloid,
                                         reduce_only=pending_reduce_only,
                                         raw_dir=None
@@ -728,6 +728,7 @@ class Engine:
                                     size=amount,
                                     price=px,
                                     fee=fee,
+                                    role=role,
                                     cloid=cloid,
                                     reduce_only=None,  # Unknown for untracked orders
                                     raw_dir=None
@@ -750,6 +751,7 @@ class Engine:
                                     size=amount,
                                     price=px,
                                     fee=fee,
+                                    role=role,
                                     cloid=None,
                                     reduce_only=None,
                                     raw_dir=None
