@@ -500,10 +500,8 @@ class Engine:
 
                     
                     # 3. Check order status
-                    status = order.status or ""
-                    
-                    if self._is_canceled_status(status):
-                        logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
+                    if self._is_canceled_status(order.status):
+                        logger.info(f"[ORDER_CANCELED] {cloid} - status: {order.status}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
