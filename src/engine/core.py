@@ -335,6 +335,25 @@ class Engine:
                 logger.error(f"Error in broadcast loop: {e}", exc_info=True)
                 await asyncio.sleep(5.0)
 
+
+
+    def _get_base_asset(self, market_index: int) -> str:
+        """
+        Get base asset from market index.
+        Returns 'UNKNOWN' if not found.
+        """
+        symbol = self.reverse_market_map.get(market_index)
+        if not symbol:
+             return "UNKNOWN"
+             
+        if "_" in symbol:
+            return symbol.split("_")[0]
+        elif "/" in symbol:
+             return symbol.split("/")[0]
+        
+        # Perps or simple symbols (e.g. HYPE)
+        return symbol
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -412,7 +431,10 @@ class Engine:
                     order_index = order.get("order_index")
                     if order_index and not pending.oid:
                         pending.oid = order_index
-                        logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} @ {pending.price}")
+                        
+                        
+                        # Resolve Symbol to get Base Asset
+                        logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
