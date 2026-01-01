@@ -595,8 +595,8 @@ class Engine:
                     trade = self._parse_trade(trade_dict)
                     
                     # Match trade to our account to find CLOID and Side
-                    # We need to handle account_id as int for comparison
-                    my_account_id_int = int(account_id.split(":")[-1]) # Handle "0x...:123" format or just "123"
+                    # Use self.account_index directly as it is the source of truth
+                    my_account_id_int = self.account_index
                     
                     if trade.bid_account_id == my_account_id_int:
                         is_buyer = True
