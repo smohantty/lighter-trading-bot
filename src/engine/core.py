@@ -386,8 +386,6 @@ class Engine:
             type=order_data["type"],
             time_in_force=order_data["time_in_force"],
             reduce_only=order_data["reduce_only"],
-            trigger_price=order_data["trigger_price"],
-            order_expiry=order_data["order_expiry"],
             status=order_data["status"]
         )
 

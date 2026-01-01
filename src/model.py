@@ -110,6 +110,4 @@ class Order:
     type: str
     time_in_force: str
     reduce_only: bool
-    trigger_price: str
-    order_expiry: int
     status: str
