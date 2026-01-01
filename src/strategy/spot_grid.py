@@ -197,8 +197,8 @@ class SpotGridStrategy(Strategy):
                 if candidates:
                     acquisition_price = market_info.round_price(max(candidates))
                 elif self.zones:
-                     # Fallback to first zone lower price
-                    acquisition_price = market_info.round_price(self.zones[0].lower_price)
+                     # Fallback to current price (market buy)
+                    acquisition_price = market_info.round_price(self.current_price)
 
             rounded_deficit = market_info.clamp_to_min_notional(base_deficit, acquisition_price)
 
@@ -234,13 +234,12 @@ class SpotGridStrategy(Strategy):
                  acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
                  # Find nearest level ABOVE market to sell at
-                 # Find nearest level ABOVE market to sell at
                  candidates = [z.upper_price for z in self.zones if z.upper_price > self.current_price]
                  if candidates:
                      acquisition_price = market_info.round_price(min(candidates))
                  elif self.zones:
-                     # Fallback to last zone upper price
-                     acquisition_price = market_info.round_price(self.zones[-1].upper_price)
+                     # Fallback to current price (market sell)
+                     acquisition_price = market_info.round_price(self.current_price)
 
             base_to_sell = quote_deficit / acquisition_price
             rounded_sell_sz = market_info.clamp_to_min_notional(base_to_sell, acquisition_price)
