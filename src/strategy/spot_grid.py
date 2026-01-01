@@ -209,7 +209,7 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
-            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
+            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
             cloid = ctx.generate_cloid()
             self.state = StrategyState.AcquiringAssets
             self.acquisition_cloid = cloid
@@ -252,7 +252,7 @@ class SpotGridStrategy(Strategy):
                     logger.error(f"[SPOT_GRID] {msg}")
                     raise ValueError(msg)
 
-            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}")
+            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}")
             cloid = ctx.generate_cloid()
             self.state = StrategyState.AcquiringAssets
             self.acquisition_cloid = cloid
@@ -317,7 +317,7 @@ class SpotGridStrategy(Strategy):
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
                  if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
-                      logger.info(f"[SPOT_GRID] Triggered at {price}")
+                      logger.info(f"[SPOT_GRID] [Triggered] at {price}")
                       self.initial_entry_price = price
                       self.state = StrategyState.Running
                       self.refresh_orders(ctx)
@@ -329,7 +329,6 @@ class SpotGridStrategy(Strategy):
         if fill.cloid:
             # Acquisition Fill
             if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
-                 logger.info(f"[SPOT_GRID] Acquisition filled @ {fill.price}")
                  self.total_fees += fill.fee
                  if fill.side.is_buy():
                        self.inventory_base += fill.size
@@ -342,7 +341,7 @@ class SpotGridStrategy(Strategy):
                      # Reset avg entry to rebalancing price for the entire position as requested
                      self.avg_entry_price = fill.price
                  
-                 logger.info(f"[SPOT_GRID] Rebalancing Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
+                 logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
                  
                  # Determine entry price for zones now that we have inventory
                  for zone in self.zones:
@@ -363,7 +362,7 @@ class SpotGridStrategy(Strategy):
                  
                  if zone.pending_side.is_buy():
                       # Buy Fill
-                      logger.info(f"[SPOT_GRID] Zone {idx} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] Zone {idx} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
@@ -377,7 +376,7 @@ class SpotGridStrategy(Strategy):
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[SPOT_GRID] Zone {idx}  Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] Zone {idx}  Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
@@ -408,7 +407,7 @@ class SpotGridStrategy(Strategy):
         if cloid in self.active_order_map:
              idx = self.active_order_map.pop(cloid)
              self.zones[idx].order_id = None
-             logger.warning(f"[SPOT_GRID] Order failed for Zone {idx}")
+             logger.warning(f"[ORDER_FAILED][SPOT_GRID] Order failed for Zone {idx}")
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              
