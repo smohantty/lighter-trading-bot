@@ -280,7 +280,7 @@ class Engine:
                 if error:
                     logger.error(f"Failed to refresh auth token: {error}")
                 else:
-                    self.ws_client.update_auth_token(auth_token)
+                    await self.ws_client.update_auth_token(auth_token)
                     logger.info("Auth token refreshed successfully")
                     
             except asyncio.CancelledError:
