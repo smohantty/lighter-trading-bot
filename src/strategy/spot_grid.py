@@ -162,7 +162,7 @@ class SpotGridStrategy(Strategy):
         if self.inventory_base > 0.0:
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
-            logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price}")
+
         
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
@@ -269,6 +269,9 @@ class SpotGridStrategy(Strategy):
             return
 
         # No Deficit (or negligible)
+        if self.inventory_base > 0.0:
+             logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price} (No Rebalancing Needed)")
+
         if self.config.trigger_price:
              # Passive Wait Mode
              logger.info("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.")
@@ -331,12 +334,15 @@ class SpotGridStrategy(Strategy):
                  if fill.side.is_buy():
                        self.inventory_base += fill.size
                        self.inventory_quote -= (fill.size * fill.price)
-                       if self.inventory_base > 0.0:
-                           # Reset avg entry to rebalancing price for the entire position as requested
-                           self.avg_entry_price = fill.price
-                 else:
-                      self.inventory_base = max(0.0, self.inventory_base - fill.size)
-                      self.inventory_quote += (fill.size * fill.price)
+                  else:
+                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
+                       self.inventory_quote += (fill.size * fill.price)
+                 
+                 if self.inventory_base > 0.0:
+                     # Reset avg entry to rebalancing price for the entire position as requested
+                     self.avg_entry_price = fill.price
+                 
+                 logger.info(f"[SPOT_GRID] Rebalancing Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
                  
                  # Determine entry price for zones now that we have inventory
                  for zone in self.zones:
