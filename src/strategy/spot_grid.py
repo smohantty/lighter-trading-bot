@@ -127,11 +127,12 @@ class SpotGridStrategy(Strategy):
         for i in range(num_zones):
             zone_lower_price = prices[i]
             zone_upper_price = prices[i+1]
-            # Calculate size based on quote investment per zone using lower price
+            # Calculate size based on quote investment per zone using zone_lower_price
             size = market_info.round_size(investment_per_zone_quote / zone_lower_price)
             
-            # Zone ABOVE (or AT) price line (lower > initial): Acquired base -> Sell at upper
-            # Zone BELOW price line: Have quote -> Waiting to buy at lower
+            # Determine initial state based on zone position relative to current market price:
+            # 1. Zone is ABOVE price: We enter with Base asset -> Pending SELL at Upper Price.
+            # 2. Zone is BELOW price: We enter with Quote asset -> Pending BUY at Lower Price.
             
             if zone_lower_price > initial_price:
                  pending_side = OrderSide.SELL
