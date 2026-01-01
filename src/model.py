@@ -126,9 +126,6 @@ class Trade:
     ask_account_id: int
     bid_account_id: int
     is_maker_ask: bool
-    block_height: int
-    timestamp: int
-    transaction_time: int
     taker_fee: Optional[int] = None
     taker_position_size_before: Optional[str] = None
     taker_entry_quote_before: Optional[str] = None
