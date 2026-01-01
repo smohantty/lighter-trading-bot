@@ -110,3 +110,33 @@ class Order:
     time_in_force: str
     reduce_only: bool
     status: str
+
+
+@dataclass
+class Trade:
+    trade_id: int
+    tx_hash: str
+    type: str
+    market_id: int
+    size: str
+    price: str
+    usd_amount: str
+    ask_id: int
+    bid_id: int
+    ask_account_id: int
+    bid_account_id: int
+    is_maker_ask: bool
+    block_height: int
+    timestamp: int
+    transaction_time: int
+    taker_fee: Optional[int] = None
+    taker_position_size_before: Optional[str] = None
+    taker_entry_quote_before: Optional[str] = None
+    taker_initial_margin_fraction_before: Optional[int] = None
+    taker_position_sign_changed: Optional[bool] = None
+    maker_fee: Optional[int] = None
+    maker_position_size_before: Optional[str] = None
+    maker_entry_quote_before: Optional[str] = None
+    maker_initial_margin_fraction_before: Optional[int] = None
+    maker_position_sign_changed: Optional[bool] = None
+

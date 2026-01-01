@@ -9,7 +9,7 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
@@ -401,6 +401,47 @@ class Engine:
         }
         return status in canceled_statuses
 
+    def _parse_trade(self, trade_data: dict) -> Trade:
+        """
+        Parses a raw trade dictionary into a typed Trade dataclass.
+        """
+        return Trade(
+            trade_id=trade_data["trade_id"],
+            tx_hash=trade_data["tx_hash"],
+            type=trade_data["type"],
+            market_id=trade_data["market_id"],
+            size=trade_data["size"],
+            price=trade_data["price"],
+            usd_amount=trade_data["usd_amount"],
+            ask_id=trade_data["ask_id"],
+            bid_id=trade_data["bid_id"],
+            ask_account_id=trade_data["ask_account_id"],
+            bid_account_id=trade_data["bid_account_id"],
+            is_maker_ask=trade_data["is_maker_ask"],
+            block_height=trade_data["block_height"],
+            timestamp=trade_data["timestamp"],
+            transaction_time=trade_data["transaction_time"],
+            taker_fee=trade_data.get("taker_fee"),
+            taker_position_size_before=trade_data.get("taker_position_size_before"),
+            taker_entry_quote_before=trade_data.get("taker_entry_quote_before"),
+            taker_initial_margin_fraction_before=trade_data.get("taker_initial_margin_fraction_before"),
+            taker_position_sign_changed=trade_data.get("taker_position_sign_changed"),
+            maker_fee=trade_data.get("maker_fee"),
+            maker_position_size_before=trade_data.get("maker_position_size_before"),
+            maker_entry_quote_before=trade_data.get("maker_entry_quote_before"),
+            maker_initial_margin_fraction_before=trade_data.get("maker_initial_margin_fraction_before"),
+            maker_position_sign_changed=trade_data.get("maker_position_sign_changed")
+        )
+
+    def _find_cloid_by_oid(self, oid: int) -> Optional[Cloid]:
+        """
+        Finds the CLOID associated with a given Order ID (OID).
+        """
+        for cloid, pending in self.pending_orders.items():
+            if pending.oid == oid:
+                return cloid
+        return None
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -552,55 +593,60 @@ class Engine:
         
         # Process all trades across all markets
         for market_index, trades_list in trades_by_market.items():
-            for fill in trades_list:
+            for trade_dict in trades_list:
                 try:
+                    trade = self._parse_trade(trade_dict)
+                    
                     # Match trade to our account to find CLOID and Side
                     # We need to handle account_id as int for comparison
                     my_account_id_int = int(account_id.split(":")[-1]) # Handle "0x...:123" format or just "123"
                     
-                    bid_account_id = int(fill.get("bid_account_id", -1))
-                    ask_account_id = int(fill.get("ask_account_id", -1))
-                    
-                    cloid_int = None
-                    is_buyer = None
-
-                    if bid_account_id == my_account_id_int:
+                    if trade.bid_account_id == my_account_id_int:
                         is_buyer = True
-                        cloid_int = fill.get("bid_client_id")
-                    elif ask_account_id == my_account_id_int:
+                        oid = trade.bid_id
+                    elif trade.ask_account_id == my_account_id_int:
                         is_buyer = False
-                        cloid_int = fill.get("ask_client_id")
-                    
-                    if cloid_int is None or is_buyer is None:
-                        # Trade does not involve us or client_id missing (shouldn't happen if account matches)
-                        # Only log if it's strictly weird (e.g. we matched account but no client_id)
-                        if (bid_account_id == my_account_id_int or ask_account_id == my_account_id_int):
-                             logger.warning(f"Trade matched account {my_account_id_int} but missing client_id: {fill}")
+                        oid = trade.ask_id
+                    else:
+                        # Trade does not involve us
                         continue
                         
-                    cloid = Cloid(cloid_int)
+                    # Resolve CLOID from OID
+                    cloid = self._find_cloid_by_oid(oid)
                     
-                    # Parse fill data
-                    amount = float(fill.get("size", 0))
-                    px = float(fill.get("price", 0))
+                    if not cloid:
+                        # Fallback: check if we can find by implicit matching logic or if it's a legacy order
+                        # If we can't find CLOID, we can't track it in strategy. 
+                        # But we should log it.
+                        logger.debug(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
+                        continue
                     
                     # Determine if we are Maker or Taker
-                    is_maker_ask = fill.get("is_maker_ask", False)
+                    # If we are BUYER (BID): We matched against an ASK. If maker_ask is True, then ASK is MAKER, so WE are TAKER.
+                    # If we are BUYER (BID): If maker_ask is False, then ASK is TAKER, so WE are MAKER.
+                    # i.e. is_taker = is_maker_ask
+                    
+                    # If we are SELLER (ASK): We matched against a BID.
+                    # trade.is_maker_ask applies to the ASK side.
+                    # If is_maker_ask is True, WE (ASK) are MAKER.
+                    # If is_maker_ask is False, WE (ASK) are TAKER.
+                    
                     is_maker = False
                     if is_buyer:
-                         # We are BID. If Ask is Maker, we are Taker.
-                         is_maker = not is_maker_ask 
+                        is_maker = not trade.is_maker_ask
                     else:
-                         # We are ASK. If Ask is Maker, we are Maker.
-                         is_maker = is_maker_ask
-                         
-                    
-                    # Fee calculation is currently incorrect (raw units vs token decimals). 
-                    # User requested to set to 0 for now and fix in a later patch.
-                    # fee = float(fill.get("maker_fee", 0)) if is_maker else float(fill.get("taker_fee", 0))
+                        is_maker = trade.is_maker_ask
+                        
+                    # Fee calculation
+                    # User requested 0.0 for now
                     fee = 0.0
                     
+                    # Side
                     side = OrderSide.BUY if is_buyer else OrderSide.SELL
+                    
+                    # Parse values
+                    amount = float(trade.size)
+                    px = float(trade.price)
                     
                     if amount <= 0 or px <= 0:
                         logger.warning(f"Invalid fill data: amount={amount}, px={px}")
@@ -725,7 +771,7 @@ class Engine:
                             logger.error(f"Strategy on_order_filled error: {e}")
                         
                 except Exception as e:
-                    logger.error(f"Error processing trade: {e}, trade data: {fill}")
+                    logger.error(f"Error processing trade: {e}, trade data: {trade_dict}")
 
 
 
