@@ -596,17 +596,14 @@ class Engine:
                     
                     # Match trade to our account to find CLOID and Side
                     # Use self.account_index directly as it is the source of truth
+                    assert self.account_index is not None
                     my_account_id_int = self.account_index
                     
-                    if trade.bid_account_id == my_account_id_int:
-                        is_buyer = True
-                        oid = trade.bid_id
-                    elif trade.ask_account_id == my_account_id_int:
-                        is_buyer = False
-                        oid = trade.ask_id
-                    else:
-                        # Trade does not involve us
-                        continue
+                    match_result = trade.get_side_and_oid(my_account_id_int)
+                    if not match_result:
+                         continue
+                         
+                    is_buyer, oid = match_result
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)

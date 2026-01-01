@@ -137,3 +137,14 @@ class Trade:
     maker_initial_margin_fraction_before: Optional[int] = None
     maker_position_sign_changed: Optional[bool] = None
 
+    def get_side_and_oid(self, account_id: int) -> Optional[tuple[bool, int]]:
+        """
+        Determines if the trade involves the given account.
+        Returns (is_buyer: bool, order_id: int) if involved, else None.
+        """
+        if self.bid_account_id == account_id:
+            return True, self.bid_id
+        elif self.ask_account_id == account_id:
+            return False, self.ask_id
+        return None
+
