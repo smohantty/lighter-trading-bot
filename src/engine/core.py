@@ -458,6 +458,7 @@ class Engine:
             for order_dict in orders_list:
                 try:
                     order = self._parse_order(order_dict)
+                    logger.info(f"Parsed Order: {order}")
                     
                     if not order.client_order_index:
                         continue
