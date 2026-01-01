@@ -201,14 +201,15 @@ class SpotGridStrategy(Strategy):
                      raise ValueError(f"Current price {self.current_price} is below grid range (Min: {self.zones[0].lower_price}). Cannot acquire base asset safely.")
 
             # Ensure min base amount and min notional
-            size = max(base_deficit, market_info.min_base_amount)
-            if size * acquisition_price < market_info.min_quote_amount:
-                if acquisition_price > 0:
-                    size = market_info.min_quote_amount / acquisition_price
-                else:
-                    size = 0.0 # Should not happen if price > 0
+            base_deficit = max(base_deficit, market_info.min_base_amount)
             
-            rounded_deficit = market_info.round_size(size)
+            if base_deficit * acquisition_price < market_info.min_quote_amount:
+                if acquisition_price > 0:
+                    base_deficit = market_info.min_quote_amount / acquisition_price
+                else:
+                    base_deficit = 0.0
+            
+            rounded_deficit = market_info.round_size(base_deficit)
 
             if rounded_deficit > 0.0:
                 estimated_cost = rounded_deficit * acquisition_price
@@ -250,14 +251,15 @@ class SpotGridStrategy(Strategy):
 
             base_to_sell = quote_deficit / acquisition_price
             # Ensure min base amount and min notional
-            size_sell = max(base_to_sell, market_info.min_base_amount)
-            if size_sell * acquisition_price < market_info.min_quote_amount:
+            base_to_sell = max(base_to_sell, market_info.min_base_amount)
+            
+            if base_to_sell * acquisition_price < market_info.min_quote_amount:
                  if acquisition_price > 0:
-                    size_sell = market_info.min_quote_amount / acquisition_price
+                    base_to_sell = market_info.min_quote_amount / acquisition_price
                  else:
-                    size_sell = 0.0
+                    base_to_sell = 0.0
 
-            rounded_sell_sz = market_info.round_size(size_sell)
+            rounded_sell_sz = market_info.round_size(base_to_sell)
 
             if rounded_sell_sz > 0.0:
                  estimated_proceeds = rounded_sell_sz * acquisition_price
