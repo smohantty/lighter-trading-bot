@@ -452,6 +452,7 @@ class Engine:
                     logger.info(f"Parsed Order: {order}")
                     
                     if not order.cloid_id:
+                        logger.warning(f"Order missing cloid_id: {order}")
                         continue
                     
                     
