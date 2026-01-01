@@ -375,7 +375,6 @@ class Engine:
             owner_account_index=order_data["owner_account_index"],
             initial_base_amount=order_data["initial_base_amount"],
             price=order_data["price"],
-            nonce=order_data["nonce"],
             remaining_base_amount=order_data["remaining_base_amount"],
             is_ask=order_data["is_ask"],
             base_size=order_data["base_size"],

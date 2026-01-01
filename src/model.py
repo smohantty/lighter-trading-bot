@@ -99,7 +99,6 @@ class Order:
     owner_account_index: int
     initial_base_amount: str
     price: str
-    nonce: int
     remaining_base_amount: str
     is_ask: bool
     base_size: int
