@@ -58,6 +58,13 @@ class SpotGridStrategy(Strategy):
         self.total_fees = 0.0
         self.unrealized_pnl = 0.0
         
+        self.grid_spacing_pct = common.calculate_grid_spacing_pct(
+            self.config.grid_type,
+            self.config.lower_price,
+            self.config.upper_price,
+            self.config.grid_count
+        )
+        
         # Position Tracking
         self.inventory_base = 0.0
         self.inventory_quote = 0.0
@@ -424,13 +431,6 @@ class SpotGridStrategy(Strategy):
         if self.inventory_base > 0.0 and self.avg_entry_price > 0.0:
              unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base
              
-        grid_spacing_pct = common.calculate_grid_spacing_pct(
-            self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count
-        )
-             
         return SpotGridSummary(
             symbol=self.symbol,
             price=self.current_price,
@@ -445,7 +445,7 @@ class SpotGridStrategy(Strategy):
             grid_count=len(self.zones),
             range_low=self.config.lower_price,
             range_high=self.config.upper_price,
-            grid_spacing_pct=grid_spacing_pct,
+            grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             base_balance=self.inventory_base,
             quote_balance=self.inventory_quote
