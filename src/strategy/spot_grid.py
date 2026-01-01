@@ -329,10 +329,11 @@ class SpotGridStrategy(Strategy):
                  logger.info(f"[SPOT_GRID] Acquisition filled @ {fill.price}")
                  self.total_fees += fill.fee
                  if fill.side.is_buy():
-                      self.inventory_base += fill.size
-                      self.inventory_quote -= (fill.size * fill.price)
-                      if self.inventory_base > 0.0:
-                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
+                       self.inventory_base += fill.size
+                       self.inventory_quote -= (fill.size * fill.price)
+                       if self.inventory_base > 0.0:
+                           # Reset avg entry to rebalancing price for the entire position as requested
+                           self.avg_entry_price = fill.price
                  else:
                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
