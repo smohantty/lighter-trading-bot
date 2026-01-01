@@ -597,9 +597,7 @@ class Engine:
                     # Match trade to our account to find CLOID and Side
                     # Use self.account_index directly as it is the source of truth
                     assert self.account_index is not None
-                    my_account_id_int = self.account_index
-                    
-                    match_result = trade.get_side_and_oid(my_account_id_int)
+                    match_result = trade.get_side_and_oid(self.account_index)
                     if not match_result:
                          continue
                          
