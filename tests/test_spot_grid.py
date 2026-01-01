@@ -178,3 +178,40 @@ def test_get_summary(spot_config, context):
     assert summary.quote_balance == strategy.inventory_quote
     assert summary.base_balance == 0.0
     assert summary.quote_balance > 0.0
+
+def test_initialization_out_of_range_error(spot_config, context):
+    """
+    Test that ValueError is raised if we need to acquire assets but are out of range.
+    Price = 0.5 (Below Grid 1.0-2.0).
+    Grid: 1.0, 1.5, 2.0.
+    Zones: [1.0-1.5, 1.5-2.0]
+    
+    If we are at 0.5, and we trigger acquisition (e.g. need base asset), it should fail.
+    However, if we are below grid, we usually need Quote to buy.
+    Logic:
+    If below (0.5), Zones are ABOVE us. We want to BUY at lower.
+    Zone 0 lower=1.0. 1.0 > 0.5. Pending Side = SELL.
+    Required Base += size.
+    
+    So we need Base.
+    If we don't have enough Base (avail_base=0), we need to ACQUIRE base.
+    To acquire base, we normally look for a level LOWER than market to buy at.
+    But market is 0.5. All levels (1.0, 1.5) are > 0.5.
+    Candidates < 0.5 is EMPTY.
+    Should raise ValueError.
+    """
+    # We need to pass upfront validation (Total Value >= 100)
+    # But fail acquisition (Base Deficit, no way to buy).
+    # So give enough Quote to cover TOTAL investment, but 0 base.
+    def get_balance(asset):
+        if asset == "LIT": return 0.0
+        if asset == "USDC": return 200.0
+        return 0.0
+    
+    context.get_spot_available.side_effect = get_balance
+    
+    strategy = SpotGridStrategy(spot_config)
+
+    # We expect ValueError
+    with pytest.raises(ValueError, match="Current price 0.5 is below grid range"):
+        strategy.initialize_zones(0.5, context)

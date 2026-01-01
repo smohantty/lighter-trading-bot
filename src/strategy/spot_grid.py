@@ -80,6 +80,7 @@ class SpotGridStrategy(Strategy):
         self.current_price = 0.0
 
     def initialize_zones(self, price: float, ctx: StrategyContext):
+        self.current_price = price
         # 1. Get initial data
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
@@ -197,8 +198,7 @@ class SpotGridStrategy(Strategy):
                 if candidates:
                     acquisition_price = market_info.round_price(max(candidates))
                 elif self.zones:
-                     # Fallback to current price (market buy)
-                    acquisition_price = market_info.round_price(self.current_price)
+                     raise ValueError(f"Current price {self.current_price} is below grid range (Min: {self.zones[0].lower_price}). Cannot acquire base asset safely.")
 
             rounded_deficit = market_info.clamp_to_min_notional(base_deficit, acquisition_price)
 
@@ -238,8 +238,7 @@ class SpotGridStrategy(Strategy):
                  if candidates:
                      acquisition_price = market_info.round_price(min(candidates))
                  elif self.zones:
-                     # Fallback to current price (market sell)
-                     acquisition_price = market_info.round_price(self.current_price)
+                     raise ValueError(f"Current price {self.current_price} is above grid range (Max: {self.zones[-1].upper_price}). Cannot acquire quote asset safely.")
 
             base_to_sell = quote_deficit / acquisition_price
             rounded_sell_sz = market_info.clamp_to_min_notional(base_to_sell, acquisition_price)
