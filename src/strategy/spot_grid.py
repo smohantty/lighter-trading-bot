@@ -300,7 +300,7 @@ class SpotGridStrategy(Strategy):
                 zone.order_id = cloid
                 self.active_order_map[cloid] = idx
 
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{idx}: LIMIT {side} {size} {self.config.symbol} @ {price}")
+                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{idx}: LIMIT {side} {size} {self.base_asset} @ {price}")
                 ctx.place_order(LimitOrderRequest(
                     symbol=self.config.symbol,
                     side=side,
@@ -363,7 +363,7 @@ class SpotGridStrategy(Strategy):
                  
                  if zone.pending_side.is_buy():
                       # Buy Fill
-                      logger.info(f"[SPOT_GRID] Zone {idx} BUY Filled @ {fill.price}")
+                      logger.info(f"[SPOT_GRID] Zone {idx} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
@@ -377,7 +377,7 @@ class SpotGridStrategy(Strategy):
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[SPOT_GRID] Zone {idx} SELL Filled @ {fill.price}. PnL: {pnl:.4f}")
+                      logger.info(f"[SPOT_GRID] Zone {idx}  Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
@@ -394,7 +394,7 @@ class SpotGridStrategy(Strategy):
         zone.order_id = cloid
         self.active_order_map[cloid] = idx
         
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] COUNTER: LIMIT {side} {zone.size} @ {price}")
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] LIMIT {side} {zone.size} {self.base_asset} @ {price}")
         ctx.place_order(LimitOrderRequest(
             symbol=self.config.symbol,
             side=side,

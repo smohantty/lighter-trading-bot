@@ -396,7 +396,7 @@ class Engine:
                     order_index = order.get("order_index")
                     if order_index and not pending.oid:
                         pending.oid = order_index
-                        logger.info(f"[ORDER_TRACKING] Linked CLOID {cloid} -> OID {pending.oid}")
+                        logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} @ {pending.price}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
