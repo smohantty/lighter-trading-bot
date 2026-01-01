@@ -56,6 +56,7 @@ class OrderFill:
 class PendingOrder:
     """Tracks an order that may fill in multiple parts."""
     target_size: float
+    side: OrderSide
     filled_size: float = 0.0
     weighted_avg_px: float = 0.0
     accumulated_fees: float = 0.0
@@ -63,7 +64,6 @@ class PendingOrder:
     oid: Optional[int] = None
     created_at: float = 0.0  # Timestamp when order was placed
     price: float = 0.0
-    side: Optional[OrderSide] = None
 
 
 @dataclass
