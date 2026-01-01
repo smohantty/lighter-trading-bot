@@ -18,7 +18,7 @@ import src.broadcast.types as btypes
 logger = logging.getLogger(__name__)
 
 # Constants (Move to Lighter Constants if available)
-RECONNECT_DELAY = 5.0
+# Constants (Move to Lighter Constants if available)
 
 class Engine:
     def __init__(self, config: StrategyConfig, exchange_config: ExchangeConfig, strategy: Strategy, broadcaster: Optional[StatusBroadcaster] = None):
@@ -172,8 +172,7 @@ class Engine:
             except Exception as e:
                 logger.error(f"Failed to broadcast initial info: {e}", exc_info=True)
 
-        # Start periodic auth token refresh task (every 7 hours)
-        self.auth_refresh_task = None
+
 
     async def _message_processor(self):
         logger.info("Message Processor Started...")
@@ -371,8 +370,6 @@ class Engine:
         Fills are handled in _handle_user_fills_msg.
         """
         msg_type = orders_data.get("type", "")
-        # query_coids = set of cloids present in THIS message
-        current_msg_cloids = set()
         
         # Extract orders
         # Format: {"channel": "...", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
@@ -386,8 +383,8 @@ class Engine:
                     if not client_order_index:
                         continue
                     
+                    
                     cloid = Cloid(client_order_index)
-                    current_msg_cloids.add(cloid)
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
