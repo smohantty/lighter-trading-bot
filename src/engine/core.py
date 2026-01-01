@@ -369,10 +369,8 @@ class Engine:
         Parses a raw order dictionary into a typed Order dataclass.
         """
         return Order(
-            order_index=order_data["order_index"],
-            client_order_index=order_data["client_order_index"],
-            order_id=order_data["order_id"],
-            client_order_id=order_data["client_order_id"],
+            order_id=order_data["order_index"],
+            cloid_id=order_data["client_order_index"],
             market_index=order_data["market_index"],
             owner_account_index=order_data["owner_account_index"],
             initial_base_amount=order_data["initial_base_amount"],
@@ -390,11 +388,7 @@ class Engine:
             reduce_only=order_data["reduce_only"],
             trigger_price=order_data["trigger_price"],
             order_expiry=order_data["order_expiry"],
-            status=order_data["status"],
-            trigger_status=order_data["trigger_status"],
-            trigger_time=order_data["trigger_time"],
-            parent_order_index=order_data["parent_order_index"],
-            parent_order_id=order_data["parent_order_id"]
+            status=order_data["status"]
         )
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
@@ -460,11 +454,11 @@ class Engine:
                     order = self._parse_order(order_dict)
                     logger.info(f"Parsed Order: {order}")
                     
-                    if not order.client_order_index:
+                    if not order.cloid_id:
                         continue
                     
                     
-                    cloid = Cloid(order.client_order_index)
+                    cloid = Cloid(order.cloid_id)
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
@@ -473,15 +467,15 @@ class Engine:
                     pending = self.pending_orders[cloid]
                     
                     # 1. Update OID if missing (Crucial for later cancellation/audit)
-                    if order.order_index and not pending.oid:
-                        pending.oid = order.order_index
+                    if order.order_id and not pending.oid:
+                        pending.oid = order.order_id
                         
                         # Resolve Symbol to get Base Asset
                         logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
-                                 oid=order.order_index,
+                                 oid=order.order_id,
                                  cloid=str(cloid),
                                  side=str(pending.side) if pending.side else "UNKNOWN",
                                  price=pending.price,

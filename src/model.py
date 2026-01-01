@@ -93,10 +93,8 @@ OrderRequest = Union[LimitOrderRequest, MarketOrderRequest, CancelOrderRequest]
 
 @dataclass
 class Order:
-    order_index: int
-    client_order_index: int
-    order_id: str
-    client_order_id: str
+    order_id: int
+    cloid_id: int
     market_index: int
     owner_account_index: int
     initial_base_amount: str
@@ -115,7 +113,3 @@ class Order:
     trigger_price: str
     order_expiry: int
     status: str
-    trigger_status: str
-    trigger_time: int
-    parent_order_index: int
-    parent_order_id: str
