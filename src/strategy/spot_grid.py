@@ -249,32 +249,31 @@ class SpotGridStrategy(Strategy):
                  else:
                     base_to_sell = 0.0
 
-            rounded_sell_sz = market_info.round_size(base_to_sell)
+            base_to_sell = market_info.round_size(base_to_sell)
 
-            if rounded_sell_sz > 0.0:
-                 estimated_proceeds = rounded_sell_sz * acquisition_price
-                 logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {self.quote_asset}, need to sell ~{rounded_sell_sz} {self.base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
+            estimated_proceeds = base_to_sell * acquisition_price
+            logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {self.quote_asset}, need to sell ~{base_to_sell} {self.base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
 
-                 if available_base < rounded_sell_sz:
-                      msg = f"Insufficient Base Balance for rebalancing! Need to sell {rounded_sell_sz} {self.base_asset}, Have {available_base} {self.base_asset}. Quote Deficit: {quote_deficit} {self.quote_asset}"
-                      logger.error(f"[SPOT_GRID] {msg}")
-                      raise ValueError(msg)
+            if available_base < base_to_sell:
+                    msg = f"Insufficient Base Balance for rebalancing! Need to sell {base_to_sell} {self.base_asset}, Have {available_base} {self.base_asset}. Quote Deficit: {quote_deficit} {self.quote_asset}"
+                    logger.error(f"[SPOT_GRID] {msg}")
+                    raise ValueError(msg)
 
-                 logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {rounded_sell_sz} {self.base_asset} @ {acquisition_price}")
-                 cloid = ctx.generate_cloid()
-                 self.state = StrategyState.AcquiringAssets
-                 self.acquisition_cloid = cloid
-                 self.acquisition_target_size = rounded_sell_sz
+            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}")
+            cloid = ctx.generate_cloid()
+            self.state = StrategyState.AcquiringAssets
+            self.acquisition_cloid = cloid
+            self.acquisition_target_size = base_to_sell
 
-                 ctx.place_order(LimitOrderRequest(
-                    symbol=self.config.symbol,
-                    side=OrderSide.SELL,
-                    price=acquisition_price,
-                    sz=rounded_sell_sz,
-                    reduce_only=False,
-                    cloid=cloid
-                 ))
-                 return
+            ctx.place_order(LimitOrderRequest(
+                symbol=self.config.symbol,
+                side=OrderSide.SELL,
+                price=acquisition_price,
+                sz=base_to_sell,
+                reduce_only=False,
+                cloid=cloid
+            ))
+            return
 
         # No Deficit (or negligible)
         if self.config.trigger_price:
