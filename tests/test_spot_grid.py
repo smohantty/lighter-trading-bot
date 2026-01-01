@@ -76,6 +76,21 @@ def test_initialization_rust_logic(spot_config, context):
     # Zone 1
     assert strategy.zones[1].lower_price == 1.5
     assert strategy.zones[1].pending_side == OrderSide.BUY
+    
+    # Check Inventory Initialization
+    # Available Base = 1000.0 (from mocked context)
+    # Required Base for pending BUYs is 0 (we need quote)
+    # Actually logic: if lower > initial (1.6) -> Sell (base needed).
+    # Here both zones lower (1.0, 1.5) < initial (1.6). So both are BUY.
+    # Required Base = 0.
+    # Required Quote = sum(size * lower)
+    assert strategy.inventory_base == 0.0
+    # inventory_quote is initialized to min(avail_quote, required_quote).
+    # We didn't mock avail_quote explicitly in context fixture? 
+    # context fixture has get_spot_available return 1000.0 for ANY asset.
+    # So avail_quote = 1000.0.
+    # required_quote > 0. So inventory_quote should be > 0.
+    assert strategy.inventory_quote > 0.0
 
 def test_initialization_sell_logic(spot_config, context):
     """
@@ -132,3 +147,14 @@ def test_fill_lifecycle_rust(spot_config, context):
     args = context.place_order.call_args[0][0]
     assert args.side == OrderSide.SELL
     assert args.price == 2.0
+    
+    # Verify Inventory Update
+    # Initial was 0 base (manually set in test logic, but strategy might have initialized differently if we used full init flow)
+    # But here we manually modified zones.
+    # Let's assume inventory was 0.
+    # BUY Fill 10.0 @ 1.0. 
+    # Base += 10.0
+    # Quote -= 10.0 * 1.0 = 10.0
+    assert strategy.inventory_base == 10.0
+    assert strategy.inventory_quote == -10.0 # Started at 0 in this specific manual test setup
+
