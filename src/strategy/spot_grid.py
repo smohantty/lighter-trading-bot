@@ -193,13 +193,9 @@ class SpotGridStrategy(Strategy):
                 acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
                 # Find nearest level LOWER than market to buy at
-                nearest_level = 0.0
                 candidates = [z.lower_price for z in self.zones if z.lower_price < self.current_price]
                 if candidates:
-                    nearest_level = max(candidates)
-                
-                if nearest_level > 0.0:
-                    acquisition_price = market_info.round_price(nearest_level)
+                    acquisition_price = market_info.round_price(max(candidates))
                 elif self.zones:
                      # Fallback to first zone lower price
                     acquisition_price = market_info.round_price(self.zones[0].lower_price)
@@ -238,13 +234,10 @@ class SpotGridStrategy(Strategy):
                  acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
                  # Find nearest level ABOVE market to sell at
-                 nearest_sell_level = float('inf')
+                 # Find nearest level ABOVE market to sell at
                  candidates = [z.upper_price for z in self.zones if z.upper_price > self.current_price]
                  if candidates:
-                     nearest_sell_level = min(candidates)
-                
-                 if nearest_sell_level != float('inf'):
-                     acquisition_price = market_info.round_price(nearest_sell_level)
+                     acquisition_price = market_info.round_price(min(candidates))
                  elif self.zones:
                      # Fallback to last zone upper price
                      acquisition_price = market_info.round_price(self.zones[-1].upper_price)
