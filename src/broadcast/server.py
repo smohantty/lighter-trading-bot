@@ -33,6 +33,7 @@ class StatusBroadcaster:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+            self.server = None
             logger.info("WebSocket Status Server stopped.")
 
     async def _handler(self, websocket: websockets.WebSocketServerProtocol):
