@@ -22,7 +22,7 @@ class StrategyState(Enum):
 
 class SpotGridStrategy(Strategy):
     """
-    Spot Grid Trading Strategy. (Aligned with Rust Implementation)
+    Spot Grid Trading Strategy.
     
     Places a grid of limit orders.
     - Buy orders below current price
@@ -125,30 +125,27 @@ class SpotGridStrategy(Strategy):
         required_quote = 0.0
 
         for i in range(num_zones):
-            lower = prices[i]
-            upper = prices[i+1]
+            zone_lower_price = prices[i]
+            zone_upper_price = prices[i+1]
             # Calculate size based on quote investment per zone using lower price
-            # Rust: let raw_size = quote_per_zone / lower;
-            # Let's align with Rust:
-            raw_size = investment_per_zone_quote / lower
-            size = market_info.round_size(raw_size)
+            size = market_info.round_size(investment_per_zone_quote / zone_lower_price)
             
             # Zone ABOVE (or AT) price line (lower > initial): Acquired base -> Sell at upper
             # Zone BELOW price line: Have quote -> Waiting to buy at lower
             
-            if lower > initial_price:
+            if zone_lower_price > initial_price:
                  pending_side = OrderSide.SELL
                  required_base += size
                  entry_price = initial_price
             else:
                  pending_side = OrderSide.BUY
-                 required_quote += (size * lower)
+                 required_quote += (size * zone_lower_price)
                  entry_price = 0.0
 
             self.zones.append(GridZone(
                 index=i,
-                lower_price=lower,
-                upper_price=upper,
+                lower_price=zone_lower_price,
+                upper_price=zone_upper_price,
                 size=size,
                 pending_side=pending_side,
                 mode=None, # No ZoneMode for Spot
@@ -189,13 +186,7 @@ class SpotGridStrategy(Strategy):
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
 
-        # Use trigger_price if available, otherwise last_price (or current_price)
-        # In initialize_zones we had 'initial_price' passed in or calculated.
-        # Rust uses self.config.trigger_price.unwrap_or(market_info.last_price)
-        # We don't have market_info.last_price directly attached to market_info usually in this bot (it's in Strategy.current_price or passed in).
-        # But we can use self.current_price if initialized, or pass it.
-        # However, initialize_zones has 'price' argument. 
-        # Let's use self.current_price which is updated in on_tick before initialize_zones is called.
+        # Use trigger_price if available, otherwise current_price
         initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
 
         if base_deficit > 0.0:
@@ -205,9 +196,7 @@ class SpotGridStrategy(Strategy):
             if self.config.trigger_price:
                 acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
-                # Find nearest level LOWER than market to buy at?
-                # Rust logic: 
-                # let nearest_level = self.zones.iter().filter(|z| z.lower_price < market_info.last_price).map(|z| z.lower_price).fold(0.0, f64::max);
+                # Find nearest level LOWER than market to buy at
                 nearest_level = 0.0
                 candidates = [z.lower_price for z in self.zones if z.lower_price < self.current_price]
                 if candidates:
@@ -253,7 +242,6 @@ class SpotGridStrategy(Strategy):
                  acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
                  # Find nearest level ABOVE market to sell at
-                 # Rust: self.zones.iter().filter(|z| z.upper_price > market_info.last_price).map(|z| z.upper_price).fold(f64::INFINITY, f64::min);
                  nearest_sell_level = float('inf')
                  candidates = [z.upper_price for z in self.zones if z.upper_price > self.current_price]
                  if candidates:
