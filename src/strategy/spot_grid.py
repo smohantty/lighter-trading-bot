@@ -418,12 +418,11 @@ class SpotGridStrategy(Strategy):
              logger.warning(f"[SPOT_GRID] Order failed for Zone {idx}")
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
-        current_price = self.current_price
              
         # Approx unrealized pnl
         unrealized = 0.0
         if self.inventory_base > 0.0 and self.avg_entry_price > 0.0:
-             unrealized = (current_price - self.avg_entry_price) * self.inventory_base
+             unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base
              
         grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
@@ -434,7 +433,7 @@ class SpotGridStrategy(Strategy):
              
         return SpotGridSummary(
             symbol=self.symbol,
-            price=current_price,
+            price=self.current_price,
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.inventory_base,
@@ -453,7 +452,6 @@ class SpotGridStrategy(Strategy):
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
-        current_price = self.current_price
              
         zones_info = [
              ZoneInfo(
@@ -472,7 +470,7 @@ class SpotGridStrategy(Strategy):
         return GridState(
              symbol=self.symbol,
              strategy_type="spot_grid",
-             current_price=current_price,
+             current_price=self.current_price,
              grid_bias=None,
              zones=zones_info
         )
