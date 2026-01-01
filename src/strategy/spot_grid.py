@@ -189,6 +189,8 @@ class SpotGridStrategy(Strategy):
         if base_deficit > 0.0:
             # Case 1: Not enough base asset. Need to BUY base asset.
             acquisition_price = initial_price
+            base_deficit = max(base_deficit, market_info.min_base_amount)
+            base_deficit = market_info.round_size(base_deficit)
 
             if self.config.trigger_price:
                 acquisition_price = market_info.round_price(self.config.trigger_price)
@@ -198,42 +200,30 @@ class SpotGridStrategy(Strategy):
                 if candidates:
                     acquisition_price = market_info.round_price(max(candidates))
                 elif self.zones:
-                     raise ValueError(f"Current price {self.current_price} is below grid range (Min: {self.zones[0].lower_price}). Cannot acquire base asset safely.")
+                     raise ValueError(f"Current price {self.current_price} is below grid range (Min: {self.zones[0].lower_price}). Cannot acquire base asset safely.")            
 
-            # Ensure min base amount and min notional
-            base_deficit = max(base_deficit, market_info.min_base_amount)
+            estimated_cost = base_deficit * acquisition_price
             
-            if base_deficit * acquisition_price < market_info.min_quote_amount:
-                if acquisition_price > 0:
-                    base_deficit = market_info.min_quote_amount / acquisition_price
-                else:
-                    base_deficit = 0.0
-            
-            rounded_deficit = market_info.round_size(base_deficit)
+            if available_quote < estimated_cost:
+                msg = f"Insufficient Quote Balance for acquisition! Need ~{estimated_cost:.2f} {self.quote_asset}, Have {available_quote:.2f} {self.quote_asset}. Base Deficit: {base_deficit} {self.base_asset}"
+                logger.error(f"[SPOT_GRID] {msg}")
+                raise ValueError(msg)
 
-            if rounded_deficit > 0.0:
-                estimated_cost = rounded_deficit * acquisition_price
-                
-                if available_quote < estimated_cost:
-                    msg = f"Insufficient Quote Balance for acquisition! Need ~{estimated_cost:.2f} {self.quote_asset}, Have {available_quote:.2f} {self.quote_asset}. Base Deficit: {rounded_deficit} {self.base_asset}"
-                    logger.error(f"[SPOT_GRID] {msg}")
-                    raise ValueError(msg)
+            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
+            cloid = ctx.generate_cloid()
+            self.state = StrategyState.AcquiringAssets
+            self.acquisition_cloid = cloid
+            self.acquisition_target_size = base_deficit
 
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {rounded_deficit} {self.base_asset} @ {acquisition_price}")
-                cloid = ctx.generate_cloid()
-                self.state = StrategyState.AcquiringAssets
-                self.acquisition_cloid = cloid
-                self.acquisition_target_size = rounded_deficit
-
-                ctx.place_order(LimitOrderRequest(
-                    symbol=self.config.symbol,
-                    side=OrderSide.BUY,
-                    price=acquisition_price,
-                    sz=rounded_deficit,
-                    reduce_only=False,
-                    cloid=cloid
-                ))
-                return
+            ctx.place_order(LimitOrderRequest(
+                symbol=self.config.symbol,
+                side=OrderSide.BUY,
+                price=acquisition_price,
+                sz=base_deficit,
+                reduce_only=False,
+                cloid=cloid
+            ))
+            return
 
         elif quote_deficit > 0.0:
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
