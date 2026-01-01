@@ -460,6 +460,7 @@ class Engine:
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
+                        logger.warning(f"Order not tracked: {order}")
                         continue
                     
                     pending = self.pending_orders[cloid]
@@ -478,7 +479,7 @@ class Engine:
                                  side=str(pending.side) if pending.side else "UNKNOWN",
                                  price=pending.price,
                                  size=pending.target_size,
-                                 status="OPEN",
+                                 status=order.status,
                                  fee=0.0,
                                  is_taker=False
                              )))
@@ -512,7 +513,7 @@ class Engine:
                                  is_taker=False
                              )))
 
-                        del self.pending_orders[cloid]
+                        del self.pending_orders[cloid] 
                         
                         try:
                             self.strategy.on_order_failed(cloid, self.ctx)
