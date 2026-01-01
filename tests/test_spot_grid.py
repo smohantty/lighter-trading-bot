@@ -141,7 +141,7 @@ def test_fill_lifecycle_rust(spot_config, context):
     # Logic: Buy Filled -> Switch to Sell (at Upper Price)
     assert zone.pending_side == OrderSide.SELL
     assert zone.entry_price == 1.0
-    assert strategy.position_size == 10.0
+    assert strategy.inventory_base == 10.0
     
     # Verify counter order
     args = context.place_order.call_args[0][0]

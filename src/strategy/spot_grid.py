@@ -59,7 +59,6 @@ class SpotGridStrategy(Strategy):
         self.unrealized_pnl = 0.0
         
         # Position Tracking
-        self.position_size = 0.0
         self.inventory_base = 0.0
         self.inventory_quote = 0.0
         self.avg_entry_price = 0.0
@@ -155,14 +154,13 @@ class SpotGridStrategy(Strategy):
             ))
 
         logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {base_asset}, {required_quote:.2f} {quote_asset}")
-        self.position_size = min(avail_base, required_base)
-        self.inventory_base = self.position_size
+        self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
         
-        if self.position_size > 0.0:
+        if self.inventory_base > 0.0:
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
-            logger.info(f"[SPOT_GRID] Initial Position Size: {self.position_size} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
+            logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
         
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
@@ -345,14 +343,12 @@ class SpotGridStrategy(Strategy):
                  logger.info(f"[SPOT_GRID] Acquisition filled @ {fill.price}")
                  self.total_fees += fill.fee
                  if fill.side.is_buy():
-                      self.position_size += fill.size
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
-                      if self.position_size > 0.0:
-                           self.avg_entry_price = (self.avg_entry_price * (self.position_size - fill.size) + fill.price * fill.size) / self.position_size
+                      if self.inventory_base > 0.0:
+                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                  else:
-                      self.position_size = max(0.0, self.position_size - fill.size)
-                      self.inventory_base -= fill.size
+                      self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                  
                  # Determine entry price for zones now that we have inventory
@@ -375,12 +371,11 @@ class SpotGridStrategy(Strategy):
                  if zone.pending_side.is_buy():
                       # Buy Fill
                       logger.info(f"[SPOT_GRID] Zone {idx} BUY Filled @ {fill.price}")
-                      self.position_size += fill.size
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
-                      if self.position_size > 0.0:
-                           self.avg_entry_price = (self.avg_entry_price * (self.position_size - fill.size) + fill.price * fill.size) / self.position_size
+                      if self.inventory_base > 0.0:
+                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                       
                       zone.pending_side = OrderSide.SELL
                       zone.entry_price = fill.price
@@ -391,8 +386,7 @@ class SpotGridStrategy(Strategy):
                       pnl = (fill.price - zone.entry_price) * fill.size
                       logger.info(f"[SPOT_GRID] Zone {idx} SELL Filled @ {fill.price}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
-                      self.position_size = max(0.0, self.position_size - fill.size)
-                      self.inventory_base -= fill.size
+                      self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
                       
@@ -428,8 +422,8 @@ class SpotGridStrategy(Strategy):
              
         # Approx unrealized pnl
         unrealized = 0.0
-        if self.position_size > 0.0 and self.avg_entry_price > 0.0:
-             unrealized = (current_price - self.avg_entry_price) * self.position_size
+        if self.inventory_base > 0.0 and self.avg_entry_price > 0.0:
+             unrealized = (current_price - self.avg_entry_price) * self.inventory_base
              
         grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
@@ -443,7 +437,7 @@ class SpotGridStrategy(Strategy):
             price=current_price,
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
-            position_size=self.position_size,
+            position_size=self.inventory_base,
             avg_entry_price=self.avg_entry_price,
             realized_pnl=self.realized_pnl,
             unrealized_pnl=unrealized,
