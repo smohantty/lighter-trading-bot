@@ -85,11 +85,6 @@ class SpotGridStrategy(Strategy):
         if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
         
-        
-        # Use Cached Assets
-        base_asset = self.base_asset
-        quote_asset = self.quote_asset
-
         # Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
@@ -100,19 +95,18 @@ class SpotGridStrategy(Strategy):
         # Round prices
         prices = [market_info.round_price(p) for p in prices]
 
-        num_zones = self.config.grid_count - 1
-        investment_per_zone_quote = self.config.total_investment / float(num_zones)
+        investment_per_zone_quote = self.config.total_investment / float(self.config.grid_count - 1)
 
         # Validation: Check minimum order size
         min_order_size = market_info.min_quote_amount
         if investment_per_zone_quote < min_order_size:
-            msg = f"Investment per zone ({investment_per_zone_quote:.2f} {quote_asset}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
+            msg = f"Investment per zone ({investment_per_zone_quote:.2f} {self.quote_asset}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
             logger.error(f"[SPOT_GRID] {msg}")
             raise ValueError(msg)
 
         # Seed inventory
-        avail_base = ctx.get_spot_available(base_asset)
-        avail_quote = ctx.get_spot_available(quote_asset)
+        avail_base = ctx.get_spot_available(self.base_asset)
+        avail_quote = ctx.get_spot_available(self.quote_asset)
 
         
         initial_price = self.config.trigger_price if self.config.trigger_price else price
@@ -130,7 +124,7 @@ class SpotGridStrategy(Strategy):
         required_base = 0.0
         required_quote = 0.0
 
-        for i in range(num_zones):
+        for i in range(self.config.grid_count - 1):
             zone_lower_price = prices[i]
             zone_upper_price = prices[i+1]
             # Calculate size based on quote investment per zone using zone_lower_price
@@ -160,14 +154,14 @@ class SpotGridStrategy(Strategy):
                 roundtrip_count=0
             ))
 
-        logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {base_asset}, {required_quote:.2f} {quote_asset}")
+        logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}")
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
         
         if self.inventory_base > 0.0:
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
-            logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
+            logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price}")
         
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
@@ -185,10 +179,6 @@ class SpotGridStrategy(Strategy):
         Pure logic to determine if we need to acquire assets.
         Balances are passed in to avoid side-effect fetching.
         """
-        # Use cached assets
-        base_asset = self.base_asset
-        quote_asset = self.quote_asset
-
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
 
@@ -220,11 +210,11 @@ class SpotGridStrategy(Strategy):
                 estimated_cost = rounded_deficit * acquisition_price
                 
                 if available_quote < estimated_cost:
-                    msg = f"Insufficient Quote Balance for acquisition! Need ~{estimated_cost:.2f} {quote_asset}, Have {available_quote:.2f} {quote_asset}. Base Deficit: {rounded_deficit} {base_asset}"
+                    msg = f"Insufficient Quote Balance for acquisition! Need ~{estimated_cost:.2f} {self.quote_asset}, Have {available_quote:.2f} {self.quote_asset}. Base Deficit: {rounded_deficit} {self.base_asset}"
                     logger.error(f"[SPOT_GRID] {msg}")
                     raise ValueError(msg)
 
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {rounded_deficit} {base_asset} @ {acquisition_price}")
+                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {rounded_deficit} {self.base_asset} @ {acquisition_price}")
                 cloid = ctx.generate_cloid()
                 self.state = StrategyState.AcquiringAssets
                 self.acquisition_cloid = cloid
@@ -264,14 +254,14 @@ class SpotGridStrategy(Strategy):
 
             if rounded_sell_sz > 0.0:
                  estimated_proceeds = rounded_sell_sz * acquisition_price
-                 logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {quote_asset}, need to sell ~{rounded_sell_sz} {base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
+                 logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {self.quote_asset}, need to sell ~{rounded_sell_sz} {self.base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
 
                  if available_base < rounded_sell_sz:
-                      msg = f"Insufficient Base Balance for rebalancing! Need to sell {rounded_sell_sz} {base_asset}, Have {available_base} {base_asset}. Quote Deficit: {quote_deficit} {quote_asset}"
+                      msg = f"Insufficient Base Balance for rebalancing! Need to sell {rounded_sell_sz} {self.base_asset}, Have {available_base} {self.base_asset}. Quote Deficit: {quote_deficit} {self.quote_asset}"
                       logger.error(f"[SPOT_GRID] {msg}")
                       raise ValueError(msg)
 
-                 logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {rounded_sell_sz} {base_asset} @ {acquisition_price}")
+                 logger.info(f"[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {rounded_sell_sz} {self.base_asset} @ {acquisition_price}")
                  cloid = ctx.generate_cloid()
                  self.state = StrategyState.AcquiringAssets
                  self.acquisition_cloid = cloid
@@ -425,9 +415,7 @@ class SpotGridStrategy(Strategy):
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              
         # Approx unrealized pnl
-        unrealized = 0.0
-        if self.inventory_base > 0.0 and self.avg_entry_price > 0.0:
-             unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base
+        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0.0 and self.avg_entry_price > 0.0) else 0.0
              
         return SpotGridSummary(
             symbol=self.symbol,
@@ -450,25 +438,22 @@ class SpotGridStrategy(Strategy):
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
-             
-        zones_info = [
-             ZoneInfo(
-                index=z.index,
-                lower_price=z.lower_price,
-                upper_price=z.upper_price,
-                size=z.size,
-                pending_side=str(z.pending_side),
-                has_order=z.order_id is not None,
-                is_reduce_only=False,
-                entry_price=z.entry_price,
-                roundtrip_count=z.roundtrip_count
-             ) for z in self.zones
-        ]
-        
         return GridState(
              symbol=self.symbol,
              strategy_type="spot_grid",
              current_price=self.current_price,
              grid_bias=None,
-             zones=zones_info
+             zones=[
+                 ZoneInfo(
+                    index=z.index,
+                    lower_price=z.lower_price,
+                    upper_price=z.upper_price,
+                    size=z.size,
+                    pending_side=str(z.pending_side),
+                    has_order=z.order_id is not None,
+                    is_reduce_only=False,
+                    entry_price=z.entry_price,
+                    roundtrip_count=z.roundtrip_count
+                 ) for z in self.zones
+             ]
         )
