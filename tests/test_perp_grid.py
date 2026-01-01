@@ -100,8 +100,11 @@ def test_perp_grid_execution_flow():
     o1 = ctx.order_queue[0]
     o2 = ctx.order_queue[1]
     
+    assert isinstance(o1, LimitOrderRequest)
     assert o1.side == OrderSide.BUY
     assert o1.price == 90.0
+    
+    assert isinstance(o2, LimitOrderRequest)
     assert o2.side == OrderSide.BUY
     assert o2.price == 100.0
     
@@ -126,6 +129,7 @@ def test_perp_grid_execution_flow():
     # Should place Counter Order: SELL at 110
     assert len(ctx.order_queue) == 1
     counter_order = ctx.order_queue[0]
+    assert isinstance(counter_order, LimitOrderRequest)
     assert counter_order.side == OrderSide.SELL
     assert counter_order.price == 110.0
     assert counter_order.reduce_only is True # Closing long
@@ -166,5 +170,8 @@ def test_perp_grid_short_bias():
     
     # Expect 2 Sell orders
     assert len(ctx.order_queue) == 2
-    assert ctx.order_queue[0].side == OrderSide.SELL
-    assert ctx.order_queue[0].price == 100.0
+    
+    o1 = ctx.order_queue[0]
+    assert isinstance(o1, LimitOrderRequest)
+    assert o1.side == OrderSide.SELL
+    assert o1.price == 100.0

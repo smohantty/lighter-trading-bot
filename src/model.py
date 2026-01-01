@@ -80,6 +80,8 @@ class MarketOrderRequest:
     symbol: str
     side: OrderSide
     sz: float
+    reduce_only: bool = False
+    price: float = 0.0 # Worst price / slippage limit
     cloid: Optional[Cloid] = None
 
 @dataclass

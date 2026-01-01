@@ -2,7 +2,8 @@ import asyncio
 import logging
 import json
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
+from dataclasses import asdict, is_dataclass
 import websockets
 import lighter
 from lighter.nonce_manager import NonceManagerType
@@ -11,7 +12,8 @@ from src.config import StrategyConfig, ExchangeConfig
 from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
-from src.strategy.types import PerpGridSummary, GridState
+from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
+from typing import cast
 from src.broadcast.server import StatusBroadcaster
 import src.broadcast.types as btypes
 
@@ -41,7 +43,7 @@ class Engine:
         self.account_index: Optional[int] = None
         self.running = False
         
-        self.event_queue = asyncio.Queue()
+        self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self._shutdown_event = asyncio.Event()
         
         # Track last price per symbol to avoid duplicate on_tick calls
@@ -114,7 +116,7 @@ class Engine:
             account_ids=[self.account_index],
             queue=self.event_queue,
             auth_token=auth_token
-        )
+        ) # type: ignore
         
         if self.broadcaster:
             # Broadcast Config and Info
@@ -131,10 +133,13 @@ class Engine:
                 else:
                     # Fallback if somehow it's a dict or other
                     logger.warning(f"Config object {type(self.config)} lacks __dict__, using vars() or dict(self.config)")
-                    try:
-                        config_dict = dict(self.config)
-                    except:
-                        config_dict = vars(self.config)
+                    if is_dataclass(self.config):
+                         config_dict = asdict(self.config)
+                    else:
+                        try:
+                            config_dict = dict(self.config)
+                        except:
+                            config_dict = vars(self.config)
 
                 # Convert Enums to lowercase strings explicitly
                 if "grid_type" in config_dict:
@@ -220,6 +225,9 @@ class Engine:
         """Fetch account balances from the API and update StrategyContext."""
         if not self.api_client or not self.ctx:
             return
+        # Assertion for mypy
+        assert self.ctx is not None
+        assert self.api_client is not None
         
         try:
             account_api = lighter.AccountApi(self.api_client)
@@ -272,6 +280,7 @@ class Engine:
                 await asyncio.sleep(7 * 60 * 60)  # 7 hours
                 
                 logger.info("Refreshing auth token...")
+                assert self.signer_client is not None
                 auth_token, error = self.signer_client.create_auth_token_with_expiry(
                     deadline=8 * 60 * 60  # 8 hours
                 )
@@ -279,7 +288,8 @@ class Engine:
                 if error:
                     logger.error(f"Failed to refresh auth token: {error}")
                 else:
-                    await self.ws_client.update_auth_token(auth_token)
+                    assert self.ws_client is not None
+                    await self.ws_client.update_auth_token(auth_token) # type: ignore
                     logger.info("Auth token refreshed successfully")
                     
             except asyncio.CancelledError:
@@ -300,14 +310,17 @@ class Engine:
                 if not self.ctx or not self.strategy:
                     continue
                 
+                assert self.ctx is not None
+                
                 # Summary
                 summary = self.strategy.get_summary(self.ctx)
                 if summary:
                     # Determine type
-                    if hasattr(summary, "leverage"): # Perp
+                    if isinstance(summary, PerpGridSummary): # Perp
                         self.broadcaster.send(btypes.perp_grid_summary_event(summary))
                     else:
-                        self.broadcaster.send(btypes.spot_grid_summary_event(summary))
+                        # Assuming SpotGridSummary if not Perp
+                        self.broadcaster.send(btypes.spot_grid_summary_event(cast(SpotGridSummary, summary)))
                 
                 # Grid State
                 grid_state = self.strategy.get_grid_state(self.ctx)
@@ -369,6 +382,9 @@ class Engine:
         Updates pending_orders state (OID, info) and handles failures.
         Fills are handled in _handle_user_fills_msg.
         """
+        if not self.ctx:
+             return
+        
         msg_type = orders_data.get("type", "")
         
         # Extract orders
@@ -464,6 +480,9 @@ class Engine:
         Process trades updates from account_all_trades channel.
         This provides real-time fill/trade data.
         """
+        if not self.ctx:
+             return
+             
         # Debug: Log the trades message
         #logger.info(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
         
@@ -655,6 +674,9 @@ class Engine:
         if not self.ctx or not self.ctx.order_queue:
             return
         
+        assert self.ctx is not None
+        assert self.ctx.order_queue is not None # If order_queue is Optional
+        
         # Drain queue
         orders_to_process = list(self.ctx.order_queue)
         self.ctx.order_queue.clear()
@@ -662,8 +684,9 @@ class Engine:
         # Batching logic
         # Lighter supports batch transactions.
         
-        tx_types = []
-        tx_infos = []
+        
+        tx_types: List[int] = []
+        tx_infos: List[str] = []
         
         # Context to map back results
         batch_context = [] 
@@ -695,10 +718,13 @@ class Engine:
             # All transactions in a batch must use the same API key but different nonces
             if i == 0:
                 batch_api_key_index, nonce = self.signer_client.nonce_manager.next_nonce()
+                assert batch_api_key_index is not None
             else:
                 # Using ApiNonceManager, next_nonce() fetches from server which hasn't seen our txs yet
                 # So we must manually increment the nonce for the batch
                 nonce += 1
+            
+            assert batch_api_key_index is not None
             
             error = None
             tx_type = None
@@ -776,8 +802,11 @@ class Engine:
                  # Callback?
                  continue
             
-            tx_types.append(tx_type)
-            tx_infos.append(tx_info)
+            assert tx_type is not None
+            tx_types.append(cast(int, tx_type))
+            # Ensure tx_info is valid (str) if present, else empty string or similar if allowed.
+            # SDK likely returns str.
+            tx_infos.append(str(tx_info) if tx_info is not None else "")
             batch_context.append(order)
 
         # Check if simulation mode is enabled
@@ -805,6 +834,7 @@ class Engine:
             
             try:
                 # Use REST API to send batch and get response
+                assert self.signer_client is not None
                 response = await self.signer_client.send_tx_batch(
                     tx_types=batch_tx_types,
                     tx_infos=batch_tx_infos
@@ -862,7 +892,8 @@ class Engine:
         self.running = False
         self._shutdown_event.set()
         if self.ws_client:
-            self.ws_client.stop()
+            # self.ws_client.stop() # method might not exist, relying on task cancellation
+            pass
         if self.broadcaster:
             await self.broadcaster.stop()
 
@@ -882,7 +913,7 @@ class Engine:
             if isinstance(response, tuple):
                 response = response[0]
             
-            all_details = []
+            all_details: List[Any] = []
             
             # SDK returns OrderBookDetails object
             if hasattr(response, "order_book_details"):

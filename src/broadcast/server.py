@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 import websockets
-from typing import Optional, Set, Deque
+from typing import Optional, Set, Deque, Any
 from collections import deque
 from src.broadcast.types import WSEvent
 
@@ -12,7 +12,7 @@ class StatusBroadcaster:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.clients: Set[websockets.WebSocketServerProtocol] = set()
+        self.clients: Set[Any] = set()
         
         # State Cache
         self.last_config: Optional[WSEvent] = None
@@ -23,7 +23,7 @@ class StatusBroadcaster:
         # Order History (Keep last 50)
         self.order_history: Deque[WSEvent] = deque(maxlen=50)
         
-        self.server = None
+        self.server: Optional[Any] = None
 
     async def start(self):
         logger.info(f"Starting WebSocket Status Server on ws://{self.host}:{self.port}")
@@ -36,7 +36,7 @@ class StatusBroadcaster:
             self.server = None
             logger.info("WebSocket Status Server stopped.")
 
-    async def _handler(self, websocket: websockets.WebSocketServerProtocol):
+    async def _handler(self, websocket: Any):
         # Register Client
         self.clients.add(websocket)
         logger.info(f"New WebSocket client connected: {websocket.remote_address}")
@@ -70,7 +70,7 @@ class StatusBroadcaster:
             self.clients.remove(websocket)
             logger.info(f"WebSocket client disconnected: {websocket.remote_address}")
 
-    async def _send_to_client(self, websocket: websockets.WebSocketServerProtocol, event: WSEvent):
+    async def _send_to_client(self, websocket: Any, event: WSEvent):
         try:
             msg = json.dumps(event.to_dict())
             await websocket.send(msg)
