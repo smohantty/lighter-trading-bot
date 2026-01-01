@@ -188,10 +188,10 @@ class SpotGridStrategy(Strategy):
 
         if base_deficit > 0.0:
             # Case 1: Not enough base asset. Need to BUY base asset.
-            acquisition_price = initial_price
-            base_deficit = max(base_deficit, market_info.min_base_amount)
+            # Ensure min base amount and min notional
             base_deficit = market_info.round_size(base_deficit)
 
+            acquisition_price = initial_price
             if self.config.trigger_price:
                 acquisition_price = market_info.round_price(self.config.trigger_price)
             else:
@@ -242,13 +242,6 @@ class SpotGridStrategy(Strategy):
             base_to_sell = quote_deficit / acquisition_price
             # Ensure min base amount and min notional
             base_to_sell = max(base_to_sell, market_info.min_base_amount)
-            
-            if base_to_sell * acquisition_price < market_info.min_quote_amount:
-                 if acquisition_price > 0:
-                    base_to_sell = market_info.min_quote_amount / acquisition_price
-                 else:
-                    base_to_sell = 0.0
-
             base_to_sell = market_info.round_size(base_to_sell)
 
             estimated_proceeds = base_to_sell * acquisition_price
