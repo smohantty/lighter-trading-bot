@@ -217,6 +217,15 @@ class Engine:
                     await self._handle_user_fills_msg(target_id, data)
                 
                 self.event_queue.task_done()
+            
+            except ValueError as e:
+                # Fatal Error (e.g. Strategy Initialization Failure)
+                logger.error(f"Fatal Error in message processor: {e}")
+                
+                # Signal shutdown
+                asyncio.create_task(self.stop())
+                break
+                
             except Exception as e:
                 logger.error(f"Error in message processor: {e}")
                 await asyncio.sleep(1)
@@ -431,7 +440,6 @@ class Engine:
                     order_index = order.get("order_index")
                     if order_index and not pending.oid:
                         pending.oid = order_index
-                        
                         
                         # Resolve Symbol to get Base Asset
                         logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
