@@ -47,6 +47,15 @@ class TradeRole(Enum):
     MAKER = "Maker"
     TAKER = "Taker"
 
+    def is_maker(self) -> bool:
+        return self == TradeRole.MAKER
+
+    def is_taker(self) -> bool:
+        return self == TradeRole.TAKER
+
+    def __str__(self):
+        return self.value
+
 @dataclass
 class OrderFill:
     side: OrderSide

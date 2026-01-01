@@ -678,7 +678,7 @@ class Engine:
                                     size=pending.filled_size,
                                     status="FILLED",
                                     fee=pending.accumulated_fees,
-                                    is_taker=(role == TradeRole.TAKER)
+                                    is_taker=role.is_taker()
                                 )))
                             
                             final_px = pending.weighted_avg_px
