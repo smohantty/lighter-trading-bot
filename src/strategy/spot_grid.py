@@ -1,5 +1,5 @@
 import logging
-import math
+
 import time
 from typing import List, Optional, Dict
 from dataclasses import dataclass, field
@@ -125,9 +125,7 @@ class SpotGridStrategy(Strategy):
         for i in range(num_zones):
             lower = prices[i]
             upper = prices[i+1]
-            mid_price = (lower + upper) / 2.0
-            
-            # Calculate size based on quote investment per zone using MID PRICE (as per Rust logic roughly, though Rust uses lower for size calc in generate_grid_levels)
+            # Calculate size based on quote investment per zone using lower price
             # Rust: let raw_size = quote_per_zone / lower;
             # Let's align with Rust:
             raw_size = investment_per_zone_quote / lower
