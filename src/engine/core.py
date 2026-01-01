@@ -388,6 +388,19 @@ class Engine:
             status=order_data["status"]
         )
 
+    def _is_canceled_status(self, status: str) -> bool:
+        """
+        Determines if an order status represents a cancellation or failure terminal state.
+        """
+        canceled_statuses = {
+            "canceled", "canceled-post-only", "canceled-reduce-only",
+            "canceled-position-not-allowed", "canceled-margin-not-allowed",
+            "canceled-too-much-slippage", "canceled-not-enough-liquidity",
+            "canceled-self-trade", "canceled-expired", "canceled-oco",
+            "canceled-child", "canceled-liquidation", "canceled-invalid-balance"
+        }
+        return status in canceled_statuses
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -489,16 +502,7 @@ class Engine:
                     # 3. Check order status
                     status = order.status or ""
                     
-                    # Canceled statuses - These are terminal failures, so we handle them here
-                    canceled_statuses = [
-                        "canceled", "canceled-post-only", "canceled-reduce-only",
-                        "canceled-position-not-allowed", "canceled-margin-not-allowed",
-                        "canceled-too-much-slippage", "canceled-not-enough-liquidity",
-                        "canceled-self-trade", "canceled-expired", "canceled-oco",
-                        "canceled-child", "canceled-liquidation", "canceled-invalid-balance"
-                    ]
-                    
-                    if status in canceled_statuses:
+                    if self._is_canceled_status(status):
                         logger.info(f"[ORDER_CANCELED] {cloid} - status: {status}")
                         
                         if self.broadcaster:
