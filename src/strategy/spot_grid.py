@@ -334,7 +334,7 @@ class SpotGridStrategy(Strategy):
                  if fill.side.is_buy():
                        self.inventory_base += fill.size
                        self.inventory_quote -= (fill.size * fill.price)
-                  else:
+                 else:
                        self.inventory_base = max(0.0, self.inventory_base - fill.size)
                        self.inventory_quote += (fill.size * fill.price)
                  
