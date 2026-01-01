@@ -332,9 +332,7 @@ class SpotGridStrategy(Strategy):
              self.initialize_zones(price, ctx)
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
-                 trigger = self.config.trigger_price
-                 start = self.trigger_reference_price
-                 if common.check_trigger(price, trigger, start):
+                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
                       logger.info(f"[SPOT_GRID] Triggered at {price}")
                       self.initial_entry_price = price
                       self.state = StrategyState.Running
