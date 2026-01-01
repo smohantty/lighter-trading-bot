@@ -438,7 +438,7 @@ class Engine:
         if not self.ctx:
              return
         
-        msg_type = orders_data.get("type", "")
+
         
         # Extract orders
         # Format: {"channel": "...", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
@@ -476,7 +476,7 @@ class Engine:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
                                  oid=order.order_id,
                                  cloid=str(cloid),
-                                 side=str(pending.side) if pending.side else "UNKNOWN",
+                                 side=str(pending.side),
                                  price=pending.price,
                                  size=pending.target_size,
                                  status=order.status,
@@ -505,7 +505,7 @@ class Engine:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
                                  oid=pending.oid or 0,
                                  cloid=str(cloid),
-                                 side=str(pending.side) if pending.side else "UNKNOWN",
+                                 side=str(pending.side),
                                  price=0.0,
                                  size=pending.filled_size,
                                  status="CANCELED",
@@ -792,13 +792,13 @@ class Engine:
                 # Track pending order for partial fill accumulation
                 self.pending_orders[order.cloid] = PendingOrder(
                     target_size=order.sz,
+                    side=order.side,
                     filled_size=0.0,
                     weighted_avg_px=0.0,
                     accumulated_fees=0.0,
                     reduce_only=order.reduce_only,
                     oid=None,  # Will be set when we get confirmation
                     created_at=time.time(),  # Track when order was placed
-                    side=order.side,
                     price=order.price,
                 )
                 
