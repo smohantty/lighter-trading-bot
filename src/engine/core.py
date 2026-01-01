@@ -9,7 +9,7 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
@@ -363,6 +363,40 @@ class Engine:
         # Perps or simple symbols (e.g. HYPE)
         return symbol
 
+
+    def _parse_order(self, order_data: dict) -> Order:
+        """
+        Parses a raw order dictionary into a typed Order dataclass.
+        """
+        return Order(
+            order_index=order_data["order_index"],
+            client_order_index=order_data["client_order_index"],
+            order_id=order_data["order_id"],
+            client_order_id=order_data["client_order_id"],
+            market_index=order_data["market_index"],
+            owner_account_index=order_data["owner_account_index"],
+            initial_base_amount=order_data["initial_base_amount"],
+            price=order_data["price"],
+            nonce=order_data["nonce"],
+            remaining_base_amount=order_data["remaining_base_amount"],
+            is_ask=order_data["is_ask"],
+            base_size=order_data["base_size"],
+            base_price=order_data["base_price"],
+            filled_base_amount=order_data["filled_base_amount"],
+            filled_quote_amount=order_data["filled_quote_amount"],
+            side=order_data["side"],
+            type=order_data["type"],
+            time_in_force=order_data["time_in_force"],
+            reduce_only=order_data["reduce_only"],
+            trigger_price=order_data["trigger_price"],
+            order_expiry=order_data["order_expiry"],
+            status=order_data["status"],
+            trigger_status=order_data["trigger_status"],
+            trigger_time=order_data["trigger_time"],
+            parent_order_index=order_data["parent_order_index"],
+            parent_order_id=order_data["parent_order_id"]
+        )
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -421,14 +455,15 @@ class Engine:
         
         # Process all orders in the message
         for market_index, orders_list in orders_by_market.items():
-            for order in orders_list:
+            for order_dict in orders_list:
                 try:
-                    client_order_index = order.get("client_order_index")
-                    if not client_order_index:
+                    order = self._parse_order(order_dict)
+                    
+                    if not order.client_order_index:
                         continue
                     
                     
-                    cloid = Cloid(client_order_index)
+                    cloid = Cloid(order.client_order_index)
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
@@ -437,16 +472,15 @@ class Engine:
                     pending = self.pending_orders[cloid]
                     
                     # 1. Update OID if missing (Crucial for later cancellation/audit)
-                    order_index = order.get("order_index")
-                    if order_index and not pending.oid:
-                        pending.oid = order_index
+                    if order.order_index and not pending.oid:
+                        pending.oid = order.order_index
                         
                         # Resolve Symbol to get Base Asset
                         logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
-                                 oid=order_index,
+                                 oid=order.order_index,
                                  cloid=str(cloid),
                                  side=str(pending.side) if pending.side else "UNKNOWN",
                                  price=pending.price,
@@ -459,7 +493,7 @@ class Engine:
 
                     
                     # 3. Check order status
-                    status = order.get("status", "")
+                    status = order.status or ""
                     
                     # Canceled statuses - These are terminal failures, so we handle them here
                     canceled_statuses = [
@@ -499,7 +533,7 @@ class Engine:
                     # and trigger on_order_filled. This avoids race conditions and duplicate events.
 
                 except Exception as e:
-                    logger.error(f"Error processing order: {e}, order data: {order}")
+                    logger.error(f"Error processing order: {e}, order data: {order_dict}")
         
 
 

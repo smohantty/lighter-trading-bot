@@ -90,3 +90,32 @@ class CancelOrderRequest:
     symbol: str # Added symbol as it's often needed for context, though often implicit in Cloid lookup
 
 OrderRequest = Union[LimitOrderRequest, MarketOrderRequest, CancelOrderRequest]
+
+@dataclass
+class Order:
+    order_index: int
+    client_order_index: int
+    order_id: str
+    client_order_id: str
+    market_index: int
+    owner_account_index: int
+    initial_base_amount: str
+    price: str
+    nonce: int
+    remaining_base_amount: str
+    is_ask: bool
+    base_size: int
+    base_price: int
+    filled_base_amount: str
+    filled_quote_amount: str
+    side: str
+    type: str
+    time_in_force: str
+    reduce_only: bool
+    trigger_price: str
+    order_expiry: int
+    status: str
+    trigger_status: str
+    trigger_time: int
+    parent_order_index: int
+    parent_order_id: str
