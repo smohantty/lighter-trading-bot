@@ -94,7 +94,5 @@ class SpotGridSummary:
     roundtrips: int
     base_balance: float
     quote_balance: float
-    inventory_base: float
-    inventory_quote: float
 
 StrategySummary = Union[PerpGridSummary, SpotGridSummary, None]

@@ -465,10 +465,8 @@ class SpotGridStrategy(Strategy):
             range_high=self.config.upper_price,
             grid_spacing_pct=grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
-            base_balance=ctx.get_spot_available(self.base_asset),
-            quote_balance=ctx.get_spot_available("USDC"),
-            inventory_base=self.inventory_base,
-            inventory_quote=self.inventory_quote
+            base_balance=self.inventory_base,
+            quote_balance=self.inventory_quote
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:

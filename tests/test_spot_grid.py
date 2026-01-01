@@ -158,3 +158,23 @@ def test_fill_lifecycle_rust(spot_config, context):
     assert strategy.inventory_base == 10.0
     assert strategy.inventory_quote == -10.0 # Started at 0 in this specific manual test setup
 
+
+
+
+def test_get_summary(spot_config, context):
+    """
+    Test get_summary maps inventory to base_balance/quote_balance.
+    """
+    strategy = SpotGridStrategy(spot_config)
+    strategy.initialize_zones(1.6, context)
+    
+    # After init, inventory_base = 0.0 (from test_initialization_rust_logic)
+    # inventory_quote > 0.0
+    
+    summary = strategy.get_summary(context)
+    
+    # Assert get_summary fields match inventory fields
+    assert summary.base_balance == strategy.inventory_base
+    assert summary.quote_balance == strategy.inventory_quote
+    assert summary.base_balance == 0.0
+    assert summary.quote_balance > 0.0
