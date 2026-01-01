@@ -601,7 +601,7 @@ class Engine:
                     if not match_result:
                          continue
                          
-                    is_buyer, oid = match_result
+                    side, oid = match_result
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)
@@ -624,7 +624,7 @@ class Engine:
                     # If is_maker_ask is False, WE (ASK) are TAKER.
                     
                     is_maker = False
-                    if is_buyer:
+                    if side.is_buy():
                         is_maker = not trade.is_maker_ask
                     else:
                         is_maker = trade.is_maker_ask
@@ -632,9 +632,6 @@ class Engine:
                     # Fee calculation
                     # User requested 0.0 for now
                     fee = 0.0
-                    
-                    # Side
-                    side = OrderSide.BUY if is_buyer else OrderSide.SELL
                     
                     # Parse values
                     amount = float(trade.size)
