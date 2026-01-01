@@ -41,6 +41,13 @@ class SpotGridStrategy(Strategy):
         self.total_investment = config.total_investment
         
         # Spot grid specific: base/quote splitting
+        try:
+            self.base_asset, self.quote_asset = self.config.symbol.split("/")
+        except ValueError:
+            logger.error(f"Invalid symbol format: {self.config.symbol}. Expected BASE/QUOTE")
+            self.base_asset = self.config.symbol
+            self.quote_asset = "USDC"
+
         self.zones: List[GridZone] = []
         self.state = StrategyState.Initializing
         
@@ -70,15 +77,10 @@ class SpotGridStrategy(Strategy):
         if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
         
-        last_price = price
         
-        # Parse symbol to get Base/Quote assets
-        try:
-            base_asset, quote_asset = self.config.symbol.split("/")
-        except ValueError:
-             logger.error(f"Invalid symbol format: {self.config.symbol}. Expected BASE/QUOTE")
-             base_asset = self.config.symbol
-             quote_asset = "USDC"
+        # Use Cached Assets
+        base_asset = self.base_asset
+        quote_asset = self.quote_asset
 
         # Generate Levels
         prices = common.calculate_grid_prices(
@@ -105,7 +107,7 @@ class SpotGridStrategy(Strategy):
         avail_quote = ctx.get_spot_available(quote_asset)
 
         
-        initial_price = self.config.trigger_price if self.config.trigger_price else last_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
         
 
 
@@ -163,35 +165,24 @@ class SpotGridStrategy(Strategy):
             logger.info(f"[SPOT_GRID] Initial Position Size: {self.position_size} {base_asset}. Setting avg_entry to {self.avg_entry_price}")
         
         # Check Assets & Rebalance
-        base_deficit = required_base - avail_base
-        quote_deficit = required_quote - avail_quote
-        
-        self.check_initial_acquisition(ctx, market_info, required_base, required_quote)
+        self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
 
     def check_initial_acquisition(
         self, 
         ctx: StrategyContext, 
         market_info: MarketInfo, 
         total_base_required: float, 
-        total_quote_required: float
+        total_quote_required: float,
+        available_base: float,
+        available_quote: float
     ) -> None:
-        available_base = ctx.get_spot_available(self.symbol.split('/')[0] if '/' in self.symbol else self.symbol) # Approximate asset extraction if needed, but easier to just use what we had
-        # Re-fetch balances to be safe or pass them in? Rust passes ctx.
-        # In initialize_zones we had local vars avail_base/avail_quote.
-        # Let's re-fetch from ctx to be clean, or rely on what's in ctx.
-        # Note: initialize_zones used local vars but didn't update ctx. 
-        # Actually context has the balances.
-        
-        # Parse symbol again or store assets in __init__? 
-        # initialize_zones did parsing. Let's do it robustly or use the ones from config if available.
-        try:
-            base_asset, quote_asset = self.config.symbol.split("/")
-        except ValueError:
-            base_asset = self.config.symbol
-            quote_asset = "USDC"
-            
-        available_base = ctx.get_spot_available(base_asset)
-        available_quote = ctx.get_spot_available(quote_asset)
+        """
+        Pure logic to determine if we need to acquire assets.
+        Balances are passed in to avoid side-effect fetching.
+        """
+        # Use cached assets
+        base_asset = self.base_asset
+        quote_asset = self.quote_asset
 
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
@@ -464,7 +455,7 @@ class SpotGridStrategy(Strategy):
             range_high=self.config.upper_price,
             grid_spacing_pct=grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
-            base_balance=ctx.get_spot_available(self.symbol.split('/')[0] if '/' in self.symbol else self.symbol), # Approx
+            base_balance=ctx.get_spot_available(self.base_asset),
             quote_balance=ctx.get_spot_available("USDC")
         )
 
