@@ -571,11 +571,6 @@ class Engine:
         if not self.ctx:
              return
              
-        # Debug: Log the trades message
-        #logger.info(f"[TRADES_MSG] Received trades update: {json.dumps(trades_data, indent=2)}")
-        
-        # Extract trades from the message
-        # Format: {"channel": "account_all_trades:X", "trades": {"{MARKET_INDEX}": [Trade]}, "type": "..."}
         trades_by_market = trades_data.get("trades", {})
         
         # Process all trades across all markets
@@ -583,12 +578,14 @@ class Engine:
             for trade_dict in trades_list:
                 try:
                     trade = self._parse_trade(trade_dict)
+                    logger.info(f"Trade: {trade}")
                     
                     # Match trade to our account to find CLOID and Side
                     # Use self.account_index directly as it is the source of truth
                     assert self.account_index is not None
                     details = trade.get_trade_details(self.account_index)
                     if not details:
+                         logger.warning(f"Ignored trade (not involving account {self.account_index}): {trade}")
                          continue
                          
                     side = details.side
@@ -599,9 +596,6 @@ class Engine:
                     cloid = self._find_cloid_by_oid(oid)
                     
                     if not cloid:
-                        # Fallback: check if we can find by implicit matching logic or if it's a legacy order
-                        # If we can't find CLOID, we can't track it in strategy. 
-                        # But we should log it.
                         logger.debug(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
                         continue
                     
