@@ -591,6 +591,7 @@ class Engine:
                     side = details.side
                     oid = details.oid
                     role = details.role
+                    fee = details.fee
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)
@@ -599,9 +600,6 @@ class Engine:
                         logger.warning(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
                         continue
                     
-                    # Fee calculation
-                    # User requested 0.0 for now
-                    fee = 0.0
                     
                     # Idempotency check
                     if cloid and cloid in self.completed_cloids:
