@@ -645,7 +645,7 @@ class Engine:
                          logger.warning(f"Ignored trade (not involving account {self.account_index}): {trade}")
                          continue
 
-                    logger.info(f"Trade: {details}")
+                    logger.info(f"[Trade] {details}")
                          
                     side = details.side
                     oid = details.oid

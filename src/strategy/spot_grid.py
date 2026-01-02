@@ -209,11 +209,12 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
-            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
             cloid = ctx.generate_cloid()
             self.state = StrategyState.AcquiringAssets
             self.acquisition_cloid = cloid
             self.acquisition_target_size = base_deficit
+
+            logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] cloid: {cloid.as_int()}, LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
 
             ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
