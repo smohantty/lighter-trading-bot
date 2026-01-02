@@ -483,9 +483,9 @@ class Engine:
         fee_qty = details.fee / (10 ** decimals)
         
         if is_fee_in_base:
-            return round(float(fee_qty * details.price), market.price_decimals)
+            return market.round_price(float(fee_qty * details.price))
         else:
-            return round(float(fee_qty), market.price_decimals)
+            return market.round_price(float(fee_qty))
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
