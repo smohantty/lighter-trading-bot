@@ -429,6 +429,61 @@ class Engine:
                 return cloid
         return None
 
+
+    def _calculate_fee_usd(self, trade: Trade, details: TradeDetails) -> float:
+        """
+        Calculates the fee in USD (float) based on the raw integer fee.
+        
+        Logic:
+        - Identify Market and Market Type (Spot vs Perp).
+        - Determine Decimals:
+            - Perp: Always Quote/USD (decimals = price_decimals).
+            - Spot:
+                - Seller (Sold Base, Received USD): Fee in USD (decimals = price_decimals).
+                - Buyer (Bought Base, Received Base): Fee in Base (decimals = sz_decimals).
+        - Calculate Fee Quantity: fee / (10 ** decimals)
+        - Convert to USD:
+            - If Fee in USD: fee_usd = fee_qty
+            - If Fee in Base: fee_usd = fee_qty * trade.price
+        """
+        symbol = self.reverse_market_map.get(trade.market_id)
+        if not symbol or not self.ctx:
+            # Fallback if context or symbol missing (shouldn't happen in normal flow)
+            return 0.0
+
+        market = self.ctx.market_info(symbol)
+        if not market:
+            return 0.0
+
+        decimals = 0
+        is_fee_in_base = False
+
+        if market.market_type == "perp":
+            # Perps fees are always in Quote (USD)
+            decimals = market.price_decimals
+        else:
+            # Spot Market
+            if details.side == OrderSide.SELL:
+                # Seller: Sold Base, Received Quote (USD) -> Fee in Quote
+                decimals = market.price_decimals
+            else:
+                # Buyer: Bought Base, Received Base -> Fee in Base
+                decimals = market.sz_decimals
+                is_fee_in_base = True
+        
+        # Calculate Fee Quantity
+        if decimals == 0:
+             # Avoid division by one if decimals somehow 0, though unlikely for valid markets
+             # usually decimals are >= 0. 10**0 = 1.
+             pass
+        
+        fee_qty = details.fee / (10 ** decimals)
+        
+        if is_fee_in_base:
+            return float(fee_qty * trade.price)
+        else:
+            return float(fee_qty)
+
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
@@ -591,7 +646,9 @@ class Engine:
                     side = details.side
                     oid = details.oid
                     role = details.role
-                    fee = details.fee
+                    
+                    # Calculate Fee in USD
+                    fee = self._calculate_fee_usd(trade, details)
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)
