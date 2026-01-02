@@ -134,11 +134,12 @@ class TradeDetails:
     fee: int
     market_id: int
     price: float
+    size: float
 
     def __repr__(self):
         return (f"TradeDetails(side={self.side.value}, oid={self.oid}, "
                 f"role={self.role.value}, fee={self.fee}, "
-                f"market_id={self.market_id}, price={self.price})")
+                f"market_id={self.market_id}, price={self.price}, size={self.size})")
 
 @dataclass
 class Trade:
@@ -170,7 +171,8 @@ class Trade:
                 role=role, 
                 fee=fee,
                 market_id=self.market_id,
-                price=self.price
+                price=self.price,
+                size=self.size
             )
         elif self.ask_account_id == account_id:
             # We are SELLER (ASK)
@@ -182,7 +184,8 @@ class Trade:
                 role=role, 
                 fee=fee,
                 market_id=self.market_id,
-                price=self.price
+                price=self.price,
+                size=self.size
             )
         return None
 

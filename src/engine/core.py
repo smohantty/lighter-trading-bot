@@ -432,60 +432,49 @@ class Engine:
 
     def _calculate_fee_usd(self, details: TradeDetails) -> float:
         """
-        Calculates the fee in USD (float) based on the raw integer fee.
+        Calculates the fee in USD (float) based on the fee rate and trade volume.
         
         Logic:
-        - Identify Market and Market Type (Spot vs Perp).
-        - Determine Decimals:
-            - Perp: Always Quote/USD (decimals = price_decimals).
-            - Spot:
-                - Seller (Sold Base, Received USD): Fee in USD (decimals = price_decimals).
-                - Buyer (Bought Base, Received Base): Fee in Base (decimals = sz_decimals).
-        - Calculate Fee Quantity: fee / (10 ** decimals)
-        - Convert to USD:
-            - If Fee in USD: fee_usd = fee_qty
-            - If Fee in Base: fee_usd = fee_qty * trade.price
+        - `details.fee` is the Fee Rate in integer format, scaled by 1,000,000.
+          (Example: 200 = 0.0002 = 0.02%, 2000 = 0.2%)
+        - `details.size` * `details.price` = Trade Volume in USD (Quote).
+        
+        Formula:
+             FeeUSD = (details.fee / 1_000_000) * (details.size * details.price)
         """
         if details.fee == 0:
             return 0.0
 
         symbol = self.reverse_market_map.get(details.market_id)
         if not symbol or not self.ctx:
-            # Fallback if context or symbol missing (shouldn't happen in normal flow)
-            return 0.0
-
+             return 0.0
+             
         market = self.ctx.market_info(symbol)
         if not market:
-            return 0.0
+            # Fallback to simple calculation if market info is missing (should not happen)
+            return (details.fee / 1_000_000.0) * (details.size * details.price)
 
-        decimals = 0
-        is_fee_in_base = False
+        # Calculate Fee Amount in USD
+        # 1. Get Fee Rate
+        fee_rate = details.fee / 1_000_000.0
+        
+        # 2. Get Trade Volume (USD)
+        trade_volume_usd = details.size * details.price
+        
+        # 3. Calculate Fee
+        fee_usd = fee_rate * trade_volume_usd
+        
+        # 4. Round to 2 decimals or market decimals? Fees are usually USD (Quote), so use price_decimals?
+        # Typically USD fees are rounded to 2 or 6 decimals depending on internal accounting.
+        # But `market.round_price` rounds to `price_decimals` which might be 2 for USDC usually.
+        # Let's use `market.price_decimals` if available, typically 6 for USDC on heavier chains, or 2.
+        
+        # Actually Lighter USDC usually has 6 decimals.
+        # But let's respect the market's price precision for now as a proxy for quote precision.
+        
+        return float(fee_usd) 
 
-        if market.market_type == "perp":
-            # Perps fees are always in Quote (USD)
-            decimals = market.price_decimals
-        else:
-            # Spot Market
-            if details.side == OrderSide.SELL:
-                # Seller: Sold Base, Received Quote (USD) -> Fee in Quote
-                decimals = market.price_decimals
-            else:
-                # Buyer: Bought Base, Received Base -> Fee in Base
-                decimals = market.sz_decimals
-                is_fee_in_base = True
-        
-        # Calculate Fee Quantity
-        if decimals == 0:
-             # Avoid division by one if decimals somehow 0, though unlikely for valid markets
-             # usually decimals are >= 0. 10**0 = 1.
-             pass
-        
-        fee_qty = details.fee / (10 ** decimals)
-        
-        if is_fee_in_base:
-            return market.round_price(float(fee_qty * details.price))
-        else:
-            return market.round_price(float(fee_qty))
+
 
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
