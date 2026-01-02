@@ -435,12 +435,12 @@ class Engine:
         Calculates the fee in USD (float) based on the fee rate and trade volume.
         
         Logic:
-        - `details.fee` is the Fee Rate in integer format, scaled by 1,000,000.
-          (Example: 200 = 0.0002 = 0.02%, 2000 = 0.2%)
+        - `details.fee` is the Fee Rate in integer format, scaled by 10,000,000.
+          (Example: 200 = 0.00002 = 0.002%, 2000 = 0.02%)
         - `details.size` * `details.price` = Trade Volume in USD (Quote).
         
         Formula:
-             FeeUSD = (details.fee / 1_000_000) * (details.size * details.price)
+             FeeUSD = (details.fee / 10_000_000) * (details.size * details.price)
         """
         if details.fee == 0:
             return 0.0
@@ -452,11 +452,11 @@ class Engine:
         market = self.ctx.market_info(symbol)
         if not market:
             # Fallback to simple calculation if market info is missing (should not happen)
-            return (details.fee / 1_000_000.0) * (details.size * details.price)
+            return (details.fee / 10_000_000.0) * (details.size * details.price)
 
         # Calculate Fee Amount in USD
         # 1. Get Fee Rate
-        fee_rate = details.fee / 1_000_000.0
+        fee_rate = details.fee / 10_000_000.0
         
         # 2. Get Trade Volume (USD)
         trade_volume_usd = details.size * details.price
