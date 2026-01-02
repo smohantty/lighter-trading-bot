@@ -435,12 +435,12 @@ class Engine:
         Calculates the fee in USD (float) based on the fee rate and trade volume.
         
         Logic:
-        - `details.fee` is the Fee Rate in integer format, scaled by 10,000,000.
-          (Example: 200 = 0.00002 = 0.002%, 2000 = 0.02%)
+        - `details.fee` is the Fee Rate in integer format, scaled by 1,000,000.
+          (Example: 20 = 0.00002 = 0.002%, 200 = 0.0002 = 0.02%)
         - `details.size` * `details.price` = Trade Volume in USD (Quote).
         
         Formula:
-             FeeUSD = (details.fee / 10_000_000) * (details.size * details.price)
+             FeeUSD = (details.fee / 1_000_000) * (details.size * details.price)
         """
         if details.fee == 0:
             return 0.0
@@ -452,11 +452,11 @@ class Engine:
         market = self.ctx.market_info(symbol)
         if not market:
             # Fallback to simple calculation if market info is missing (should not happen)
-            return (details.fee / 10_000_000.0) * (details.size * details.price)
+            return round((details.fee / 1_000_000.0) * (details.size * details.price), 6)
 
         # Calculate Fee Amount in USD
         # 1. Get Fee Rate
-        fee_rate = details.fee / 10_000_000.0
+        fee_rate = details.fee / 1_000_000.0
         
         # 2. Get Trade Volume (USD)
         trade_volume_usd = details.size * details.price
@@ -464,15 +464,8 @@ class Engine:
         # 3. Calculate Fee
         fee_usd = fee_rate * trade_volume_usd
         
-        # 4. Round to 2 decimals or market decimals? Fees are usually USD (Quote), so use price_decimals?
-        # Typically USD fees are rounded to 2 or 6 decimals depending on internal accounting.
-        # But `market.round_price` rounds to `price_decimals` which might be 2 for USDC usually.
-        # Let's use `market.price_decimals` if available, typically 6 for USDC on heavier chains, or 2.
-        
-        # Actually Lighter USDC usually has 6 decimals.
-        # But let's respect the market's price precision for now as a proxy for quote precision.
-        
-        return float(fee_usd) 
+        # 4. Round to 6 decimals (standard for USD/USDC on this exchange)
+        return round(float(fee_usd), 6) 
 
 
 
