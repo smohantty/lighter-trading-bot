@@ -548,7 +548,7 @@ class Engine:
             for order_dict in orders_list:
                 try:
                     order = self._parse_order(order_dict)
-                    logger.info(f"Parsed Order: {order}")
+                    logger.info(f"[Order] {order}")
                     
                     if not order.cloid_id:
                         logger.warning(f"Order missing cloid_id: {order}")
@@ -559,7 +559,7 @@ class Engine:
                     
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
-                        logger.warning(f"Order not tracked: {order}")
+                        logger.warning(f"[Order] not tracked: {order}")
                         continue
                     
                     pending = self.pending_orders[cloid]
