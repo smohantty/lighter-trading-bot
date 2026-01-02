@@ -569,7 +569,7 @@ class Engine:
                         pending.oid = order.order_id
                         
                         # Resolve Symbol to get Base Asset
-                        logger.info(f"[ORDER_TRACKING] LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
+                        logger.info(f"[ORDER_TRACKING] cloid = {cloid.as_int()}, LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}")
                         
                         if self.broadcaster:
                              self.broadcaster.send(btypes.order_update_event(btypes.OrderEvent(
@@ -645,7 +645,6 @@ class Engine:
                          logger.warning(f"Ignored trade (not involving account {self.account_index}): {trade}")
                          continue
 
-                    logger.info(f"[Trade] {details}")
                          
                     side = details.side
                     oid = details.oid
@@ -661,6 +660,7 @@ class Engine:
                         logger.warning(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
                         continue
                     
+                    logger.info(f"[Trade] cloid = {cloid.as_int()}, {details}")
                     
                     # Idempotency check
                     if cloid and cloid in self.completed_cloids:
