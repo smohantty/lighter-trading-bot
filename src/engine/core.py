@@ -603,10 +603,6 @@ class Engine:
                     # User requested 0.0 for now
                     fee = 0.0
                     
-                    if trade.size <= 0 or trade.price <= 0:
-                        logger.warning(f"Invalid fill data: amount={trade.size}, px={trade.price}")
-                        continue
-                    
                     # Idempotency check
                     if cloid and cloid in self.completed_cloids:
                         logger.info(f"Ignored duplicate fill for completed cloid: {cloid}")
