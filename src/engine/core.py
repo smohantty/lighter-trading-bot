@@ -596,18 +596,15 @@ class Engine:
                     cloid = self._find_cloid_by_oid(oid)
                     
                     if not cloid:
-                        logger.debug(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
+                        logger.warning(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
                         continue
                     
                     # Fee calculation
                     # User requested 0.0 for now
                     fee = 0.0
                     
-                    amount = trade.size
-                    px = trade.price
-                    
-                    if amount <= 0 or px <= 0:
-                        logger.warning(f"Invalid fill data: amount={amount}, px={px}")
+                    if trade.size <= 0 or trade.price <= 0:
+                        logger.warning(f"Invalid fill data: amount={trade.size}, px={trade.price}")
                         continue
                     
                     # Idempotency check
@@ -620,11 +617,11 @@ class Engine:
                         # Accumulate partial fill
                         pending = self.pending_orders[cloid]
                         
-                        new_total_size = pending.filled_size + amount
+                        new_total_size = pending.filled_size + trade.size
                         
                         # Calculate weighted average price
                         pending.weighted_avg_px = (
-                            pending.weighted_avg_px * pending.filled_size + px * amount
+                            pending.weighted_avg_px * pending.filled_size + trade.price * trade.size
                         ) / new_total_size
                         
                         pending.filled_size = new_total_size
@@ -680,23 +677,21 @@ class Engine:
                             # Mark as completed for idempotency
                             self.completed_cloids.add(cloid)
                         else:
-                            # Partial fill - log but don't notify strategy yet
                             logger.info(
-                                f"[ORDER_FILL_PARTIAL] {side} {amount} @ {px} (Fee: {fee})"
+                                f"[ORDER_FILL_PARTIAL] {side} {trade.size} @ {trade.price} (Fee: {fee})"
                             )
                     
                     elif cloid:
-                        # Untracked order (not in pending_orders) - notify immediately
                         logger.info(
-                            f"[ORDER_FILL_UNTRACKED] {side} {amount} @ {px} (Fee: {fee})"
+                            f"[ORDER_FILL_UNTRACKED] {side} {trade.size} @ {trade.price} (Fee: {fee})"
                         )
                         
                         try:
                             self.strategy.on_order_filled(
                                 OrderFill(
                                     side=side,
-                                    size=amount,
-                                    price=px,
+                                    size=trade.size,
+                                    price=trade.price,
                                     fee=fee,
                                     role=role,
                                     cloid=cloid,
@@ -711,15 +706,15 @@ class Engine:
                     else:
                         # No cloid - log and notify immediately
                         logger.info(
-                            f"[ORDER_FILL_NOCLID] {side} {amount} @ {px} (Fee: {fee})"
+                            f"[ORDER_FILL_NOCLID] {side} {trade.size} @ {trade.price} (Fee: {fee})"
                         )
                         
                         try:
                             self.strategy.on_order_filled(
                                 OrderFill(
                                     side=side,
-                                    size=amount,
-                                    price=px,
+                                    size=trade.size,
+                                    price=trade.price,
                                     fee=fee,
                                     role=role,
                                     cloid=None,
