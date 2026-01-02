@@ -300,7 +300,7 @@ class SpotGridStrategy(Strategy):
                 zone.order_id = cloid
                 self.active_order_map[cloid] = idx
 
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{idx}: LIMIT {side} {size} {self.base_asset} @ {price}")
+                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
                 ctx.place_order(LimitOrderRequest(
                     symbol=self.config.symbol,
                     side=side,
@@ -362,7 +362,7 @@ class SpotGridStrategy(Strategy):
                  
                  if zone.pending_side.is_buy():
                       # Buy Fill
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] Zone {idx} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
@@ -376,7 +376,7 @@ class SpotGridStrategy(Strategy):
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] Zone {idx}  Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
@@ -393,7 +393,7 @@ class SpotGridStrategy(Strategy):
         zone.order_id = cloid
         self.active_order_map[cloid] = idx
         
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] LIMIT {side} {zone.size} {self.base_asset} @ {price}")
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} {self.base_asset} @ {price}")
         ctx.place_order(LimitOrderRequest(
             symbol=self.config.symbol,
             side=side,
@@ -407,7 +407,7 @@ class SpotGridStrategy(Strategy):
         if cloid in self.active_order_map:
              idx = self.active_order_map.pop(cloid)
              self.zones[idx].order_id = None
-             logger.warning(f"[ORDER_FAILED][SPOT_GRID] Order failed for Zone {idx}")
+             logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()}")
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              
