@@ -42,7 +42,6 @@ class OrderSide(Enum):
     def __str__(self):
         return self.value
 
-@dataclass
 class TradeRole(Enum):
     MAKER = "Maker"
     TAKER = "Taker"
@@ -135,6 +134,11 @@ class TradeDetails:
     fee: int
     market_id: int
     price: float
+
+    def __repr__(self):
+        return (f"TradeDetails(side={self.side.value}, oid={self.oid}, "
+                f"role={self.role.value}, fee={self.fee}, "
+                f"market_id={self.market_id}, price={self.price})")
 
 @dataclass
 class Trade:
