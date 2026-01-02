@@ -465,7 +465,7 @@ class Engine:
         fee_usd = fee_rate * trade_volume_usd
         
         # 4. Round to 6 decimals (standard for USD/USDC on this exchange)
-        return round(float(fee_usd), 6) 
+        return round(float(fee_usd), 4) 
 
 
 
