@@ -128,6 +128,12 @@ class Order:
 
 
 @dataclass
+class TradeDetails:
+    side: OrderSide
+    oid: int
+    role: TradeRole
+
+@dataclass
 class Trade:
     trade_id: int
     tx_hash: str
@@ -152,14 +158,18 @@ class Trade:
     maker_initial_margin_fraction_before: Optional[int] = None
     maker_position_sign_changed: Optional[bool] = None
 
-    def get_side_and_oid(self, account_id: int) -> Optional[tuple[OrderSide, int]]:
+    def get_trade_details(self, account_id: int) -> Optional[TradeDetails]:
         """
-        Determines if the trade involves the given account.
-        Returns (side: OrderSide, order_id: int) if involved, else None.
+        Determines if the trade involves the given account and returns details.
+        Returns TradeDetails(side, oid, role) if involved, else None.
         """
         if self.bid_account_id == account_id:
-            return OrderSide.BUY, self.bid_id
+            # We are BUYER (BID)
+            role = TradeRole.TAKER if self.is_maker_ask else TradeRole.MAKER
+            return TradeDetails(side=OrderSide.BUY, oid=self.bid_id, role=role)
         elif self.ask_account_id == account_id:
-            return OrderSide.SELL, self.ask_id
+            # We are SELLER (ASK)
+            role = TradeRole.MAKER if self.is_maker_ask else TradeRole.TAKER
+            return TradeDetails(side=OrderSide.SELL, oid=self.ask_id, role=role)
         return None
 

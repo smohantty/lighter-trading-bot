@@ -9,7 +9,7 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade, TradeRole
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade, TradeRole, TradeDetails
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
@@ -597,11 +597,13 @@ class Engine:
                     # Match trade to our account to find CLOID and Side
                     # Use self.account_index directly as it is the source of truth
                     assert self.account_index is not None
-                    match_result = trade.get_side_and_oid(self.account_index)
-                    if not match_result:
+                    details = trade.get_trade_details(self.account_index)
+                    if not details:
                          continue
                          
-                    side, oid = match_result
+                    side = details.side
+                    oid = details.oid
+                    role = details.role
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)
@@ -613,21 +615,6 @@ class Engine:
                         logger.debug(f"Trade matched account but CLOID not found for OID {oid}: {trade}")
                         continue
                     
-                    # Determine if we are Maker or Taker
-                    # If we are BUYER (BID): We matched against an ASK. If maker_ask is True, then ASK is MAKER, so WE are TAKER.
-                    # If we are BUYER (BID): If maker_ask is False, then ASK is TAKER, so WE are MAKER.
-                    # i.e. is_taker = is_maker_ask
-                    
-                    # If we are SELLER (ASK): We matched against a BID.
-                    # trade.is_maker_ask applies to the ASK side.
-                    # If is_maker_ask is True, WE (ASK) are MAKER.
-                    # If is_maker_ask is False, WE (ASK) are TAKER.
-                    
-                    if side.is_buy():
-                        role = TradeRole.MAKER if not trade.is_maker_ask else TradeRole.TAKER
-                    else:
-                        role = TradeRole.MAKER if trade.is_maker_ask else TradeRole.TAKER
-                        
                     # Fee calculation
                     # User requested 0.0 for now
                     fee = 0.0
