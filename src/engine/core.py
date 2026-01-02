@@ -636,7 +636,6 @@ class Engine:
             for trade_dict in trades_list:
                 try:
                     trade = self._parse_trade(trade_dict)
-                    logger.info(f"Trade: {trade}")
                     
                     # Match trade to our account to find CLOID and Side
                     # Use self.account_index directly as it is the source of truth
@@ -645,6 +644,8 @@ class Engine:
                     if not details:
                          logger.warning(f"Ignored trade (not involving account {self.account_index}): {trade}")
                          continue
+
+                    logger.info(f"Trade: {details}")
                          
                     side = details.side
                     oid = details.oid
