@@ -446,6 +446,9 @@ class Engine:
             - If Fee in USD: fee_usd = fee_qty
             - If Fee in Base: fee_usd = fee_qty * trade.price
         """
+        if details.fee == 0:
+            return 0.0
+
         symbol = self.reverse_market_map.get(details.market_id)
         if not symbol or not self.ctx:
             # Fallback if context or symbol missing (shouldn't happen in normal flow)
