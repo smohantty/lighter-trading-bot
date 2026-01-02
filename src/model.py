@@ -147,8 +147,8 @@ class Trade:
     ask_account_id: int
     bid_account_id: int
     is_maker_ask: bool
-    taker_fee: Optional[int] = None
-    maker_fee: Optional[int] = None
+    taker_fee: int
+    maker_fee: int
 
     def get_trade_details(self, account_id: int) -> Optional[TradeDetails]:
         """

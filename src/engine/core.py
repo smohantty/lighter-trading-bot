@@ -418,8 +418,8 @@ class Engine:
             ask_account_id=trade_data["ask_account_id"],
             bid_account_id=trade_data["bid_account_id"],
             is_maker_ask=trade_data["is_maker_ask"],
-            taker_fee=trade_data.get("taker_fee"),
-            maker_fee=trade_data.get("maker_fee")
+            taker_fee=trade_data.get("taker_fee", 0),
+            maker_fee=trade_data.get("maker_fee", 0)
         )
 
     def _find_cloid_by_oid(self, oid: int) -> Optional[Cloid]:
