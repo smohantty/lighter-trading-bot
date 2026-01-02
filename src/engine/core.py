@@ -423,11 +423,7 @@ class Engine:
             taker_entry_quote_before=trade_data.get("taker_entry_quote_before"),
             taker_initial_margin_fraction_before=trade_data.get("taker_initial_margin_fraction_before"),
             taker_position_sign_changed=trade_data.get("taker_position_sign_changed"),
-            maker_fee=trade_data.get("maker_fee"),
-            maker_position_size_before=trade_data.get("maker_position_size_before"),
-            maker_entry_quote_before=trade_data.get("maker_entry_quote_before"),
-            maker_initial_margin_fraction_before=trade_data.get("maker_initial_margin_fraction_before"),
-            maker_position_sign_changed=trade_data.get("maker_position_sign_changed")
+            maker_fee=trade_data.get("maker_fee")
         )
 
     def _find_cloid_by_oid(self, oid: int) -> Optional[Cloid]:

@@ -153,10 +153,6 @@ class Trade:
     taker_initial_margin_fraction_before: Optional[int] = None
     taker_position_sign_changed: Optional[bool] = None
     maker_fee: Optional[int] = None
-    maker_position_size_before: Optional[str] = None
-    maker_entry_quote_before: Optional[str] = None
-    maker_initial_margin_fraction_before: Optional[int] = None
-    maker_position_sign_changed: Optional[bool] = None
 
     def get_trade_details(self, account_id: int) -> Optional[TradeDetails]:
         """
