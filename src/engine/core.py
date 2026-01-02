@@ -464,7 +464,7 @@ class Engine:
         # 3. Calculate Fee
         fee_usd = fee_rate * trade_volume_usd
         
-        # 4. Round to 6 decimals (standard for USD/USDC on this exchange)
+        # 4. Round to 4 decimals (standard for USD/USDC on this exchange)
         return round(float(fee_usd), 4) 
 
 
@@ -670,7 +670,7 @@ class Engine:
                         if is_fully_filled:
                             # Order is fully filled - notify strategy
                             logger.info(
-                                f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees})"
+                                f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees:.4f})"
                             )
                             
                             if self.broadcaster:
@@ -681,13 +681,13 @@ class Engine:
                                     price=pending.weighted_avg_px,
                                     size=pending.filled_size,
                                     status="FILLED",
-                                    fee=pending.accumulated_fees,
+                                    fee=float(f"{pending.accumulated_fees:.4f}"),
                                     is_taker=role.is_taker()
                                 )))
                             
                             final_px = pending.weighted_avg_px
                             final_sz = pending.filled_size
-                            final_fee = pending.accumulated_fees
+                            final_fee = float(f"{pending.accumulated_fees:.4f}")
                             pending_reduce_only = pending.reduce_only
                             
                             # Remove from pending
@@ -715,12 +715,12 @@ class Engine:
                             self.completed_cloids.add(cloid)
                         else:
                             logger.info(
-                                f"[ORDER_FILL_PARTIAL] {side} {trade.size} @ {trade.price} (Fee: {fee})"
+                                f"[ORDER_FILL_PARTIAL] {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
                             )
                     
                     elif cloid:
                         logger.info(
-                            f"[ORDER_FILL_UNTRACKED] {side} {trade.size} @ {trade.price} (Fee: {fee})"
+                            f"[ORDER_FILL_UNTRACKED] {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
                         )
                         
                         try:
