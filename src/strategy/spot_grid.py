@@ -361,9 +361,12 @@ class SpotGridStrategy(Strategy):
                  zone.order_id = None
                  self.total_fees += fill.fee
                  
+                 market_info = ctx.market_info(self.symbol)
+                 p_decimals = market_info.price_decimals if market_info else 4
+                 
                  if zone.pending_side.is_buy():
                       # Buy Fill
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
@@ -377,7 +380,7 @@ class SpotGridStrategy(Strategy):
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price}. PnL: {pnl:.4f}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
