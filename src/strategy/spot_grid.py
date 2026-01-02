@@ -376,7 +376,13 @@ class SpotGridStrategy(Strategy):
                       zone.pending_side = OrderSide.SELL
                       zone.entry_price = fill.price
                       # Next order: Sell at Upper
-                      self.place_counter_order(idx, zone.upper_price, OrderSide.SELL, ctx)
+                      # Deduct 0.05% fee buffer to ensure we have enough balance
+                      # (Real fees are usually around 0.05% or less, so 0.05% is safe to avoid "not enough balance")
+                      net_size = fill.size * 0.9995
+                      if market_info:
+                          net_size = market_info.round_size(net_size)
+                          
+                      self.place_counter_order(idx, zone.upper_price, OrderSide.SELL, ctx, size_override=net_size)
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
@@ -391,18 +397,20 @@ class SpotGridStrategy(Strategy):
                       # Next order: Buy at Lower
                       self.place_counter_order(idx, zone.lower_price, OrderSide.BUY, ctx)
 
-    def place_counter_order(self, idx: int, price: float, side: OrderSide, ctx: StrategyContext):
+    def place_counter_order(self, idx: int, price: float, side: OrderSide, ctx: StrategyContext, size_override: Optional[float] = None):
         zone = self.zones[idx]
         cloid = ctx.generate_cloid()
         zone.order_id = cloid
         self.active_order_map[cloid] = idx
         
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} {self.base_asset} @ {price}")
+        size = size_override if size_override is not None else zone.size
+        
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
         ctx.place_order(LimitOrderRequest(
             symbol=self.config.symbol,
             side=side,
             price=price,
-            sz=zone.size,
+            sz=size,
             reduce_only=False,
             cloid=cloid,
         ))
