@@ -406,8 +406,6 @@ class Engine:
         Parses a raw trade dictionary into a typed Trade dataclass.
         """
         return Trade(
-            trade_id=trade_data["trade_id"],
-            tx_hash=trade_data["tx_hash"],
             type=trade_data["type"],
             market_id=trade_data["market_id"],
             size=float(trade_data["size"]),

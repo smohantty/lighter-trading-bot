@@ -135,8 +135,6 @@ class TradeDetails:
 
 @dataclass
 class Trade:
-    trade_id: int
-    tx_hash: str
     type: str
     market_id: int
     size: float
