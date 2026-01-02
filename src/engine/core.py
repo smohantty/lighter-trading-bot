@@ -430,7 +430,7 @@ class Engine:
         return None
 
 
-    def _calculate_fee_usd(self, trade: Trade, details: TradeDetails) -> float:
+    def _calculate_fee_usd(self, details: TradeDetails) -> float:
         """
         Calculates the fee in USD (float) based on the raw integer fee.
         
@@ -446,7 +446,7 @@ class Engine:
             - If Fee in USD: fee_usd = fee_qty
             - If Fee in Base: fee_usd = fee_qty * trade.price
         """
-        symbol = self.reverse_market_map.get(trade.market_id)
+        symbol = self.reverse_market_map.get(details.market_id)
         if not symbol or not self.ctx:
             # Fallback if context or symbol missing (shouldn't happen in normal flow)
             return 0.0
@@ -480,7 +480,7 @@ class Engine:
         fee_qty = details.fee / (10 ** decimals)
         
         if is_fee_in_base:
-            return float(fee_qty * trade.price)
+            return float(fee_qty * details.price)
         else:
             return float(fee_qty)
 
@@ -648,7 +648,7 @@ class Engine:
                     role = details.role
                     
                     # Calculate Fee in USD
-                    fee = self._calculate_fee_usd(trade, details)
+                    fee = self._calculate_fee_usd(details)
                         
                     # Resolve CLOID from OID
                     cloid = self._find_cloid_by_oid(oid)

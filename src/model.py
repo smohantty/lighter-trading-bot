@@ -133,6 +133,8 @@ class TradeDetails:
     oid: int
     role: TradeRole
     fee: int
+    market_id: int
+    price: float
 
 @dataclass
 class Trade:
@@ -158,11 +160,25 @@ class Trade:
             # We are BUYER (BID)
             role = TradeRole.TAKER if self.is_maker_ask else TradeRole.MAKER
             fee = self.taker_fee if role.is_taker() else self.maker_fee
-            return TradeDetails(side=OrderSide.BUY, oid=self.bid_id, role=role, fee=fee)
+            return TradeDetails(
+                side=OrderSide.BUY, 
+                oid=self.bid_id, 
+                role=role, 
+                fee=fee,
+                market_id=self.market_id,
+                price=self.price
+            )
         elif self.ask_account_id == account_id:
             # We are SELLER (ASK)
             role = TradeRole.MAKER if self.is_maker_ask else TradeRole.TAKER
             fee = self.taker_fee if role.is_taker() else self.maker_fee
-            return TradeDetails(side=OrderSide.SELL, oid=self.ask_id, role=role, fee=fee)
+            return TradeDetails(
+                side=OrderSide.SELL, 
+                oid=self.ask_id, 
+                role=role, 
+                fee=fee,
+                market_id=self.market_id,
+                price=self.price
+            )
         return None
 
