@@ -148,10 +148,6 @@ class Trade:
     bid_account_id: int
     is_maker_ask: bool
     taker_fee: Optional[int] = None
-    taker_position_size_before: Optional[str] = None
-    taker_entry_quote_before: Optional[str] = None
-    taker_initial_margin_fraction_before: Optional[int] = None
-    taker_position_sign_changed: Optional[bool] = None
     maker_fee: Optional[int] = None
 
     def get_trade_details(self, account_id: int) -> Optional[TradeDetails]:

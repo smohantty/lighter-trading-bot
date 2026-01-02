@@ -419,10 +419,6 @@ class Engine:
             bid_account_id=trade_data["bid_account_id"],
             is_maker_ask=trade_data["is_maker_ask"],
             taker_fee=trade_data.get("taker_fee"),
-            taker_position_size_before=trade_data.get("taker_position_size_before"),
-            taker_entry_quote_before=trade_data.get("taker_entry_quote_before"),
-            taker_initial_margin_fraction_before=trade_data.get("taker_initial_margin_fraction_before"),
-            taker_position_sign_changed=trade_data.get("taker_position_sign_changed"),
             maker_fee=trade_data.get("maker_fee")
         )
 
