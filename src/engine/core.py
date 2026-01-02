@@ -410,8 +410,8 @@ class Engine:
             tx_hash=trade_data["tx_hash"],
             type=trade_data["type"],
             market_id=trade_data["market_id"],
-            size=trade_data["size"],
-            price=trade_data["price"],
+            size=float(trade_data["size"]),
+            price=float(trade_data["price"]),
             usd_amount=trade_data["usd_amount"],
             ask_id=trade_data["ask_id"],
             bid_id=trade_data["bid_id"],
@@ -611,9 +611,8 @@ class Engine:
                     # User requested 0.0 for now
                     fee = 0.0
                     
-                    # Parse values
-                    amount = float(trade.size)
-                    px = float(trade.price)
+                    amount = trade.size
+                    px = trade.price
                     
                     if amount <= 0 or px <= 0:
                         logger.warning(f"Invalid fill data: amount={amount}, px={px}")

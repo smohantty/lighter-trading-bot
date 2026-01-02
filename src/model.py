@@ -139,8 +139,8 @@ class Trade:
     tx_hash: str
     type: str
     market_id: int
-    size: str
-    price: str
+    size: float
+    price: float
     usd_amount: str
     ask_id: int
     bid_id: int
