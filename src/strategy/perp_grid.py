@@ -124,11 +124,9 @@ class PerpGridStrategy(Strategy):
             lower = prices[i]
             upper = prices[i+1]
             
-            # Use lower price for conservative Notional -> Size conversion
-            # (Ensures we don't exceed margin usage)
-            # Or use mid price for average. Let's use lower for Longs, Upper for shorts ideally.
-            # Using simple Mid for now:
-            ref_price_for_size = (lower + upper) / 2.0
+            # Use lower price for conservative Notional -> Size conversion, matching Spot Grid logic.
+            # This ensures consistent "Asset/Quote" allocation logic.
+            ref_price_for_size = lower
             raw_size = notional_per_zone / ref_price_for_size
             size = market_info.round_size(raw_size)
             
