@@ -12,9 +12,10 @@ We are currently focusing on **solidifying the Core Engine and Grid Strategy**. 
 - **AI Rules**: Created `.cursorrules` to persist these constraints.
 
 ## 3. Known Technical Debt / TODOs
-- [ ] **Testing**: Need to expand unit test coverage for `SpotGridStrategy`, specifically the `check_initial_acquisition` logic.
+- [ ] **Testing**: Need to expand unit test coverage for `SpotGridStrategy` and `PerpGridStrategy`.
 - [ ] **Config**: While flexible, the YAML config parsing could be more strictly typed with `pydantic`.
 - [ ] **Metrics**: Currently logging is the only output. Consider adding a simple metrics server or dashboard hook in `status_broadcaster`.
 
 ## 4. Work in Progress
-- **Refactoring Spot Grid**: Recently refactored `spot_grid.py` to be cleaner and use cached properties.
+- **Refactoring Spot Grid**: Completed `spot_grid.py` refactor.
+- **Refactoring Perp Grid**: Completed `perp_grid.py` refactor to align with Spot Grid structure and enforce strict Bias logic.
