@@ -105,7 +105,8 @@ class Engine(BaseEngine):
             order_book_ids=[market_id],
             account_ids=[self.account_index],
             queue=self.event_queue,
-            auth_token=auth_token
+            auth_token=auth_token,
+            token_provider=self._get_fresh_token
         ) # type: ignore
         
         if self.broadcaster:
@@ -170,6 +171,22 @@ class Engine(BaseEngine):
 
 
 
+    async def _get_fresh_token(self) -> Optional[str]:
+        """Token provider for QueueWsClient to refresh auth on reconnection."""
+        logger.info("Generating fresh auth token for WebSocket...")
+        if not self.signer_client:
+            logger.error("Signer client not initialized")
+            return None
+            
+        # Use 8 hours (maximum allowed) or similar long duration
+        auth_token, error = self.signer_client.create_auth_token_with_expiry(
+            deadline=8 * 60 * 60 
+        )
+        if error:
+            logger.error(f"Failed to refresh auth token: {error}")
+            return None
+        return str(auth_token) if auth_token else None
+        
     async def _message_processor(self):
         logger.info("Message Processor Started...")
         while not self._shutdown_event.is_set():
@@ -221,33 +238,6 @@ class Engine(BaseEngine):
                 logger.error(f"Error in message processor: {e}")
                 await asyncio.sleep(1)
 
-
-    
-    async def _refresh_auth_token_periodically(self):
-        """Refresh auth token every 7 hours to prevent expiry."""
-        while True:
-            try:
-                await asyncio.sleep(7 * 60 * 60)  # 7 hours
-                
-                logger.info("Refreshing auth token...")
-                assert self.signer_client is not None
-                auth_token, error = self.signer_client.create_auth_token_with_expiry(
-                    deadline=8 * 60 * 60  # 8 hours
-                )
-                
-                if error:
-                    logger.error(f"Failed to refresh auth token: {error}")
-                else:
-                    assert self.ws_client is not None
-                    await self.ws_client.update_auth_token(auth_token) # type: ignore
-                    logger.info("Auth token refreshed successfully")
-                    
-            except asyncio.CancelledError:
-                logger.info("Auth token refresh task cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Error in auth token refresh: {e}")
-            raise
 
     async def _broadcast_summary_loop(self):
         """Broadcasts strategy summary and grid state every 1 second."""
@@ -891,7 +881,7 @@ class Engine(BaseEngine):
             tasks = [
                 asyncio.create_task(self.ws_client.run_async()),
                 asyncio.create_task(self._message_processor()),
-                asyncio.create_task(self._refresh_auth_token_periodically()),
+
                 asyncio.create_task(self._broadcast_summary_loop())
             ]
             
