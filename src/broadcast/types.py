@@ -5,6 +5,7 @@ from src.strategy.types import SpotGridSummary, PerpGridSummary, GridState
 @dataclass
 class SystemInfo:
     network: str
+    exchange: str
 
 @dataclass
 class OrderEvent:
@@ -42,8 +43,8 @@ class WSEvent:
 def config_event(config: Dict[str, Any]) -> WSEvent:
     return WSEvent(event_type="config", data=config)
 
-def info_event(network: str) -> WSEvent:
-    return WSEvent(event_type="info", data=SystemInfo(network=network))
+def info_event(network: str, exchange: str = "lighter") -> WSEvent:
+    return WSEvent(event_type="info", data=SystemInfo(network=network, exchange=exchange))
 
 def spot_grid_summary_event(summary: SpotGridSummary) -> WSEvent:
     return WSEvent(event_type="spot_grid_summary", data=summary)
