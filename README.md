@@ -49,9 +49,6 @@ This project is a direct port of the logic and architecture from the Rust-based 
     
     # Path to your wallet configuration file
     LIGHTER_WALLET_CONFIG_FILE=wallet_config.json
-    
-    # Path to strategy configuration
-    CONFIG_PATH=config.yaml
     ```
 
 2.  **Wallet Config**:
@@ -82,7 +79,7 @@ This project is a direct port of the logic and architecture from the Rust-based 
     Edit `config.yaml` to define your grid parameters.
     ```yaml
     type: perp_grid
-    symbol: ETH-USDC
+    symbol: ETH
     upper_price: 3000.0
     lower_price: 2000.0
     grid_type: Geometric  # or Arithmetic
