@@ -32,13 +32,26 @@ class ConsoleRenderer:
         print("CONFIGURATION")
         print(f"Symbol:      {c.symbol}")
         print(f"Type:        {c.type}")
+        
+        if hasattr(c, "grid_type"):
+            print(f"Grid Type:   {c.grid_type.name}")
+
+        if hasattr(c, "grid_bias"):
+            print(f"Grid Bias:   {c.grid_bias.name}")
+            
         print(f"Total Inv:   {c.total_investment}")
+        
         if hasattr(c, "leverage"):
             print(f"Leverage:    {c.leverage}x")
+            
         if hasattr(c, "grid_count"):
             print(f"Grid Count:  {c.grid_count}")
+            
         if hasattr(c, "lower_price"):
              print(f"Range:       {c.lower_price} - {c.upper_price}")
+             
+        if hasattr(c, "trigger_price") and c.trigger_price:
+             print(f"Trigger:     {c.trigger_price}")
 
     @staticmethod
     def _render_summary(s: StrategySummary):
