@@ -1,6 +1,6 @@
 from typing import List, Optional
 from src.strategy.types import StrategySummary, GridState, PerpGridSummary, SpotGridSummary
-from src.model import OrderRequest, OrderSide
+from src.model import OrderRequest, OrderSide, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest
 
 class ConsoleRenderer:
     @staticmethod
@@ -25,6 +25,7 @@ class ConsoleRenderer:
 
     @staticmethod
     def _render_summary(s: StrategySummary):
+        if not s: return  # MyPy safety
         print(f"STRATEGY: {s.symbol}")
         print(f"Price:    {s.price}")
         print(f"State:    {s.state}")
@@ -73,5 +74,16 @@ class ConsoleRenderer:
             return
 
         for o in orders:
-            ro_tag = " [ReduceOnly]" if o.reduce_only else ""
-            print(f"  [ORDER] {o.side} {o.sz} @ {o.price} {ro_tag}")
+            ro_tag = ""
+            if isinstance(o, (LimitOrderRequest)):
+                 if o.reduce_only: ro_tag = " [ReduceOnly]"
+                 
+            # Extract common attributes safely or check instance
+            side = o.side if hasattr(o, "side") else "?"
+            sz = o.sz if hasattr(o, "sz") else "?"
+            price = o.price if hasattr(o, "price") else "?"
+            
+            if isinstance(o, (LimitOrderRequest, MarketOrderRequest)):
+                print(f"  [ORDER] {o.side} {o.sz} @ {o.price} {ro_tag}")
+            elif isinstance(o, CancelOrderRequest):
+                print(f"  [CANCEL] CLOID {o.cloid}")

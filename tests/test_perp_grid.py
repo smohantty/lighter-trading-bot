@@ -74,7 +74,7 @@ def test_perp_grid_init_long_bias():
     # Should have placed 2 orders?
     # refresh_orders called.
     assert len(ctx.order_queue) == 2
-    assert len(strategy.active_orders) == 2
+    assert len(strategy.active_order_map) == 2
 
 def test_perp_grid_execution_flow():
     symbol = "HYPE"
