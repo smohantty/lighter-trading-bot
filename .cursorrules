@@ -1,0 +1,71 @@
+# Project Rules & Context: Lighter Trading Bot
+
+## 1. Project Overview
+This is a high-performance, asynchronous trading bot built for the Lighter Exchange. It is designed to be strategy-agnostic, with a core engine that handles connectivity and a flexible strategy interface.
+
+## 2. Technology Stack
+- **Language**: Python 3.10+
+- **Dependency Management**: `uv` (MANDATORY). Do not use `pip` directly.
+- **Concurrency**: `asyncio` with `websockets`.
+- **Testing**: `pytest` (`uv run pytest`).
+- **One-off Execution**: `uv run python main.py inputs/config.yaml`.
+- **Type Checking**: `mypy`.
+
+## 3. Architecture & Core Concepts
+
+### Core Components
+- **Engine (`src/engine/core.py`)**: The central nervous system.
+    - Manages WebSocket/API connections.
+    - Dispatches ticks to the strategy.
+    - Processes order updates and trade fills.
+- **Strategy (`src/strategy/`)**: Logic containers.
+    - **MUST** inherit from `Strategy` base class.
+    - **MUST NOT** make API calls directly. Use `StrategyContext` methods (`place_order`, `cancel_order`).
+    - **State**: Should be idempotent where possible.
+- **Context (`src/engine/context.py`)**: The sandbox interface.
+    - Provides `MarketInfo` for precision and limits.
+    - Tracks Balances/Collateral.
+    - Queues orders for the Engine to execute.
+
+### Data Flow
+1.  **Tick**: Engine receives WS price -> `strategy.on_tick(price, ctx)`.
+2.  **Order Logic**: Strategy calculates logic -> `ctx.place_order(request)`.
+3.  **Execution**: Engine periodically drains `ctx.order_queue` -> Batch API Call.
+4.  **Updates**: Engine receives WS Order/Trade events -> `strategy.on_order_filled(...)`.
+
+## 4. Coding Standards
+
+### Critical Rules
+> [!IMPORTANT]
+> **Precision Safety**: ALL prices and sizes sent to the exchange MUST be rounded using `MarketInfo`.
+> - `ctx.market_info(symbol).round_price(price)`
+> - `ctx.market_info(symbol).round_size(size)`
+> Failure to do this will result in API rejections.
+
+### Type Safety
+- Add type hints to all new function signatures.
+- Use `Optional` and `Union` explicitly.
+- Run `uv run mypy src` before committing significant changes.
+
+### Async Best Practices
+- Never use blocking calls (`time.sleep`) inside the event loop. Use `await asyncio.sleep()`.
+- Ensure all strategy handlers (`on_tick`, `on_order_filled`) are non-blocking and fast.
+
+## 5. Directory Structure
+- `src/`: Source code.
+- `tests/`: Pytest suite.
+- `configs/`: YAML configurations.
+- `inputs/`: User runtime configs (gitignored).
+
+## 6. Development Workflow
+1.  **Install/Sync**: `uv sync`
+2.  **Run Bot**: `uv run python main.py <config_path>`
+3.  **Run Tests**: `uv run pytest`
+4.  **Lint**: `uv run mypy src`
+
+## 7. Configuration
+- **Secrets**: Handled via `.env` (loaded by `python-dotenv`).
+- **Strategy Config**: Defined in YAML, validated against `StrategyConfig` dataclass.
+
+## Reference
+See [AGENT.md](./AGENT.md) for detailed architecture diagrams and component deep dives.
