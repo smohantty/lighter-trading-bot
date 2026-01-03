@@ -186,28 +186,22 @@ class PerpGridStrategy(Strategy):
         logger.info(f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}")
         
         # 4. Check Initial Acquisition
-        # We pass 0.0 as current_position because user requested independent calculation
-        self.check_initial_acquisition(ctx, market_info, required_position_size, current_position_size=0.0)
+        # We assume initial position is 0.0 (or that we build on top of whatever exists)
+        self.check_initial_acquisition(ctx, market_info, required_position_size)
 
     def check_initial_acquisition(
         self,
         ctx: StrategyContext,
         market_info: MarketInfo,
-        target_position: float,
-        current_position_size: float
+        target_position: float
     ):
         """
-        Calculates difference between target and current, and executes rebalance.
-        User specified: ignore actual current position, assume we build from allocated amount.
-        So we mostly trust 'target_position' is what we need to buy/sell.
+        Calculates required acquisition based on target position.
+        Assumes starting from 0 internal position.
         """
-        # Note: If we really want to ignore existing position and just 'add' this amount,
-        # we treat needed_change = target_position. 
-        # But safely, we should probably check what we are tracking. 
         # Since we use self.position_size (internal tracking), it starts at 0.0.
         # So needed_change is exactly target_position.
-        
-        needed_change = target_position - self.position_size # self.position_size is 0 initially
+        needed_change = target_position
         
         minimal_size = market_info.min_base_amount
         
