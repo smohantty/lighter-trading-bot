@@ -445,7 +445,6 @@ class PerpGridStrategy(Strategy):
 
         return PerpGridSummary(
             symbol=self.symbol,
-            price=self.current_price,
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.position_size,
@@ -469,7 +468,6 @@ class PerpGridStrategy(Strategy):
         return GridState(
             symbol=self.symbol,
             strategy_type="perp_grid",
-            current_price=self.current_price,
             grid_bias=self.config.grid_bias.value,
             zones=[
                 ZoneInfo(

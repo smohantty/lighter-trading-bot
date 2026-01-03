@@ -49,14 +49,12 @@ class GridZone:
 class GridState:
     symbol: str
     strategy_type: str
-    current_price: float
     grid_bias: Optional[str]
     zones: List[ZoneInfo]
 
 @dataclass
 class PerpGridSummary:
     symbol: str
-    price: float
     state: str
     uptime: str
     position_size: float
@@ -78,7 +76,6 @@ class PerpGridSummary:
 @dataclass
 class SpotGridSummary:
     symbol: str
-    price: float
     state: str
     uptime: str
     position_size: float

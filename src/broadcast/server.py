@@ -19,6 +19,7 @@ class StatusBroadcaster:
         self.last_info: Optional[WSEvent] = None
         self.last_summary: Optional[WSEvent] = None
         self.last_grid_state: Optional[WSEvent] = None
+        self.last_market_update: Optional[WSEvent] = None
         
         # Order History (Keep last 50)
         self.order_history: Deque[WSEvent] = deque(maxlen=50)
@@ -54,6 +55,9 @@ class StatusBroadcaster:
                 
             if self.last_grid_state:
                 await self._send_to_client(websocket, self.last_grid_state)
+                
+            if self.last_market_update:
+                await self._send_to_client(websocket, self.last_market_update)
             
             # Send History
             for event in self.order_history:
@@ -87,6 +91,8 @@ class StatusBroadcaster:
             self.last_summary = event
         elif event.event_type == "grid_state":
             self.last_grid_state = event
+        elif event.event_type == "market_update":
+            self.last_market_update = event
         elif event.event_type == "order_update":
             self.order_history.append(event)
         

@@ -459,7 +459,6 @@ class SpotGridStrategy(Strategy):
              
         return SpotGridSummary(
             symbol=self.symbol,
-            price=self.current_price,
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.inventory_base,
@@ -481,7 +480,6 @@ class SpotGridStrategy(Strategy):
         return GridState(
              symbol=self.symbol,
              strategy_type="spot_grid",
-             current_price=self.current_price,
              grid_bias=None,
              zones=[
                  ZoneInfo(
