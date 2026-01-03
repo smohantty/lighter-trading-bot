@@ -1,5 +1,5 @@
 from typing import List, Optional
-from src.config import StrategyConfig
+from src.config import StrategyConfig, SpotGridConfig, PerpGridConfig
 from src.strategy.types import StrategySummary, GridState, PerpGridSummary, SpotGridSummary
 from src.model import OrderRequest, OrderSide, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest
 
@@ -39,7 +39,8 @@ class ConsoleRenderer:
         if hasattr(c, "grid_bias"):
             print(f"Grid Bias:   {c.grid_bias.name}")
             
-        print(f"Total Inv:   {c.total_investment}")
+        if hasattr(c, "total_investment"):
+            print(f"Total Inv:   {c.total_investment}")
         
         if hasattr(c, "leverage"):
             print(f"Leverage:    {c.leverage}x")
@@ -47,7 +48,7 @@ class ConsoleRenderer:
         if hasattr(c, "grid_count"):
             print(f"Grid Count:  {c.grid_count}")
             
-        if hasattr(c, "lower_price"):
+        if isinstance(c, (SpotGridConfig, PerpGridConfig)):
              print(f"Range:       {c.lower_price} - {c.upper_price}")
              
         if hasattr(c, "trigger_price") and c.trigger_price:
