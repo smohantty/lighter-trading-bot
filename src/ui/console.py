@@ -80,8 +80,8 @@ class ConsoleRenderer:
     @staticmethod
     def _render_grid(g: GridState):
         print(f"GRID STATE ({len(g.zones)} Zones)")
-        print(f"{'IDX':<4} | {'RANGE':<20} | {'SIZE':<8} | {'SIDE':<6} | {'STATUS'}")
-        print("-" * 60)
+        print(f"{'IDX':<4} | {'RANGE':<20} | {'SIZE':<8} | {'EXP_PNL':<8} | {'SIDE':<6} | {'STATUS'}")
+        print("-" * 75)
         
         # Limit to first few, last few if too many?
         display_zones = g.zones
@@ -97,8 +97,11 @@ class ConsoleRenderer:
             caret = " "
             if z.lower_price <= g.current_price <= z.upper_price:
                 caret = "*"
+                
+            # Expected PnL per Roundtrip (Gross)
+            exp_pnl = (z.upper_price - z.lower_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<20} | {z.size:<8} | {z.pending_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<20} | {z.size:<8} | {exp_pnl:<8.4f} | {z.pending_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")
