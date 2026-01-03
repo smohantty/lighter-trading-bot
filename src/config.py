@@ -88,8 +88,6 @@ class ExchangeConfig:
     network: str
     base_url: str
     
-    # Simulation Mode
-    simulation_mode: bool = False
 
     @staticmethod
     def from_env():
@@ -136,17 +134,13 @@ class ExchangeConfig:
                 agent_key_index = next(iter(private_keys.keys()))
                 agent_private_key = private_keys[agent_key_index]
 
-            # Check for simulation mode
-            simulation_mode = os.getenv("SIMULATION_MODE", "false").lower() in ["true", "1", "yes"]
-
             return ExchangeConfig(
                 agent_private_key=agent_private_key, 
                 account_index=account_index,
                 network=network, 
                 base_url=base_url, 
                 agent_key_index=agent_key_index,
-                master_account_address=master_account_address,
-                simulation_mode=simulation_mode
+                master_account_address=master_account_address
             )
             
         except Exception as e:

@@ -60,9 +60,6 @@ class Engine:
         
         # 1. Setup API Client
         logger.info(f"Initializing API Client with URL: {self.exchange_config.base_url}")
-        # Log simulation mode status
-        if self.exchange_config.simulation_mode:
-            logger.warning("[SIMULATION MODE ENABLED] Orders will be logged but NOT sent to the exchange")
         
         api_config = lighter.Configuration(host=self.exchange_config.base_url)
         self.api_client = lighter.ApiClient(configuration=api_config)
@@ -907,18 +904,6 @@ class Engine:
             # SDK likely returns str.
             tx_infos.append(str(tx_info) if tx_info is not None else "")
             batch_context.append(order)
-
-        # Check if simulation mode is enabled
-        if self.exchange_config.simulation_mode:
-            logger.info(f"[SIMULATION] Collected {len(tx_types)} orders (not sent to exchange)")
-            for i, order in enumerate(batch_context):
-                if isinstance(order, LimitOrderRequest):
-                    logger.info(f"[SIMULATION] Order {i+1}: LIMIT {order.side} {order.sz} {order.symbol} @ {order.price} (reduce_only={order.reduce_only})")
-                elif isinstance(order, MarketOrderRequest):
-                    logger.info(f"[SIMULATION] Order {i+1}: MARKET {order.side} {order.sz} {order.symbol} @ {order.price}")
-                elif isinstance(order, CancelOrderRequest):
-                    logger.info(f"[SIMULATION] Order {i+1}: CANCEL {order.symbol} cloid={order.cloid}")
-            return
         
         # Lighter supports up to 50 transactions per batch
         MAX_BATCH_SIZE = 49
