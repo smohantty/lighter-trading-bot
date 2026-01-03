@@ -39,7 +39,6 @@ class NoOpStrategy(Strategy):
         return GridState(
             symbol="NOOP",
             strategy_type="noop",
-            current_price=0.0,
             grid_bias=None,
             zones=[]
         )

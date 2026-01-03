@@ -6,11 +6,13 @@ import argparse
 import signal
 from dotenv import load_dotenv
 
-from src.config import load_config, ExchangeConfig
+from src.config import load_config, ExchangeConfig, SpotGridConfig, PerpGridConfig
+from src.strategy.base import Strategy
 from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
 from src.strategy.noop import NoOpStrategy
 from src.engine.engine import Engine
+from typing import cast, Union
 
 # Setup Logging
 from logging.handlers import TimedRotatingFileHandler
@@ -66,9 +68,9 @@ async def main():
 
     # Init Strategy
     if config.type == "perp_grid":
-        strategy = PerpGridStrategy(config)
+        strategy: Strategy = PerpGridStrategy(cast(PerpGridConfig, config))
     elif config.type == "spot_grid":
-        strategy = SpotGridStrategy(config)
+        strategy = SpotGridStrategy(cast(SpotGridConfig, config))
     elif config.type == "noop":
         strategy = NoOpStrategy()
     else:
