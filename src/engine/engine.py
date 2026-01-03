@@ -16,24 +16,17 @@ from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
 from typing import cast
 from src.broadcast.server import StatusBroadcaster
 import src.broadcast.types as btypes
+from src.engine.base import BaseEngine
 
 logger = logging.getLogger(__name__)
 
 # Constants (Move to Lighter Constants if available)
 # Constants (Move to Lighter Constants if available)
 
-class Engine:
+class Engine(BaseEngine):
     def __init__(self, config: StrategyConfig, exchange_config: ExchangeConfig, strategy: Strategy, broadcaster: Optional[StatusBroadcaster] = None):
-        self.config = config
-        self.exchange_config = exchange_config
-        self.strategy = strategy
+        super().__init__(config, exchange_config, strategy)
         self.broadcaster = broadcaster
-        
-        self.ctx: Optional[StrategyContext] = None
-        self.market_map: Dict[str, int] = {} # Symbol -> MarketID
-        self.reverse_market_map: Dict[int, str] = {} # MarketID -> Symbol
-        self.markets: Dict[str, MarketInfo] = {} # Symbol -> MarketInfo
-
         
         # Clients
         self.api_client: Optional[lighter.ApiClient] = None
@@ -83,7 +76,7 @@ class Engine:
         # 4. Load Metadata (Markets)
         await self._load_markets()
 
-        target_symbol = self.config.symbol
+        target_symbol = self.strategy_config.symbol
         if target_symbol not in self.markets:
              raise ValueError(f"Symbol {target_symbol} not found in Lighter markets: {list(self.markets.keys())}")
 
@@ -97,7 +90,7 @@ class Engine:
         
         # 6. Connect WS
         market_id = self.market_map[target_symbol]
-        logger.info(f"Connecting WS for Market {market_id}...")
+        logger.info(f"Subscribing to OrderBook for {self.strategy_config.symbol} (ID: {market_id})...")
         
         # Generate auth token for authenticated channels
         # Use 8 hours (maximum allowed) since this is only for reading data
@@ -125,18 +118,18 @@ class Engine:
                 # Custom serialization for Enums to match frontend schema (lowercase)
                 
                 # Check if it's a dataclass or object with __dict__
-                if hasattr(self.config, "__dict__"):
-                    config_dict = self.config.__dict__.copy()
+                if hasattr(self.strategy_config, "__dict__"):
+                    config_dict = self.strategy_config.__dict__.copy()
                 else:
                     # Fallback if somehow it's a dict or other
-                    logger.warning(f"Config object {type(self.config)} lacks __dict__, using vars() or dict(self.config)")
-                    if is_dataclass(self.config):
-                         config_dict = asdict(self.config)
+                    logger.warning(f"Config object {type(self.strategy_config)} lacks __dict__, using vars() or dict(self.strategy_config)")
+                    if is_dataclass(self.strategy_config):
+                         config_dict = asdict(self.strategy_config)
                     else:
                         try:
-                            config_dict = dict(self.config)
+                            config_dict = dict(self.strategy_config)
                         except:
-                            config_dict = vars(self.config)
+                            config_dict = vars(self.strategy_config)
 
                 # Convert Enums to lowercase strings explicitly
                 if "grid_type" in config_dict:
@@ -155,8 +148,9 @@ class Engine:
                          config_dict["grid_bias"] = str(val).lower()
 
                 # Add decimals from market info
-                if target_symbol in self.markets:
-                    m = self.markets[target_symbol]
+                if self.strategy_config.symbol in self.market_map:
+                    market_id = self.market_map[self.strategy_config.symbol]
+                    m = self.markets[self.strategy_config.symbol]
                     config_dict["sz_decimals"] = m.sz_decimals
                     config_dict["px_decimals"] = m.price_decimals
 
@@ -227,57 +221,7 @@ class Engine:
                 logger.error(f"Error in message processor: {e}")
                 await asyncio.sleep(1)
 
-    async def _fetch_account_balances(self):
-        """Fetch account balances from the API and update StrategyContext."""
-        if not self.api_client or not self.ctx:
-            return
-        # Assertion for mypy
-        assert self.ctx is not None
-        assert self.api_client is not None
-        
-        try:
-            account_api = lighter.AccountApi(self.api_client)
-            account_data = await account_api.account(
-                by="index",
-                value=str(self.account_index)
-            )
-            
-            if not account_data or not account_data.accounts:
-                logger.warning("No account data returned from API")
-                return
-            
-            # Get the first account (should be our account)
-            account = account_data.accounts[0]
-            
-            # Update spot balances from assets
-            if account.assets:
-                for asset in account.assets:
-                    total_balance = float(asset.balance)
-                    locked_balance = float(asset.locked_balance)
-                    available_balance = total_balance - locked_balance
-                    
-                    self.ctx.update_spot_balance(
-                        asset=asset.symbol,
-                        total=total_balance,
-                        available=available_balance
-                    )
-                    logger.info(f"Spot Balance: {asset.symbol} - Total: {total_balance}, Available: {available_balance}")
-            
-            # Update perp balances (collateral)
-            if account.collateral:
-                collateral = float(account.collateral)
-                available = float(account.available_balance) if account.available_balance else collateral
-                
-                # For perps, we track USDC collateral
-                self.ctx.update_perp_balance(
-                    asset="USDC",
-                    total=collateral,
-                    available=available
-                )
-                logger.info(f"Perp Collateral: USDC - Total: {collateral}, Available: {available}")
-                
-        except Exception as e:
-            logger.error(f"Failed to fetch account balances: {e}")
+
     
     async def _refresh_auth_token_periodically(self):
         """Refresh auth token every 7 hours to prevent expiry."""
@@ -469,7 +413,7 @@ class Engine:
     async def _handle_mid_price_msg(self, market_id: str, mid_price: float):
         market_id_int = int(market_id)
         symbol = self.reverse_market_map.get(market_id_int)
-        if not symbol or symbol != self.config.symbol:
+        if not symbol or symbol != self.strategy_config.symbol:
             return
 
         if self.ctx:
@@ -935,121 +879,7 @@ class Engine:
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
 
-    async def dry_run_init(self) -> bool:
-        """
-        Runs the simulation/dry run logic.
-        Returns True if successful, False otherwise.
-        """
-        print("Initializing Dry Run...")
-        
-        # 1. Setup API Client
-        api_config = lighter.Configuration(host=self.exchange_config.base_url)
-        self.api_client = lighter.ApiClient(configuration=api_config)
-        
-        # 2. Load Markets
-        await self._load_markets()
-        
-        if self.config.symbol not in self.markets:
-             print(f"Error: Symbol {self.config.symbol} not found in available markets.")
-             await self.api_client.close()
-             return False
 
-        # 3. Context
-        self.ctx = StrategyContext(self.markets)
-        
-        # 4. Balances
-        if self.exchange_config.account_index > 0:
-            self.account_index = self.exchange_config.account_index
-        else:
-            print("Error: Invalid Account Index")
-            return False
-            
-        await self._fetch_account_balances()
-        
-        # 5. Get Current Price
-        current_price = 0.0
-        try:
-             market_id = self.market_map[self.config.symbol]
-             order_api = lighter.OrderApi(self.api_client)
-             
-             # Fetch recent trades to get last price
-             trades_response = await order_api.recent_trades(market_id=market_id, limit=1)
-             
-             # SDK might return a list directly or an object containing trades
-             if isinstance(trades_response, tuple):
-                 trades_response = trades_response[0]
-                 
-             trades = []
-             if hasattr(trades_response, "trades"):
-                 trades = trades_response.trades
-             elif isinstance(trades_response, list):
-                 trades = trades_response
-                 
-             if trades:
-                 last_trade = trades[0]
-                 # trade object or dict
-                 if hasattr(last_trade, "price"):
-                     current_price = float(last_trade.price)
-                 elif isinstance(last_trade, dict) and "price" in last_trade:
-                     current_price = float(last_trade["price"])
-                 else:
-                      print(f"Warning: Could not parse trade price from {last_trade}")
-             
-             if current_price == 0.0:
-                  print("Warning: No recent trades found, establishing price from OrderBook...")
-                  # Fallback to Order Book
-                  ob_response = await order_api.order_book_orders(market_id=market_id)
-                  if isinstance(ob_response, tuple): ob_response = ob_response[0]
-                  
-                  # Inspect structure (asks/bids)
-                  # Assuming ob_response has asks/bids
-                  best_ask = 0.0
-                  best_bid = 0.0
-                  
-                  asks = getattr(ob_response, "asks", [])
-                  bids = getattr(ob_response, "bids", [])
-                  
-                  if asks:
-                       a0 = asks[0]
-                       best_ask = float(a0.price) if hasattr(a0, "price") else float(a0)
-                  if bids:
-                       b0 = bids[0]
-                       best_bid = float(b0.price) if hasattr(b0, "price") else float(b0)
-                       
-                  if best_ask > 0 and best_bid > 0:
-                       current_price = (best_ask + best_bid) / 2.0
-                  elif best_ask > 0:
-                       current_price = best_ask
-                  else:
-                       current_price = best_bid
-             
-             if current_price == 0.0:
-                  print("Error: Could not determine market price.")
-                  await self.api_client.close()
-                  return False
-
-             # Round to market precision
-             info = self.markets[self.config.symbol]
-             current_price = info.round_price(current_price)
-             
-        except Exception as e:
-             print(f"Failed to fetch or parse price: {e}")
-             await self.api_client.close()
-             return False
-        
-        # 6. Run Strategy Dry Run
-        try:
-            if hasattr(self.strategy, "dry_run"):
-                 self.strategy.dry_run(self.ctx, current_price)
-            else:
-                 print(f"Strategy {type(self.strategy)} does not support dry run.")
-        except Exception as e:
-            print(f"Dry Run Error: {e}")
-            await self.api_client.close()
-            return False
-
-        await self.api_client.close()
-        return True
 
     async def run(self):
         await self.initialize()
@@ -1096,100 +926,3 @@ class Engine:
             pass
         if self.broadcaster:
             await self.broadcaster.stop()
-
-    async def _load_markets(self):
-        """
-        Populate market_map and markets dictionary from API order books.
-        """
-        logger.info("Loading Market Metadata via OrderApi...")
-        self.market_map = {}
-        self.reverse_market_map = {}
-        self.markets = {} # Symbol -> MarketInfo
-
-        try:
-            order_api = lighter.OrderApi(self.api_client)
-            response = await order_api.order_book_details()
-            
-            if isinstance(response, tuple):
-                response = response[0]
-            
-            all_details: List[Any] = []
-            
-            # SDK returns OrderBookDetails object
-            if hasattr(response, "order_book_details"):
-                if response.order_book_details:
-                    all_details.extend(response.order_book_details)
-            
-            if hasattr(response, "spot_order_book_details"):
-                if response.spot_order_book_details:
-                    all_details.extend(response.spot_order_book_details)
-            
-            # Response might be a dict (raw JSON or mock)
-            elif isinstance(response, dict):
-                # Perps
-                perp_details = response.get("order_book_details")
-                if perp_details and isinstance(perp_details, list):
-                    all_details.extend(perp_details)
-                    
-                # Spots
-                spot_details = response.get("spot_order_book_details")
-                if spot_details and isinstance(spot_details, list):
-                    all_details.extend(spot_details)
-            
-            if not all_details:
-                 logger.warning("No market details found in response.")
-            
-            for item in all_details:
-                # Normalize to dict if it's an object (SDK Model)
-                if not isinstance(item, dict):
-                    if hasattr(item, "to_dict"):
-                        item = item.to_dict()
-                    elif hasattr(item, "dict"):
-                        item = item.dict()
-                        
-                # Strict Dict Parsing
-                if isinstance(item, dict):
-                    symbol = item.get("symbol")
-                    market_id = item.get("market_id")
-                    
-                    price_decimals = item.get("price_decimals", 2)
-                    size_decimals = item.get("size_decimals", 4)
-                    
-                    market_type = item.get("market_type", "perp")
-                    base_asset_id = item.get("base_asset_id", 0)
-                    quote_asset_id = item.get("quote_asset_id", 0)
-                    min_base_amount_str = item.get("min_base_amount", "0.0")
-                    min_quote_amount_str = item.get("min_quote_amount", "0.0")
-                    
-                else:
-                        raise ValueError(f"Unknown item type in order_books list: {type(item)}")
-                    
-                if symbol and market_id is not None:
-                    mid_int = int(market_id)
-                    
-                    # Store raw map
-                    self.market_map[symbol] = mid_int
-                    self.reverse_market_map[mid_int] = symbol
-                    
-                    # Create MarketInfo
-                    info = MarketInfo(
-                        symbol=symbol, # Use exact symbol from API
-                        coin=symbol.split('/')[0] if '/' in symbol else symbol,
-                        market_id=mid_int,
-                        price_decimals=int(price_decimals),
-                        sz_decimals=int(size_decimals),
-                        market_type=market_type,
-                        base_asset_id=int(base_asset_id),
-                        quote_asset_id=int(quote_asset_id),
-                        min_base_amount=float(min_base_amount_str),
-                        min_quote_amount=float(min_quote_amount_str)
-                    )
-                    self.markets[symbol] = info
-
-            logger.info(f"Loaded {len(self.market_map)} symbols into market map.")
-            
-
-            
-        except Exception as e:
-            logger.error(f"Failed to populate market map: {e}")
-            pass
