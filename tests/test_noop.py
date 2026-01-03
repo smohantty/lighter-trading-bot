@@ -9,7 +9,7 @@ sys.path.append(os.getcwd())
 
 from src.config import load_config, ExchangeConfig
 from src.strategy.noop import NoOpStrategy
-from src.engine.core import Engine
+from src.engine.engine import Engine
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

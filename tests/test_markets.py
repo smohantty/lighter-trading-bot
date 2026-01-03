@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
-from src.engine.core import Engine
+from src.engine.engine import Engine
 from src.config import ExchangeConfig, NoOpConfig
 from src.strategy.noop import NoOpStrategy
 
@@ -18,7 +18,7 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
         strategy = NoOpStrategy()
         
         # Mock Engine clients
-        with patch('src.engine.core.lighter') as mock_lighter:
+        with patch('src.engine.engine.lighter') as mock_lighter:
             # Mock ApiClient
             mock_api_client = MagicMock()
             mock_lighter.ApiClient.return_value = mock_api_client

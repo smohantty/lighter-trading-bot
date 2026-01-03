@@ -10,7 +10,7 @@ from src.config import load_config, ExchangeConfig
 from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
 from src.strategy.noop import NoOpStrategy
-from src.engine.core import Engine
+from src.engine.engine import Engine
 
 # Setup Logging
 from logging.handlers import TimedRotatingFileHandler
@@ -64,12 +64,6 @@ async def main():
         logger.error(f"Failed to load exchange config: {e}")
         return
 
-    # Init Broadcast
-    broadcaster = None
-    if not args.dry_run:
-        from src.broadcast.server import StatusBroadcaster
-        broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
-
     # Init Strategy
     if config.type == "perp_grid":
         strategy = PerpGridStrategy(config)
@@ -81,31 +75,58 @@ async def main():
         logger.error(f"Strategy type {config.type} not supported yet in main.")
         return
 
-    # Init Engine
-    engine = Engine(config, exchange_config, strategy, broadcaster)
-
-    # Setup Signal Handlers
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(engine.stop()))
-    
-    # Start
     # Start
     try:
         if args.dry_run:
-             success = await engine.dry_run_init()
-             if not success:
-                 sys.exit(1)
-             return
+            await _run_simulation(config, exchange_config, strategy)
+        else:
+            await _run_live(config, exchange_config, strategy)
 
-        await engine.run()
     except asyncio.CancelledError:
         logger.info("Main task cancelled.")
     except Exception as e:
         logger.error(f"Bot execution failed: {e}")
         raise
+
+
+
+async def _run_simulation(config, exchange_config, strategy):
+    from src.engine.simulation import SimulationEngine
+    from src.ui.console import ConsoleRenderer
+    
+    sim_engine = SimulationEngine(config, exchange_config, strategy)
+    try:
+        await sim_engine.initialize()
+        await sim_engine.run_single_step()
+        
+        ConsoleRenderer.render(
+            summary=sim_engine.get_summary(),
+            grid=sim_engine.get_grid_state(),
+            orders=sim_engine.get_orders()
+        )
+    except Exception as e:
+        logger.error(f"Simulation Failed: {e}", exc_info=True)
+        sys.exit(1)
     finally:
-        # Ensure cleanup happens even if an error occurred
+        await sim_engine.cleanup()
+
+async def _run_live(config, exchange_config, strategy):
+    from src.broadcast.server import StatusBroadcaster
+    
+    # Init Broadcast
+    broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
+    
+    # Init Engine
+    engine = Engine(config, exchange_config, strategy, broadcaster)
+    
+    # Setup Signal Handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: asyncio.create_task(engine.stop()))
+
+    try:
+        await engine.run()
+    finally:
         await engine.stop()
 
 if __name__ == "__main__":

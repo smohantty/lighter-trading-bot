@@ -17,7 +17,7 @@ graph TD
 
 ## Core Components
 
-### 1. Engine (`src/engine/core.py`)
+### 1. Engine (`src/engine/engine.py`)
 - **Role**: The "Hardware". It handles I/O.
 - **Responsibilities**:
   - Maintains `lighter-client` connections.
