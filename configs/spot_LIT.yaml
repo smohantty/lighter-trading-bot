@@ -4,7 +4,7 @@ upper_price: 2.7
 lower_price: 2.5
 grid_type: Geometric
 grid_count: 16
-total_investment: 1090.0
-trigger_price: 2.6
+total_investment: 1110.0
+trigger_price: 2.61
 
 

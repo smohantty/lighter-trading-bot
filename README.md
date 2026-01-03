@@ -11,6 +11,7 @@ This project is a direct port of the logic and architecture from the Rust-based 
   - Validates startup configuration (margin requirements, grid range).
   - Uses local virtual environments for isolation.
 - **Ported Logic**: 1:1 strategy implementation matching the proven Rust codebase.
+- **Dry Run Mode Checks**: Simulates grid placement and validates asset requirements before execution.
 
 ## Prerequisites
 
@@ -90,6 +91,12 @@ This project is a direct port of the logic and architecture from the Rust-based 
 **Run Manually (Dev):**
 ```bash
 uv run python main.py --config configs/spot_LIT.yaml
+```
+
+**Run Dry Run (Simulation):**
+Visualize the grid strategy and required assets without placing orders:
+```bash
+uv run python main.py --dry-run --config configs/spot_LIT.yaml
 ```
 
 **Run Tests:**

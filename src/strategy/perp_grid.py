@@ -86,12 +86,11 @@ class PerpGridStrategy(Strategy):
             self.config.grid_count
         )
 
-    def initialize_zones(self, price: float, ctx: StrategyContext):
-        self.current_price = price
-        market_info = ctx.market_info(self.symbol)
-        if not market_info:
-            raise ValueError(f"No market info for {self.symbol}")
-
+    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: float) -> tuple[List[GridZone], float]:
+        """
+        Calculates grid zones and required position size.
+        Returns: (zones, required_position_size)
+        """
         # 1. Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
@@ -114,18 +113,17 @@ class PerpGridStrategy(Strategy):
              # Just logging warning, will clamp later
              logger.warning(f"[PERP_GRID] improving size estimate: {max_size_estimate} < min {min_size_limit}")
 
-        initial_price = self.config.trigger_price if self.config.trigger_price else price
+        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
         
         # 3. Build Zones & Calculate Initial Requirement
-        self.zones = []
+        zones = []
         required_position_size = 0.0 # Positive for Long, Negative for Short
         
         for i in range(self.grid_count - 1):
             lower = prices[i]
             upper = prices[i+1]
             
-            # Use lower price for conservative Notional -> Size conversion, matching Spot Grid logic.
-            # This ensures consistent "Asset/Quote" allocation logic.
+            # Use lower price for conservative Notional -> Size conversion
             ref_price_for_size = lower
             raw_size = notional_per_zone / ref_price_for_size
             size = market_info.round_size(raw_size)
@@ -140,12 +138,6 @@ class PerpGridStrategy(Strategy):
                 # GRID LOGIC:
                 # If Price is ABOVE zone: We should have ALREADY bought. Zone is Waiting to SELL (Close).
                 # If Price is BELOW zone: We have NOT bought. Zone is Waiting to BUY (Open).
-                
-                # Using 'lower' as zone reference line logic, or 'upper'.
-                # Standard grid: 
-                # Zone = [100, 110]. Price = 105. 
-                # If we assume we hold position for everything below price:
-                # 100 is below 105 -> Held. Next order is SELL at 110.
                 
                 if lower < initial_price:
                     # WE HOLD THIS ZONE
@@ -173,7 +165,7 @@ class PerpGridStrategy(Strategy):
                    pending_side = OrderSide.SELL # Target is to open at Upper
                    entry_price = 0.0
 
-            self.zones.append(GridZone(
+            zones.append(GridZone(
                 index=i,
                 lower_price=lower,
                 upper_price=upper,
@@ -183,11 +175,101 @@ class PerpGridStrategy(Strategy):
                 entry_price=entry_price
             ))
             
+        return zones, required_position_size
+
+    def initialize_zones(self, price: float, ctx: StrategyContext):
+        self.current_price = price
+        market_info = ctx.market_info(self.symbol)
+        if not market_info:
+            raise ValueError(f"No market info for {self.symbol}")
+
+        self.zones, required_position_size = self.calculate_grid_plan(market_info, price)
+            
         logger.info(f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}")
         
         # 4. Check Initial Acquisition
         # We assume initial position is 0.0 (or that we build on top of whatever exists)
         self.check_initial_acquisition(ctx, market_info, required_position_size)
+
+    def dry_run(self, ctx: StrategyContext, price: float):
+        """
+        Performs a dry run for Perp Grid.
+        """
+        print(f"\n{'='*50}")
+        print(f"DRY RUN: Perp Grid Strategy ({self.symbol})")
+        print(f"{'='*50}")
+
+        market_info = ctx.market_info(self.symbol)
+        if not market_info:
+            print("Error: Market info not found.")
+            return
+
+        try:
+             zones, req_pos = self.calculate_grid_plan(market_info, price)
+        except ValueError as e:
+             print(f"Plan Validation Failed: {e}")
+             return
+
+        if not zones:
+             print("No zones generated.")
+             return
+
+        print(f"\nCurrent Price: {price}")
+        if self.config.trigger_price:
+             print(f"Trigger Price: {self.config.trigger_price}")
+
+        print(f"\nGrid Configuration:")
+        print(f"  Mode (Bias): {self.grid_bias.value}")
+        print(f"  Leverage:    {self.leverage}x")
+        print(f"  Range:       {self.config.lower_price} - {self.config.upper_price}")
+        print(f"  Grid Count:  {len(zones) + 1} levels ({len(zones)} intervals)")
+
+        spreads = []
+        profits_quote = []
+        
+        for z in zones:
+            speed = (z.upper_price - z.lower_price) / z.lower_price
+            spreads.append(speed)
+             # Profit per grid = (Upper - Lower) * Size
+            p = (z.upper_price - z.lower_price) * z.size
+            profits_quote.append(p)
+            
+        avg_spread = sum(spreads)/len(spreads)
+        avg_profit = sum(profits_quote)/len(profits_quote)
+        
+        print(f"\nPerformance Metrics:")
+        print(f"  Spread: {min(spreads)*100:.2f}% (min) - {max(spreads)*100:.2f}% (max) | Avg: {avg_spread*100:.2f}%")
+        print(f"  Profit/Grid: {min(profits_quote):.4f} (min) - {max(profits_quote):.4f} (max) USDC | Avg: {avg_profit:.4f}")
+
+        # 2. Requirements
+        print(f"\nPosition Requirements:")
+        direction = "LONG" if req_pos > 0 else "SHORT" if req_pos < 0 else "NEUTRAL"
+        print(f"  Required Position: {req_pos:.4f} {self.symbol} ({direction})")
+        
+        est_notional = abs(req_pos * price)
+        est_margin = est_notional / self.leverage
+        
+        print(f"  Est. Initial Notional: {est_notional:.2f} USDC")
+        print(f"  Est. Initial Margin:   {est_margin:.2f} USDC (approx)")
+        
+        avail_margin = ctx.get_perp_available("USDC")
+        print(f"\nAccount Status:")
+        print(f"  Available Margin: {avail_margin:.2f} USDC")
+        print(f"  Allocated Margin: {self.total_investment:.2f} USDC")
+        
+        if avail_margin < est_margin:
+             print(f"  [WARNING] Available margin might be tight for initial position. Shortfall: {est_margin - avail_margin:.2f}")
+        
+        if self.total_investment > avail_margin:
+             print(f"  [WARNING] You allocated {self.total_investment} but only have {avail_margin} available.")
+        
+        print(f"\nAction Plan:")
+        if abs(req_pos) > 0:
+             print(f"  [TRADE] Will OPEN {direction} {abs(req_pos):.4f} {self.symbol} immediately (or at trigger).")
+        else:
+             print(f"  [WAIT] No initial position required (waiting for price to move into grid).")
+
+        print(f"{'='*50}\n")
 
     def check_initial_acquisition(
         self,

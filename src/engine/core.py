@@ -950,6 +950,122 @@ class Engine:
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
 
+    async def dry_run_init(self) -> bool:
+        """
+        Runs the simulation/dry run logic.
+        Returns True if successful, False otherwise.
+        """
+        print("Initializing Dry Run...")
+        
+        # 1. Setup API Client
+        api_config = lighter.Configuration(host=self.exchange_config.base_url)
+        self.api_client = lighter.ApiClient(configuration=api_config)
+        
+        # 2. Load Markets
+        await self._load_markets()
+        
+        if self.config.symbol not in self.markets:
+             print(f"Error: Symbol {self.config.symbol} not found in available markets.")
+             await self.api_client.close()
+             return False
+
+        # 3. Context
+        self.ctx = StrategyContext(self.markets)
+        
+        # 4. Balances
+        if self.exchange_config.account_index > 0:
+            self.account_index = self.exchange_config.account_index
+        else:
+            print("Error: Invalid Account Index")
+            return False
+            
+        await self._fetch_account_balances()
+        
+        # 5. Get Current Price
+        current_price = 0.0
+        try:
+             market_id = self.market_map[self.config.symbol]
+             order_api = lighter.OrderApi(self.api_client)
+             
+             # Fetch recent trades to get last price
+             trades_response = await order_api.recent_trades(market_id=market_id, limit=1)
+             
+             # SDK might return a list directly or an object containing trades
+             if isinstance(trades_response, tuple):
+                 trades_response = trades_response[0]
+                 
+             trades = []
+             if hasattr(trades_response, "trades"):
+                 trades = trades_response.trades
+             elif isinstance(trades_response, list):
+                 trades = trades_response
+                 
+             if trades:
+                 last_trade = trades[0]
+                 # trade object or dict
+                 if hasattr(last_trade, "price"):
+                     current_price = float(last_trade.price)
+                 elif isinstance(last_trade, dict) and "price" in last_trade:
+                     current_price = float(last_trade["price"])
+                 else:
+                      print(f"Warning: Could not parse trade price from {last_trade}")
+             
+             if current_price == 0.0:
+                  print("Warning: No recent trades found, establishing price from OrderBook...")
+                  # Fallback to Order Book
+                  ob_response = await order_api.order_book_orders(market_id=market_id)
+                  if isinstance(ob_response, tuple): ob_response = ob_response[0]
+                  
+                  # Inspect structure (asks/bids)
+                  # Assuming ob_response has asks/bids
+                  best_ask = 0.0
+                  best_bid = 0.0
+                  
+                  asks = getattr(ob_response, "asks", [])
+                  bids = getattr(ob_response, "bids", [])
+                  
+                  if asks:
+                       a0 = asks[0]
+                       best_ask = float(a0.price) if hasattr(a0, "price") else float(a0)
+                  if bids:
+                       b0 = bids[0]
+                       best_bid = float(b0.price) if hasattr(b0, "price") else float(b0)
+                       
+                  if best_ask > 0 and best_bid > 0:
+                       current_price = (best_ask + best_bid) / 2.0
+                  elif best_ask > 0:
+                       current_price = best_ask
+                  else:
+                       current_price = best_bid
+             
+             if current_price == 0.0:
+                  print("Error: Could not determine market price.")
+                  await self.api_client.close()
+                  return False
+
+             # Round to market precision
+             info = self.markets[self.config.symbol]
+             current_price = info.round_price(current_price)
+             
+        except Exception as e:
+             print(f"Failed to fetch or parse price: {e}")
+             await self.api_client.close()
+             return False
+        
+        # 6. Run Strategy Dry Run
+        try:
+            if hasattr(self.strategy, "dry_run"):
+                 self.strategy.dry_run(self.ctx, current_price)
+            else:
+                 print(f"Strategy {type(self.strategy)} does not support dry run.")
+        except Exception as e:
+            print(f"Dry Run Error: {e}")
+            await self.api_client.close()
+            return False
+
+        await self.api_client.close()
+        return True
+
     async def run(self):
         await self.initialize()
         self.running = True

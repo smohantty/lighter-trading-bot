@@ -79,13 +79,11 @@ class SpotGridStrategy(Strategy):
         
         self.current_price = 0.0
 
-    def initialize_zones(self, price: float, ctx: StrategyContext):
-        self.current_price = price
-        # 1. Get initial data
-        market_info = ctx.market_info(self.config.symbol)
-        if not market_info:
-            raise ValueError(f"No market info for {self.config.symbol}")
-        
+    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: float) -> tuple[List[GridZone], float, float]:
+        """
+        Calculates the grid structure and validates basic constraints.
+        Returns: (zones, required_base, required_quote)
+        """
         # Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
@@ -105,25 +103,11 @@ class SpotGridStrategy(Strategy):
             logger.error(f"[SPOT_GRID] {msg}")
             raise ValueError(msg)
 
-        # Seed inventory
-        avail_base = ctx.get_spot_available(self.base_asset)
-        avail_quote = ctx.get_spot_available(self.quote_asset)
-
-        
-        initial_price = self.config.trigger_price if self.config.trigger_price else price
-        
-
-
-        # Upfront Total Investment Validation
-        total_wallet_value = (avail_base * initial_price) + avail_quote
-        if total_wallet_value < self.config.total_investment:
-             msg = f"Insufficient Total Portfolio Value! Required: {self.config.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
-             logger.error(f"[SPOT_GRID] {msg}")
-             raise ValueError(msg)
-
-        self.zones = []
+        zones = []
         required_base = 0.0
         required_quote = 0.0
+
+        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
 
         for i in range(self.config.grid_count - 1):
             zone_lower_price = prices[i]
@@ -144,7 +128,7 @@ class SpotGridStrategy(Strategy):
                  required_quote += (size * zone_lower_price)
                  entry_price = 0.0
 
-            self.zones.append(GridZone(
+            zones.append(GridZone(
                 index=i,
                 lower_price=zone_lower_price,
                 upper_price=zone_upper_price,
@@ -154,6 +138,30 @@ class SpotGridStrategy(Strategy):
                 entry_price=entry_price,
                 roundtrip_count=0
             ))
+            
+        return zones, required_base, required_quote
+
+    def initialize_zones(self, price: float, ctx: StrategyContext):
+        self.current_price = price
+        market_info = ctx.market_info(self.config.symbol)
+        if not market_info:
+            raise ValueError(f"No market info for {self.config.symbol}")
+        
+        # Calculate Grid
+        self.zones, required_base, required_quote = self.calculate_grid_plan(market_info, price)
+
+        # Seed inventory
+        avail_base = ctx.get_spot_available(self.base_asset)
+        avail_quote = ctx.get_spot_available(self.quote_asset)
+        
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
+
+        # Upfront Total Investment Validation
+        total_wallet_value = (avail_base * initial_price) + avail_quote
+        if total_wallet_value < self.config.total_investment:
+             msg = f"Insufficient Total Portfolio Value! Required: {self.config.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
+             logger.error(f"[SPOT_GRID] {msg}")
+             raise ValueError(msg)
 
         logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}")
         self.inventory_base = min(avail_base, required_base)
@@ -162,10 +170,108 @@ class SpotGridStrategy(Strategy):
         if self.inventory_base > 0.0:
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
-
         
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
+
+    def dry_run(self, ctx: StrategyContext, price: float):
+        """
+        Executes a dry run to visualize the grid and validate requirements.
+        """
+        print(f"\n{'='*50}")
+        print(f"DRY RUN: Spot Grid Strategy ({self.symbol})")
+        print(f"{'='*50}")
+        
+        market_info = ctx.market_info(self.symbol)
+        if not market_info:
+            print("Error: Market info not found.")
+            return
+
+        try:
+            zones, req_base, req_quote = self.calculate_grid_plan(market_info, price)
+        except ValueError as e:
+            print(f"Plan Validation Failed: {e}")
+            return
+
+        # 1. Grid Metrics
+        if not zones:
+             print("No zones generated.")
+             return
+             
+        print(f"\nCurrent Price: {price}")
+        if self.config.trigger_price:
+             print(f"Trigger Price: {self.config.trigger_price}")
+             
+        print(f"\nGrid Configuration:")
+        print(f"  Range: {self.config.lower_price} - {self.config.upper_price}")
+        print(f"  Grid Count: {len(zones) + 1} levels ({len(zones)} intervals)")
+        
+        # Calculate stats
+        spreads = []
+        profits_quote = []
+        profits_pct = []
+        
+        for z in zones:
+            spread = (z.upper_price - z.lower_price) / z.lower_price
+            spreads.append(spread)
+            
+            # Profit per grid = (Upper - Lower) * Size
+            p = (z.upper_price - z.lower_price) * z.size
+            profits_quote.append(p)
+            
+            # Profit % relative to investment per zone
+            inv = z.size * z.lower_price
+            if inv > 0:
+                profits_pct.append(p / inv)
+        
+        avg_spread = sum(spreads)/len(spreads)
+        avg_profit = sum(profits_quote)/len(profits_quote)
+        
+        print(f"\nPerformance Metrics:")
+        print(f"  Spread: {min(spreads)*100:.2f}% (min) - {max(spreads)*100:.2f}% (max) | Avg: {avg_spread*100:.2f}%")
+        print(f"  Profit/Grid: {min(profits_quote):.4f} (min) - {max(profits_quote):.4f} (max) {self.quote_asset} | Avg: {avg_profit:.4f}")
+
+        # 2. Asset Requirements
+        print(f"\nAsset Requirements:")
+        
+        avail_base = ctx.get_spot_available(self.base_asset)
+        avail_quote = ctx.get_spot_available(self.quote_asset)
+        
+        print(f"  Required:  {req_base:.4f} {self.base_asset:<5} | {req_quote:.2f} {self.quote_asset}")
+        print(f"  Available: {avail_base:.4f} {self.base_asset:<5} | {avail_quote:.2f} {self.quote_asset}")
+        
+        net_base = req_base - avail_base
+        net_quote = req_quote - avail_quote
+        
+        print(f"\nAction Plan:")
+        if net_base > 0:
+             cost = net_base * price
+             print(f"  [BUY] Need to BUY ~{net_base:.4f} {self.base_asset} (Approx Cost: {cost:.2f} {self.quote_asset})")
+             if avail_quote < cost:
+                  print(f"  [WARNING] Insufficient Quote to buy Base! Shortfall: {cost - avail_quote:.2f} {self.quote_asset}")
+        elif net_quote > 0:
+             # Need Quote -> Sell Base
+             required_sell_base = net_quote / price
+             print(f"  [SELL] Need to SELL ~{required_sell_base:.4f} {self.base_asset} to get {net_quote:.2f} {self.quote_asset}")
+             if avail_base < required_sell_base:
+                  print(f"     However, your Base surplus ({abs(net_base):.4f}) might be enough or not? Let's check.") 
+        
+        if net_base <= 0 and net_quote <= 0:
+             print("  [OK] Sufficient assets. No rebalancing needed.")
+        
+        total_val_req = self.config.total_investment
+        curr_val = (avail_base * price) + avail_quote
+        
+        print(f"\nPortfolio Check:")
+        print(f"  Target Investment: {total_val_req:.2f} {self.quote_asset}")
+        print(f"  Current Value:     {curr_val:.2f} {self.quote_asset}")
+        
+        if curr_val < total_val_req:
+             print(f"  [FAIL] Insufficient Total Value. Shortfall: {total_val_req - curr_val:.2f}")
+        else:
+             print(f"  [PASS] Sufficient Value.")
+
+        print(f"{'='*50}\n")
 
     def check_initial_acquisition(
         self, 

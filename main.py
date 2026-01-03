@@ -37,6 +37,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Lighter Trading Bot")
     parser.add_argument("strategy_config_file", nargs='?', help="Path to the strategy configuration file (YAML)")
     parser.add_argument("--config", help="Path to the strategy configuration file (YAML)")
+    parser.add_argument("--dry-run", action="store_true", help="Perform a dry run simulation without executing orders.")
     args = parser.parse_args()
 
     strategy_config_file = args.config or args.strategy_config_file
@@ -87,7 +88,14 @@ async def main():
         loop.add_signal_handler(sig, lambda: asyncio.create_task(engine.stop()))
     
     # Start
+    # Start
     try:
+        if args.dry_run:
+             success = await engine.dry_run_init()
+             if not success:
+                 sys.exit(1)
+             return
+
         await engine.run()
     except asyncio.CancelledError:
         logger.info("Main task cancelled.")

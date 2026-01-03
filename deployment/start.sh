@@ -32,6 +32,24 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     exit 0
 fi
 
+# Run Dry Run
+echo "Running Dry Run Simulation..."
+uv run python main.py --dry-run --config "$CONFIG_PATH"
+DRY_RUN_EXIT_CODE=$?
+
+if [ $DRY_RUN_EXIT_CODE -ne 0 ]; then
+    echo "Dry Run Failed or Validated with Errors. Aborting."
+    exit 1
+fi
+
+echo ""
+read -p "Do you want to proceed with live deployment? (y/N) " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Deployment aborted."
+    exit 0
+fi
+
 echo "Starting new tmux session '$SESSION_NAME' with config: $CONFIG_PATH"
 # Create a new detached session
 tmux new-session -d -s "$SESSION_NAME"
