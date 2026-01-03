@@ -491,7 +491,7 @@ class Engine(BaseEngine):
                                  side=str(pending.side),
                                  price=pending.price,
                                  size=pending.target_size,
-                                 status=order.status,
+                                 status="open",
                                  fee=0.0,
                                  is_taker=False
                              )))
@@ -509,7 +509,7 @@ class Engine(BaseEngine):
                                  side=str(pending.side),
                                  price=0.0,
                                  size=pending.filled_size,
-                                 status="CANCELED",
+                                 status="cancelled",
                                  fee=0.0,
                                  is_taker=False
                              )))
@@ -611,7 +611,7 @@ class Engine(BaseEngine):
                                     side=str(side),
                                     price=pending.weighted_avg_px,
                                     size=pending.filled_size,
-                                    status="FILLED",
+                                    status="filled",
                                     fee=float(f"{pending.accumulated_fees:.4f}"),
                                     is_taker=role.is_taker()
                                 )))
