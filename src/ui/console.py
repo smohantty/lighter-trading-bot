@@ -80,7 +80,7 @@ class ConsoleRenderer:
     @staticmethod
     def _render_grid(g: GridState):
         print(f"GRID STATE ({len(g.zones)} Zones)")
-        print(f"{'IDX':<4} | {'RANGE':<20} | {'SPREAD':<8} | {'SIZE':<8} | {'EXP_PNL':<8} | {'SIDE':<6} | {'STATUS'}")
+        print(f"{'IDX':<4} | {'RANGE':<20} | {'SPD %':<8} | {'SIZE':<8} | {'EXP_PNL':<8} | {'SIDE':<6} | {'STATUS'}")
         print("-" * 85)
         
         # Limit to first few, last few if too many?
@@ -99,10 +99,10 @@ class ConsoleRenderer:
                 caret = "*"
                 
             # Calculations
-            spread = z.upper_price - z.lower_price
-            exp_pnl = spread * z.size
+            spread_pct = ((z.upper_price - z.lower_price) / z.lower_price) * 100
+            exp_pnl = (z.upper_price - z.lower_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<20} | {spread:<8.4f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.pending_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<20} | {spread_pct:<8.2f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.pending_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")
