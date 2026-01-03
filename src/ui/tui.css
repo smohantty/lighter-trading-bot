@@ -1,0 +1,76 @@
+Screen {
+    layout: vertical;
+}
+
+Header {
+    dock: top;
+}
+
+Footer {
+    dock: bottom;
+}
+
+/* Config Screen specific */
+ConfigScreen {
+    align: center middle;
+}
+
+#config-form {
+    width: 60;
+    height: auto;
+    border: solid $accent;
+    padding: 1 2;
+}
+
+.input-container {
+    height: auto;
+    margin-bottom: 1;
+}
+
+Label {
+    width: 20;
+    text-align: right;
+    padding-right: 1;
+}
+
+Input {
+    width: 1fr;
+}
+
+Button {
+    width: 100%;
+    margin-top: 1;
+}
+
+#strategy-type-select {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+/* Simulation Screen specific */
+#simulation-grid {
+    layout: grid;
+    grid-size: 2 2;
+    grid-rows: 1fr 3fr;
+    grid-columns: 1fr 2fr;
+    height: 1fr;
+}
+
+#stats-panel {
+    row-span: 1;
+    column-span: 2;
+    border: solid green;
+    height: 10;
+}
+
+#grid-table {
+    row-span: 1;
+    column-span: 1;
+    border: solid blue;
+}
+
+#log-panel {
+    row-span: 1;
+    column-span: 1;
+    border: solid yellow;
+}

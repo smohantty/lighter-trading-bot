@@ -112,6 +112,12 @@ uv run python main.py --dry-run --config configs/spot_LIT.yaml
 uv run pytest tests
 ```
 
+**Run Visual TUI (Interactive):**
+Launch the terminal user interface to configure strategies and run visual simulations:
+```bash
+uv run python -m src.ui.app
+```
+
 ## SDK Management
 
 The bot uses the `lighter-python` SDK directly from GitHub via `uv`.

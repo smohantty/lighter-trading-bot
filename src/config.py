@@ -1,6 +1,6 @@
 import yaml
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Literal, Union
 from src.strategy.types import GridBias, GridType
 
@@ -81,7 +81,7 @@ class ExchangeConfig:
     account_index: int          # Account Index (Integer)
 
     # Agent Credentials
-    agent_private_key: str
+    agent_private_key: str = field(repr=False)
     agent_key_index: int
 
     # Network Config

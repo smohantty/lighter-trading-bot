@@ -57,8 +57,9 @@ class ConsoleRenderer:
     @staticmethod
     def _render_summary(s: StrategySummary):
         if not s: return  # MyPy safety
+        if not s: return  # MyPy safety
         print(f"STRATEGY: {s.symbol}")
-        print(f"Price:    {s.price}")
+        # 'price' is not in the Summary types anymore, removing it
         print(f"State:    {s.state}")
         
         if hasattr(s, "grid_spacing_pct"):
@@ -96,8 +97,9 @@ class ConsoleRenderer:
             
             # Simple highlight
             caret = " "
-            if z.lower_price <= g.current_price <= z.upper_price:
-                caret = "*"
+            # g.current_price doesn't exist in GridState definition, removing highlight logic requiring it
+            # if z.lower_price <= g.current_price <= z.upper_price:
+            #    caret = "*"
                 
             # Calculations
             spread_pct = ((z.upper_price - z.lower_price) / z.lower_price) * 100
