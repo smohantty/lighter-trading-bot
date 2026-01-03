@@ -69,3 +69,11 @@ This is a high-performance, asynchronous trading bot built for the Lighter Excha
 
 ## Reference
 See [AGENT.md](./AGENT.md) for detailed architecture diagrams and component deep dives.
+
+## 8. AI Assistant Memory
+> [!TIP]
+> **Extended Context**:
+> - Check [`.gemini/memory.md`](.gemini/memory.md) for the active project status, recent decisions, and known technical debt.
+> - Check [`.gemini/architecture.md`](.gemini/architecture.md) for detailed system design and flow charts.
+>
+> Use these files to orient yourself before starting complex tasks.
