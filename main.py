@@ -65,8 +65,10 @@ async def main():
         return
 
     # Init Broadcast
-    from src.broadcast.server import StatusBroadcaster
-    broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
+    broadcaster = None
+    if not args.dry_run:
+        from src.broadcast.server import StatusBroadcaster
+        broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
 
     # Init Strategy
     if config.type == "perp_grid":
