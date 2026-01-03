@@ -65,8 +65,8 @@ class ConsoleRenderer:
         
         # Limit to first few, last few if too many?
         display_zones = g.zones
-        if len(display_zones) > 20:
-             display_zones = display_zones[:10] + display_zones[-10:]
+        if len(display_zones) > 100:
+             display_zones = display_zones[:50] + display_zones[-50:]
              
         for z in display_zones:
             rng = f"{z.lower_price:.2f}-{z.upper_price:.2f}"
@@ -80,8 +80,8 @@ class ConsoleRenderer:
             
             print(f"{caret}{z.index:<3} | {rng:<20} | {z.size:<8} | {z.pending_side:<6} | {status}")
             
-        if len(g.zones) > 20:
-            print(f"... (Hiding {len(g.zones)-20} zones) ...")
+        if len(g.zones) > 100:
+            print(f"... (Hiding {len(g.zones)-100} zones) ...")
 
     @staticmethod
     def _render_action_plan(orders: List[OrderRequest]):
