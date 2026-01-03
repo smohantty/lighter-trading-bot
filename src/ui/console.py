@@ -60,6 +60,13 @@ class ConsoleRenderer:
         print(f"Price:    {s.price}")
         print(f"State:    {s.state}")
         
+        if hasattr(s, "grid_spacing_pct"):
+            val = s.grid_spacing_pct
+            if isinstance(val, tuple):
+                 print(f"Spacing:  {val[0]:.2f}% - {val[1]:.2f}%")
+            else:
+                 print(f"Spacing:  {val:.2f}%")
+        
         if isinstance(s, SpotGridSummary):
             print(f"Type:     SPOT GRID")
             print(f"Balance:  {s.base_balance:.4f} {s.symbol.split('/')[0]} | {s.quote_balance:.2f} USDC")
