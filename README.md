@@ -60,11 +60,20 @@ This project is a direct port of the logic and architecture from the Rust-based 
     Create `wallet_config.json` with the following structure:
     ```json
     {
-      "baseUrl": "https://api.lighter.xyz",
-      "accountIndex": 1234,
-      "privateKeys": {
-        "0": "0xYourEd25519ApiKey"
-      }
+        "accountIndex": 1234,
+        "masterAccountAddress": "0xYourMasterAccountAddress",
+        "mainnet": {
+            "baseUrl": "https://api.lighter.xyz",
+            "agentApiKeys": {
+                "0": "0xYourEd25519ApiKey"
+            }
+        },
+        "testnet": {
+            "baseUrl": "https://testnet.zklighter.elliot.ai",
+            "agentApiKeys": {
+                "0": "0xYourEd25519ApiKey"
+            }
+        }
     }
     ```
     *To obtain these credentials, use the `system_setup.py` example script in the SDK or export them from the Lighter UI if available.*
@@ -73,12 +82,14 @@ This project is a direct port of the logic and architecture from the Rust-based 
     Edit `config.yaml` to define your grid parameters.
     ```yaml
     type: perp_grid
-    symbol: ETH-USDC    # Lighter symbol format
+    symbol: ETH-USDC
     upper_price: 3000.0
     lower_price: 2000.0
+    grid_type: Geometric  # or Arithmetic
     grid_count: 10
     total_investment: 100.0
-    grid_bias: Long
+    leverage: 5
+    grid_bias: Long      # Long, Short, or Neutral
     ```
 
 ## Usage
