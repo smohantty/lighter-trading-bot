@@ -1,14 +1,18 @@
 from typing import List, Optional
+from src.config import StrategyConfig
 from src.strategy.types import StrategySummary, GridState, PerpGridSummary, SpotGridSummary
 from src.model import OrderRequest, OrderSide, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest
 
 class ConsoleRenderer:
     @staticmethod
-    def render(summary: Optional[StrategySummary], grid: Optional[GridState], orders: List[OrderRequest]):
+    def render(config: StrategyConfig, summary: Optional[StrategySummary], grid: Optional[GridState], orders: List[OrderRequest]):
         print(f"\n{'='*60}")
         print(" SIMULATION DRY RUN REPORT")
         print(f"{'='*60}\n")
         
+        ConsoleRenderer._render_config(config)
+        print("\n" + "-"*60 + "\n")
+
         if summary:
             ConsoleRenderer._render_summary(summary)
             
@@ -22,6 +26,19 @@ class ConsoleRenderer:
         ConsoleRenderer._render_action_plan(orders)
         
         print(f"\n{'='*60}\n")
+
+    @staticmethod
+    def _render_config(c: StrategyConfig):
+        print("CONFIGURATION")
+        print(f"Symbol:      {c.symbol}")
+        print(f"Type:        {c.type}")
+        print(f"Total Inv:   {c.total_investment}")
+        if hasattr(c, "leverage"):
+            print(f"Leverage:    {c.leverage}x")
+        if hasattr(c, "grid_count"):
+            print(f"Grid Count:  {c.grid_count}")
+        if hasattr(c, "lower_price"):
+             print(f"Range:       {c.lower_price} - {c.upper_price}")
 
     @staticmethod
     def _render_summary(s: StrategySummary):

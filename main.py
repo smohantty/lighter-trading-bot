@@ -99,11 +99,7 @@ async def _run_simulation(config, exchange_config, strategy):
         await sim_engine.initialize()
         await sim_engine.run_single_step()
         
-        ConsoleRenderer.render(
-            summary=sim_engine.get_summary(),
-            grid=sim_engine.get_grid_state(),
-            orders=sim_engine.get_orders()
-        )
+        ConsoleRenderer.render(config, sim_engine.get_summary(), sim_engine.get_grid_state(), sim_engine.get_orders())
     except Exception as e:
         logger.error(f"Simulation Failed: {e}", exc_info=True)
         sys.exit(1)
