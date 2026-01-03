@@ -198,7 +198,13 @@ class SpotGridStrategy(Strategy):
         if base_deficit > 0.0:
             # Case 1: Not enough base asset. Need to BUY base asset.
             acquisition_price = initial_price
+            
+            # Add 0.1% buffer for fees/rounding safety
+            base_deficit = base_deficit * 1.001
+            
             base_deficit = max(base_deficit, market_info.min_base_amount)
+            # Use ceiling round for extra safety? market_info.round_size usually rounds half-up.
+            # But the buffer handles the slight edge case.
             base_deficit = market_info.round_size(base_deficit)
 
             if self.config.trigger_price:
@@ -306,16 +312,32 @@ class SpotGridStrategy(Strategy):
                 price = zone.lower_price if side.is_buy() else zone.upper_price
                 size = zone.size
                 
+                # Safety Clamp for SELLS: Never sell more than we own
+                if side.is_sell():
+                     # Check if size exceeds inventory (allowing for tiny float noise)
+                     if size > self.inventory_base + 1e-9:
+                          # If strictly larger, clamp it
+                          # But only if it remains valid (min size). Log warning if we're clamping significantly.
+                          diff = size - self.inventory_base
+                          if self.inventory_base < market_info.min_base_amount:
+                               logger.warning(f"[SPOT_GRID] Insufficient inventory ({self.inventory_base}) for ZONE_{idx} (Req: {size}). Skipping order.")
+                               continue
+                          
+                          if diff > 0.0:
+                               logger.warning(f"[SPOT_GRID] Clamping ZONE_{idx} SELL size from {size} to {self.inventory_base} to match inventory.")
+                               size = self.inventory_base
+                
                 cloid = ctx.generate_cloid()
                 zone.order_id = cloid
                 self.active_order_map[cloid] = idx
 
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
+                final_size = market_info.round_size(size)
+                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {final_size} {self.base_asset} @ {price}")
                 ctx.place_order(LimitOrderRequest(
                     symbol=self.config.symbol,
                     side=side,
                     price=market_info.round_price(price),
-                    sz=market_info.round_size(size),
+                    sz=final_size,
                     reduce_only=False,
                     cloid=cloid
                 ))
