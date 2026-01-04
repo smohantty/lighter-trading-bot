@@ -141,6 +141,10 @@ async def _run_simulation(config, exchange_config, strategy):
                 render_loop()
             )
             
+    except ValueError as e:
+        # Clean exit for expected validation errors (e.g., price out of grid range)
+        logger.error(f"Simulation Failed: {e}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Simulation Failed: {e}", exc_info=True)
         sys.exit(1)
