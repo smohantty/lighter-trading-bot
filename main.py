@@ -14,28 +14,32 @@ from src.strategy.spot_grid import SpotGridStrategy
 from src.strategy.noop import NoOpStrategy
 from src.engine.engine import Engine
 
-# Setup Logging
 from logging.handlers import TimedRotatingFileHandler
 
 # Ensure logs directory exists
 os.makedirs("logs", exist_ok=True)
 
-# Setup Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        TimedRotatingFileHandler("logs/lighter-trading-bot.log", when="midnight", interval=1, backupCount=30)
-    ],
-    force=True
-)
+# Module-level logger (handlers configured dynamically in main)
 logger = logging.getLogger("main")
+
+def setup_logging(is_simulation: bool = False):
+    """Configure logging with separate log files for simulation vs production."""
+    log_file = "logs/simulation.log" if is_simulation else "logs/lighter-trading-bot.log"
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            TimedRotatingFileHandler(log_file, when="midnight", interval=1, backupCount=30)
+        ],
+        force=True
+    )
 
 async def main():
     load_dotenv()
     
-    # Parse Args
+    # Parse Args first to determine logging mode
     parser = argparse.ArgumentParser(description="Lighter Trading Bot")
     parser.add_argument("strategy_config_file", nargs='?', help="Path to the strategy configuration file (YAML)")
     parser.add_argument("--config", help="Path to the strategy configuration file (YAML)")
@@ -45,6 +49,9 @@ async def main():
                         help="Run in simulation mode (configure via LIGHTER_SIMULATION_CONFIG_FILE)")
     
     args = parser.parse_args()
+    
+    # Setup logging based on mode (simulation uses separate log file)
+    setup_logging(is_simulation=args.dry_run)
 
     strategy_config_file = args.config or args.strategy_config_file
     
