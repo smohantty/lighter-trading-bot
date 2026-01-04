@@ -5,12 +5,22 @@ from src.model import OrderRequest, OrderSide, LimitOrderRequest, MarketOrderReq
 
 class ConsoleRenderer:
     @staticmethod
-    def render(config: StrategyConfig, summary: Optional[StrategySummary], grid: Optional[GridState], orders: List[OrderRequest]):
+    def render(
+        config: StrategyConfig, 
+        summary: Optional[StrategySummary], 
+        grid: Optional[GridState], 
+        orders: List[OrderRequest],
+        current_price: Optional[float] = None
+    ):
         print(f"\n{'='*60}")
         print(" SIMULATION DRY RUN REPORT")
         print(f"{'='*60}\n")
         
         ConsoleRenderer._render_config(config)
+        
+        if current_price:
+            print(f"\nCurrent Price: {current_price:.4f}")
+        
         print("\n" + "-"*60 + "\n")
 
         if summary:

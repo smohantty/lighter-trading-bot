@@ -1,8 +1,113 @@
 import yaml
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Literal, Union
+from typing import Optional, Literal, Union, Dict
 from src.strategy.types import GridBias, GridType
+
+
+@dataclass
+class SimulationConfig:
+    """
+    Configuration for simulation engine modes.
+    
+    balance_mode:
+        - "real": Fetch actual balances from backend
+        - "unlimited": Use unlimited balances (1M each asset)
+        - "override": Use balance_overrides for specified assets, real for others
+    
+    execution_mode:
+        - "single_step": One price tick (dry run preview)
+        - "continuous": Loop with live price feed and fill simulation
+    
+    balance_overrides:
+        Dictionary mapping asset symbols to their simulated balance.
+        Only used when balance_mode is "override".
+        Assets not in this dict will use real balance from backend.
+        Example: {"LIT": 1000.0, "USDC": 50000.0}
+    """
+    balance_mode: Literal["real", "unlimited", "override"] = "unlimited"
+    execution_mode: Literal["single_step", "continuous"] = "single_step"
+    
+    # For override balance mode - map asset symbol to balance
+    balance_overrides: Dict[str, float] = field(default_factory=dict)
+    
+    # For unlimited balance mode (default fallback)
+    unlimited_amount: float = 1_000_000.0
+    
+    # For continuous execution mode
+    tick_interval_ms: int = 1000
+    
+    # Fill simulation (only in continuous mode)
+    simulate_fills: bool = True
+    fee_rate: float = 0.0005  # 0.05% default fee
+
+
+def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
+    """
+    Load simulation configuration from a JSON file.
+    
+    Resolution order:
+    1. Explicit path argument
+    2. LIGHTER_SIMULATION_CONFIG_FILE environment variable
+    3. Default: 'simulation_config.json' in current directory
+    
+    If file doesn't exist, returns default SimulationConfig (unlimited balance, single_step).
+    
+    Expected JSON format:
+    ```json
+    {
+      "balance_mode": "unlimited",  // "real", "unlimited", or "override"
+      "execution_mode": "single_step",  // "single_step" or "continuous"
+      "balances": {  // Only used when balance_mode is "override"
+        "LIT": 500.0,
+        "USDC": 10000.0
+      },
+      "tick_interval_ms": 1000,
+      "simulate_fills": true,
+      "fee_rate": 0.0005
+    }
+    ```
+    """
+    import json
+    
+    # Resolution order: arg > env > default
+    if path is None:
+        path = os.getenv("LIGHTER_SIMULATION_CONFIG_FILE", "simulation_config.json")
+    
+    # If file doesn't exist, return defaults
+    if not os.path.exists(path):
+        return SimulationConfig()
+    
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        
+        # Filter out comment keys (those starting with //)
+        data = {k: v for k, v in data.items() if not k.startswith("//")}
+        
+        # Extract balance_overrides from "balances" key
+        balance_overrides = {}
+        if "balances" in data:
+            balance_overrides = {str(k): float(v) for k, v in data["balances"].items()}
+            del data["balances"]
+        
+        # Map known fields
+        config = SimulationConfig(
+            balance_mode=data.get("balance_mode", "unlimited"),
+            execution_mode=data.get("execution_mode", "single_step"),
+            balance_overrides=balance_overrides,
+            unlimited_amount=data.get("unlimited_amount", 1_000_000.0),
+            tick_interval_ms=data.get("tick_interval_ms", 1000),
+            simulate_fills=data.get("simulate_fills", True),
+            fee_rate=data.get("fee_rate", 0.0005),
+        )
+        
+        return config
+        
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to load simulation config from {path}: {e}. Using defaults.")
+        return SimulationConfig()
 
 @dataclass
 class SpotGridConfig:

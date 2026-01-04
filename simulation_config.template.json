@@ -1,0 +1,18 @@
+{
+    "// SIMULATION ENGINE CONFIGURATION": "This file configures the simulation/paper trading engine",
+    "// balance_mode options": "'real' (use exchange balance), 'unlimited' (1M each), 'override' (use balances below)",
+    "balance_mode": "unlimited",
+    "// execution_mode options": "'single_step' (one tick, dry run), 'continuous' (paper trading loop)",
+    "execution_mode": "single_step",
+    "// balances - Only used when balance_mode is 'override'": "Specify per-asset balances. Unlisted assets use real balance.",
+    "balances": {
+        "LIT": 500.0,
+        "USDC": 10000.0
+    },
+    "// tick_interval_ms": "Price update interval for continuous mode (milliseconds)",
+    "tick_interval_ms": 1000,
+    "// simulate_fills": "Whether to auto-fill orders when price crosses (continuous mode)",
+    "simulate_fills": true,
+    "// fee_rate": "Simulated trading fee rate (0.0005 = 0.05%)",
+    "fee_rate": 0.0005
+}

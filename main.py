@@ -5,6 +5,7 @@ import sys
 import argparse
 import signal
 from dotenv import load_dotenv
+from typing import cast, Optional
 
 from src.config import load_config, ExchangeConfig, SpotGridConfig, PerpGridConfig
 from src.strategy.base import Strategy
@@ -12,7 +13,6 @@ from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
 from src.strategy.noop import NoOpStrategy
 from src.engine.engine import Engine
-from typing import cast, Union
 
 # Setup Logging
 from logging.handlers import TimedRotatingFileHandler
@@ -39,7 +39,11 @@ async def main():
     parser = argparse.ArgumentParser(description="Lighter Trading Bot")
     parser.add_argument("strategy_config_file", nargs='?', help="Path to the strategy configuration file (YAML)")
     parser.add_argument("--config", help="Path to the strategy configuration file (YAML)")
-    parser.add_argument("--dry-run", action="store_true", help="Perform a dry run simulation without executing orders.")
+    
+    # Simulation mode
+    parser.add_argument("--dry-run", action="store_true", 
+                        help="Run in simulation mode (configure via LIGHTER_SIMULATION_CONFIG_FILE)")
+    
     args = parser.parse_args()
 
     strategy_config_file = args.config or args.strategy_config_file
@@ -91,17 +95,52 @@ async def main():
         raise
 
 
-
 async def _run_simulation(config, exchange_config, strategy):
     from src.engine.simulation import SimulationEngine
     from src.ui.console import ConsoleRenderer
+    from src.config import load_simulation_config
     
-    sim_engine = SimulationEngine(config, exchange_config, strategy)
+    # Load simulation config from LIGHTER_SIMULATION_CONFIG_FILE (or defaults)
+    sim_config = load_simulation_config()
+    
+    logger.info(f"[SIMULATION] Mode: balance={sim_config.balance_mode}, execution={sim_config.execution_mode}")
+    if sim_config.balance_overrides:
+        logger.info(f"[SIMULATION] Balance overrides: {sim_config.balance_overrides}")
+    
+    sim_engine = SimulationEngine(config, exchange_config, strategy, sim_config)
+
+    
+    # Setup signal handler for continuous mode
+    if sim_config.execution_mode == "continuous":
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, sim_engine.stop)
+    
     try:
         await sim_engine.initialize()
-        await sim_engine.run_single_step()
         
-        ConsoleRenderer.render(config, sim_engine.get_summary(), sim_engine.get_grid_state(), sim_engine.get_orders())
+        if sim_config.execution_mode == "single_step":
+            await sim_engine.run_single_step()
+            ConsoleRenderer.render(config, sim_engine.get_summary(), sim_engine.get_grid_state(), sim_engine.get_orders())
+        else:
+            # Continuous mode - run with periodic console updates
+            async def render_loop():
+                while sim_engine._running:
+                    await asyncio.sleep(5)  # Render every 5 seconds
+                    ConsoleRenderer.render(
+                        config, 
+                        sim_engine.get_summary(), 
+                        sim_engine.get_grid_state(), 
+                        sim_engine.get_orders(),
+                        current_price=sim_engine.get_current_price()
+                    )
+            
+            # Run both engine and renderer
+            await asyncio.gather(
+                sim_engine.run(),
+                render_loop()
+            )
+            
     except Exception as e:
         logger.error(f"Simulation Failed: {e}", exc_info=True)
         sys.exit(1)
