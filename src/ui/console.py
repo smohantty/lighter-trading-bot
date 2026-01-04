@@ -14,28 +14,29 @@ class ConsoleRenderer:
     ):
         print(f"\n{'='*60}")
         print(" SIMULATION DRY RUN REPORT")
-        print(f"{'='*60}\n")
+        print(f"{'='*60}")
         
+        # Section 1: Grid State
+        if grid:
+            print()
+            ConsoleRenderer._render_grid(grid)
+        
+        # Section 2: Proposed Actions
+        print(f"\n{'-'*60}")
+        ConsoleRenderer._render_action_plan(orders)
+        
+        # Section 3: Configuration & Summary
+        print(f"\n{'='*60}")
         ConsoleRenderer._render_config(config)
         
         if current_price:
             print(f"\nCurrent Price: {current_price:.4f}")
         
-        print("\n" + "-"*60 + "\n")
-
+        print(f"\n{'-'*60}")
         if summary:
             ConsoleRenderer._render_summary(summary)
-            
-        print("\n" + "-"*60 + "\n")
         
-        if grid:
-            ConsoleRenderer._render_grid(grid)
-            
-        print("\n" + "-"*60 + "\n")
-        
-        ConsoleRenderer._render_action_plan(orders)
-        
-        print(f"\n{'='*60}\n")
+        print(f"\n{'='*60}\n")        
 
     @staticmethod
     def _render_config(c: StrategyConfig):
