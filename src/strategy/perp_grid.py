@@ -1,13 +1,13 @@
 import logging
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from datetime import timedelta
 from dataclasses import dataclass
 from enum import Enum, auto
 
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo
-from src.model import Cloid, OrderFill, OrderSide, OrderRequest, LimitOrderRequest
+from src.model import Cloid, OrderFill, OrderSide, LimitOrderRequest, OrderFailure
 from src.config import PerpGridConfig
 from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo
 from src.strategy import common
@@ -56,6 +56,7 @@ class PerpGridStrategy(Strategy):
         
         self.zones: List[GridZone] = []
         self.active_order_map: Dict[Cloid, int] = {} # Cloid -> Zone Index
+        self.pending_retry_zones: set[int] = set()  # Zones needing order placement
         
         self.trade_count = 0
         self.state = StrategyState.Initializing
@@ -255,49 +256,52 @@ class PerpGridStrategy(Strategy):
             cloid=cloid
         ))
 
-    def refresh_orders(self, ctx: StrategyContext):
-        market_info = ctx.market_info(self.symbol)
-        if not market_info: return
+    def place_zone_order(self, idx: int, ctx: StrategyContext):
+        """Place an order for a zone based on its current state."""
+        zone = self.zones[idx]
+        if zone.order_id is not None:
+            return
+        
+        side = zone.pending_side
+        price = zone.lower_price if side.is_buy() else zone.upper_price
+        
+        # Determine reduce_only based on zone mode
+        reduce_only = False
+        if zone.mode == ZoneMode.LONG and side.is_sell():
+            reduce_only = True
+        if zone.mode == ZoneMode.SHORT and side.is_buy():
+            reduce_only = True
+        
+        cloid = ctx.generate_cloid()
+        zone.order_id = cloid
+        self.active_order_map[cloid] = idx
+        
+        logger.info(f"[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} @ {price}")
+        ctx.place_order(LimitOrderRequest(
+            symbol=self.symbol,
+            side=side,
+            price=price,
+            sz=zone.size,
+            reduce_only=reduce_only,
+            cloid=cloid
+        ))
 
+    def refresh_orders(self, ctx: StrategyContext):
+        """Place orders for all zones that don't have one."""
         for idx, zone in enumerate(self.zones):
             if zone.order_id is None:
-                side = zone.pending_side
-                
-                # Determine Price
-                if side.is_buy():
-                    # If BUYING:
-                    # - Opening Long -> Buy at Lower
-                    # - Closing Short -> Buy at Lower
-                    price = zone.lower_price
-                else: 
-                    # If SELLING:
-                    # - Opening Short -> Sell at Upper
-                    # - Closing Long -> Sell at Upper
-                    price = zone.upper_price
-                
-                # Determine Reduce Only
-                reduce_only = False
-                if zone.mode == ZoneMode.LONG and side.is_sell():
-                    reduce_only = True
-                if zone.mode == ZoneMode.SHORT and side.is_buy():
-                    reduce_only = True
-                
-                cloid = ctx.generate_cloid()
-                zone.order_id = cloid
-                self.active_order_map[cloid] = idx
-                
-                # Logging
-                ro_tag = " (RO)" if reduce_only else ""
-                # logger.info(f"[ORDER_REQUEST] [PERP_GRID] Z{idx} {side} {zone.size} @ {price}{ro_tag}")
-                
-                ctx.place_order(LimitOrderRequest(
-                    symbol=self.symbol,
-                    side=side,
-                    price=market_info.round_price(price),
-                    sz=market_info.round_size(zone.size),
-                    reduce_only=reduce_only,
-                    cloid=cloid
-                ))
+                self.place_zone_order(idx, ctx)
+
+    def _process_pending_retries(self, ctx: StrategyContext):
+        """Process only zones that are queued for retry (efficient for large grids)."""
+        if not self.pending_retry_zones:
+            return
+        
+        zones_to_process = list(self.pending_retry_zones)
+        self.pending_retry_zones.clear()
+        
+        for idx in zones_to_process:
+            self.place_zone_order(idx, ctx)
 
     def on_tick(self, price: float, ctx: StrategyContext):
         self.current_price = price
@@ -312,7 +316,11 @@ class PerpGridStrategy(Strategy):
                      self.refresh_orders(ctx)
                      
         elif self.state == StrategyState.Running:
-             if not self.active_order_map and self.zones:
+             # Process only zones in the retry queue (efficient for large grids)
+             if self.pending_retry_zones:
+                 self._process_pending_retries(ctx)
+             # Full refresh only needed if no orders are active at all
+             elif not self.active_order_map and self.zones:
                  self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
@@ -387,14 +395,14 @@ class PerpGridStrategy(Strategy):
                         zone.entry_price = fill.price
                         zone.pending_side = OrderSide.SELL
                         logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.upper_price}")
-                        self.place_counter_order(idx, zone.upper_price, OrderSide.SELL, ctx, reduce_only=True)
+                        self.place_zone_order(idx, ctx)
                     else:
                         # Filled CLOSE (Sell at Upper) -> Next: Open at Lower
                         pnl = (fill.price - zone.entry_price) * fill.size
                         zone.pending_side = OrderSide.BUY
                         zone.roundtrip_count += 1
                         logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.lower_price}")
-                        self.place_counter_order(idx, zone.lower_price, OrderSide.BUY, ctx, reduce_only=False)
+                        self.place_zone_order(idx, ctx)
                         
                 elif zone.mode == ZoneMode.SHORT:
                     if fill.side.is_sell():
@@ -402,39 +410,29 @@ class PerpGridStrategy(Strategy):
                         zone.entry_price = fill.price
                         zone.pending_side = OrderSide.BUY
                         logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.lower_price}")
-                        self.place_counter_order(idx, zone.lower_price, OrderSide.BUY, ctx, reduce_only=True)
+                        self.place_zone_order(idx, ctx)
                     else:
                         # Filled CLOSE (Buy at Lower) -> Next: Open at Upper
                         pnl = (zone.entry_price - fill.price) * fill.size
                         zone.pending_side = OrderSide.SELL
                         zone.roundtrip_count += 1
                         logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.upper_price}")
-                        self.place_counter_order(idx, zone.upper_price, OrderSide.SELL, ctx, reduce_only=False)
+                        self.place_zone_order(idx, ctx)
 
                 self.realized_pnl += pnl
 
-    def place_counter_order(self, idx: int, price: float, side: OrderSide, ctx: StrategyContext, reduce_only: bool):
-        zone = self.zones[idx]
-        cloid = ctx.generate_cloid()
-        zone.order_id = cloid
-        self.active_order_map[cloid] = idx
-        
-        market_info = ctx.market_info(self.symbol)
-        
-        ctx.place_order(LimitOrderRequest(
-            symbol=self.symbol,
-            side=side,
-            price=market_info.round_price(price) if market_info else price,
-            sz=market_info.round_size(zone.size) if market_info else zone.size,
-            reduce_only=reduce_only,
-            cloid=cloid
-        ))
-
-    def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
+    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        cloid = failure.cloid
         if cloid in self.active_order_map:
             idx = self.active_order_map.pop(cloid)
-            self.zones[idx].order_id = None
-            logger.warning(f"[PERP_GRID] Order Failed Z{idx} {cloid}")
+            zone = self.zones[idx]
+            zone.order_id = None
+            
+            logger.warning(f"[ORDER_FAILED][PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
+                          f"reason: {failure.failure_reason}. Queued for retry on next tick.")
+            
+            # Queue for retry on next tick
+            self.pending_retry_zones.add(idx)
 
     def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
         unrealized = 0.0

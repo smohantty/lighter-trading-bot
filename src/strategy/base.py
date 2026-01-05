@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from src.engine.context import StrategyContext
-from src.model import OrderFill, Cloid
+from src.model import OrderFill, Cloid, OrderFailure
 from src.strategy.types import StrategySummary, GridState
 from typing import Union
 
@@ -14,7 +14,7 @@ class Strategy(ABC):
         pass
 
     @abstractmethod
-    def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
+    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
         pass
 
     @abstractmethod

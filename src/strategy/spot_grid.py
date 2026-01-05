@@ -9,8 +9,8 @@ from enum import Enum, auto
 from src.strategy.base import Strategy
 from src.strategy import common
 from src.engine.context import StrategyContext, MarketInfo
-from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Cloid, PendingOrder
-from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, PerpGridSummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState
+from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Cloid, OrderFailure
+from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState
 
 logger = logging.getLogger("src.strategy.spot_grid")
 
@@ -52,6 +52,7 @@ class SpotGridStrategy(Strategy):
         self.state = StrategyState.Initializing
         
         self.active_order_map: Dict[Cloid, int] = {} # Cloid -> Zone Index
+        self.pending_retry_zones: set[int] = set()  # Zones needing order placement (e.g., after self-trade)
         
         # Performance tracking
         self.realized_pnl = 0.0
@@ -300,47 +301,55 @@ class SpotGridStrategy(Strategy):
              self.state = StrategyState.Running
              self.refresh_orders(ctx)
 
-
-    def refresh_orders(self, ctx: StrategyContext):
+    def place_zone_order(self, idx: int, ctx: StrategyContext):
+        """Place an order for a zone based on its current state."""
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
             return
+        
+        zone = self.zones[idx]
+        if zone.order_id is not None:
+            return  # Already has an order
+        
+        side = zone.pending_side
+        price = zone.lower_price if side.is_buy() else zone.upper_price
+        size = zone.size
+        
+        # For SELL orders, use 99.95% of zone size to account for base asset fee deduction
+        # (fees are deducted from the base asset when buying, so we have slightly less to sell)
+        if side.is_sell():
+            size = market_info.round_size(size * 0.9995)
+        
+        cloid = ctx.generate_cloid()
+        zone.order_id = cloid
+        self.active_order_map[cloid] = idx
 
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
+        ctx.place_order(LimitOrderRequest(
+            symbol=self.config.symbol,
+            side=side,
+            price=price,
+            sz=size,
+            reduce_only=False,
+            cloid=cloid
+        ))
+
+    def refresh_orders(self, ctx: StrategyContext):
+        """Place orders for all zones that don't have one."""
         for idx, zone in enumerate(self.zones):
             if zone.order_id is None:
-                side = zone.pending_side
-                price = zone.lower_price if side.is_buy() else zone.upper_price
-                size = zone.size
-                
-                # Safety Clamp for SELLS: Never sell more than we own
-                if side.is_sell():
-                     # Check if size exceeds inventory (allowing for tiny float noise)
-                     if size > self.inventory_base + 1e-9:
-                          # If strictly larger, clamp it
-                          # But only if it remains valid (min size). Log warning if we're clamping significantly.
-                          diff = size - self.inventory_base
-                          if self.inventory_base < market_info.min_base_amount:
-                               logger.warning(f"[SPOT_GRID] Insufficient inventory ({self.inventory_base}) for ZONE_{idx} (Req: {size}). Skipping order.")
-                               continue
-                          
-                          if diff > 0.0:
-                               logger.warning(f"[SPOT_GRID] Clamping ZONE_{idx} SELL size from {size} to {self.inventory_base} to match inventory.")
-                               size = self.inventory_base
-                
-                cloid = ctx.generate_cloid()
-                zone.order_id = cloid
-                self.active_order_map[cloid] = idx
+                self.place_zone_order(idx, ctx)
 
-                final_size = market_info.round_size(size)
-                logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {final_size} {self.base_asset} @ {price}")
-                ctx.place_order(LimitOrderRequest(
-                    symbol=self.config.symbol,
-                    side=side,
-                    price=market_info.round_price(price),
-                    sz=final_size,
-                    reduce_only=False,
-                    cloid=cloid
-                ))
+    def _process_pending_retries(self, ctx: StrategyContext):
+        """Process only zones that are queued for retry (efficient for large grids)."""
+        if not self.pending_retry_zones:
+            return
+        
+        zones_to_process = list(self.pending_retry_zones)
+        self.pending_retry_zones.clear()
+        
+        for idx in zones_to_process:
+            self.place_zone_order(idx, ctx)
 
     def on_tick(self, price: float, ctx: StrategyContext):
         self.current_price = price
@@ -354,8 +363,12 @@ class SpotGridStrategy(Strategy):
                       self.state = StrategyState.Running
                       self.refresh_orders(ctx)
         elif self.state == StrategyState.Running:
-             if not self.active_order_map and len(self.zones) > 0:
-                  self.refresh_orders(ctx)
+             # Process only zones in the retry queue (efficient for large grids)
+             if self.pending_retry_zones:
+                 self._process_pending_retries(ctx)
+             # Full refresh only needed if no orders are active at all
+             elif not self.active_order_map and len(self.zones) > 0:
+                 self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
         if fill.cloid:
@@ -404,16 +417,10 @@ class SpotGridStrategy(Strategy):
                       if self.inventory_base > 0.0:
                            self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                       
+                      # Flip to SELL at upper price
                       zone.pending_side = OrderSide.SELL
                       zone.entry_price = fill.price
-                      # Next order: Sell at Upper
-                      # Deduct 0.05% fee buffer to ensure we have enough balance
-                      # (Real fees are usually around 0.05% or less, so 0.05% is safe to avoid "not enough balance")
-                      net_size = fill.size * 0.9995
-                      if market_info:
-                          net_size = market_info.round_size(net_size)
-                          
-                      self.place_counter_order(idx, zone.upper_price, OrderSide.SELL, ctx, size_override=net_size)
+                      self.place_zone_order(idx, ctx)
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
@@ -423,34 +430,23 @@ class SpotGridStrategy(Strategy):
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
                       
+                      # Flip to BUY at lower price
                       zone.pending_side = OrderSide.BUY
                       zone.entry_price = 0.0
-                      # Next order: Buy at Lower
-                      self.place_counter_order(idx, zone.lower_price, OrderSide.BUY, ctx)
+                      self.place_zone_order(idx, ctx)
 
-    def place_counter_order(self, idx: int, price: float, side: OrderSide, ctx: StrategyContext, size_override: Optional[float] = None):
-        zone = self.zones[idx]
-        cloid = ctx.generate_cloid()
-        zone.order_id = cloid
-        self.active_order_map[cloid] = idx
-        
-        size = size_override if size_override is not None else zone.size
-        
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
-        ctx.place_order(LimitOrderRequest(
-            symbol=self.config.symbol,
-            side=side,
-            price=price,
-            sz=size,
-            reduce_only=False,
-            cloid=cloid,
-        ))
-
-    def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
+    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        cloid = failure.cloid
         if cloid in self.active_order_map:
              idx = self.active_order_map.pop(cloid)
-             self.zones[idx].order_id = None
-             logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()}")
+             zone = self.zones[idx]
+             zone.order_id = None
+             
+             logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
+                           f"reason: {failure.failure_reason}. Queued for retry on next tick.")
+             
+             # Queue for retry on next tick
+             self.pending_retry_zones.add(idx)
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import logging
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext
-from src.model import OrderFill, Cloid
+from src.model import OrderFill, Cloid, OrderFailure
 from src.strategy.types import StrategySummary, GridState, GridType
 
 logger = logging.getLogger(__name__)
@@ -22,8 +22,8 @@ class NoOpStrategy(Strategy):
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
         logger.info(f"NoOpStrategy Order Filled: {fill}")
 
-    def on_order_failed(self, cloid: Cloid, ctx: StrategyContext):
-        logger.info(f"NoOpStrategy Order Failed: {cloid}")
+    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        logger.info(f"NoOpStrategy Order Failed: {failure}")
 
     def get_summary(self, ctx: StrategyContext) -> StrategySummary:
         # Return dummy summary

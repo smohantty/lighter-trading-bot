@@ -9,7 +9,7 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import StrategyConfig, ExchangeConfig
-from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade, TradeRole, TradeDetails
+from src.model import Cloid, OrderRequest, LimitOrderRequest, MarketOrderRequest, CancelOrderRequest, OrderFill, OrderSide, PendingOrder, Order, Trade, TradeRole, TradeDetails, OrderFailure
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import PerpGridSummary, SpotGridSummary, GridState
@@ -517,7 +517,17 @@ class Engine(BaseEngine):
                         del self.pending_orders[cloid] 
                         
                         try:
-                            self.strategy.on_order_failed(cloid, self.ctx)
+                            failure = OrderFailure(
+                                cloid=cloid,
+                                side=pending.side,
+                                target_size=pending.target_size,
+                                filled_size=pending.filled_size,
+                                filled_price=pending.weighted_avg_px,
+                                accumulated_fees=pending.accumulated_fees,
+                                failure_reason=order.status,
+                                reduce_only=pending.reduce_only
+                            )
+                            self.strategy.on_order_failed(failure, self.ctx)
                         except Exception as e:
                             logger.error(f"Strategy on_order_failed error: {e}")
                         

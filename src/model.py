@@ -81,6 +81,19 @@ class PendingOrder:
 
 
 @dataclass
+class OrderFailure:
+    """Information about a failed order, including any partial fills."""
+    cloid: 'Cloid'
+    side: OrderSide
+    target_size: float
+    filled_size: float
+    filled_price: float  # weighted avg price of partial fills
+    accumulated_fees: float
+    failure_reason: str  # e.g. "canceled-self-trade", "canceled-not-enough-liquidity"
+    reduce_only: bool = False
+
+
+@dataclass
 class LimitOrderRequest:
     symbol: str
     side: OrderSide
