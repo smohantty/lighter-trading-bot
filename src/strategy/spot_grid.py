@@ -95,7 +95,9 @@ class SpotGridStrategy(Strategy):
         # Round prices
         prices = [market_info.round_price(p) for p in prices]
 
-        investment_per_zone_quote = int(self.config.total_investment / float(self.config.grid_count - 1))
+        # Deduct 0.05% buffer from total investment to ensure we cover fees/slippage
+        adjusted_investment = self.config.total_investment * 0.9995
+        investment_per_zone_quote = int(adjusted_investment / float(self.config.grid_count - 1))
 
         # Validation: Check minimum order size
         min_order_size = market_info.min_quote_amount

@@ -103,7 +103,9 @@ class PerpGridStrategy(Strategy):
 
         # 2. Calculate Size per Zone
         # Total Investment is Margin. Total Notional = Margin * Leverage
-        total_notional = self.total_investment * self.leverage
+        # Deduct 0.05% buffer from total investment to ensure we cover fees
+        adjusted_investment = self.total_investment * 0.9995
+        total_notional = adjusted_investment * self.leverage
         notional_per_zone = int(total_notional / float(self.grid_count - 1))
         
         # Validation
