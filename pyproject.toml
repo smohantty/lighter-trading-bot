@@ -8,7 +8,6 @@ dependencies = [
     "pyyaml>=6.0",
     "lighter-sdk @ git+https://github.com/smohantty/lighter-python.git",
     "websockets>=15.0.1",
-    "textual>=0.70.0",
 ]
 
 [dependency-groups]
@@ -17,8 +16,8 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "mypy>=1.0.0", 
     "types-pyyaml",
-    "textual-dev>=1.0.0",
 ]
+
 
 [tool.uv]
 package = true
