@@ -5,7 +5,7 @@ This project uses the `lighter-python` SDK to provide automated grid trading str
 
 ## Features
 
-- **Perp Grid Strategy**: Automated grid trading logic (Long/Short/Neutral bias) running on Lighter's order book.
+- **Perp Grid Strategy**: Automated grid trading logic (Long/Short bias) running on Lighter's order book.
 - **Robustness**: Includes auto-reconnection logic for WebSockets to ensure 24/7 uptime.
 - **Safety**: 
   - Validates startup configuration (margin requirements, grid range).
