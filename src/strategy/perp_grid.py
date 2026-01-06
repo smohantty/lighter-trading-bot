@@ -235,23 +235,22 @@ class PerpGridStrategy(Strategy):
         required_position_size = Decimal("0.0")
         
         for i in range(self.config.grid_count - 1):
-            lower = prices[i]
-            upper = prices[i+1]
+            zone_buy_price = prices[i]
+            zone_sell_price = prices[i+1]
             
-            # Use lower price for conservative Notional -> Size conversion
-            ref_price_for_size = lower
-            raw_size = notional_per_zone / ref_price_for_size
+            # Use buy price for conservative Notional -> Size conversion
+            raw_size = notional_per_zone / zone_buy_price
             size = market_info.round_size(raw_size)
             
             pending_side, mode, entry_price, position_delta = self._calculate_zone_initial_state(
-                lower, upper, initial_price, size
+                zone_buy_price, zone_sell_price, initial_price, size
             )
             required_position_size += position_delta
 
             zones.append(GridZone(
                 index=i,
-                lower_price=lower,
-                upper_price=upper,
+                lower_price=zone_buy_price,
+                upper_price=zone_sell_price,
                 size=size,
                 pending_side=pending_side,
                 mode=mode,
@@ -359,8 +358,8 @@ class PerpGridStrategy(Strategy):
 
     def _calculate_zone_initial_state(
         self, 
-        lower: Decimal, 
-        upper: Decimal, 
+        zone_buy_price: Decimal, 
+        zone_sell_price: Decimal, 
         initial_price: Decimal, 
         size: Decimal
     ) -> tuple[OrderSide, ZoneMode, Decimal, Decimal]:
@@ -376,33 +375,33 @@ class PerpGridStrategy(Strategy):
         if self.grid_bias == GridBias.LONG:
             mode = ZoneMode.LONG
             # GRID LOGIC:
-            # If zone is ABOVE price (lower > initial): We already bought. Wait to SELL (Close).
-            # If zone is AT or BELOW price (lower <= initial): We haven't bought. Wait to BUY (Open).
+            # If zone is ABOVE price (buy_price > initial): We already bought. Wait to SELL (Close).
+            # If zone is AT or BELOW price (buy_price <= initial): We haven't bought. Wait to BUY (Open).
             
-            if lower > initial_price:
+            if zone_buy_price > initial_price:
                 # WE HOLD THIS ZONE - already opened long
-                pending_side = OrderSide.SELL  # Target is to close at Upper
+                pending_side = OrderSide.SELL  # Target is to close at sell_price
                 position_delta = size
                 entry_price = initial_price
             else:
                 # WE DO NOT HOLD - waiting to open long
-                pending_side = OrderSide.BUY  # Target is to open at Lower
+                pending_side = OrderSide.BUY  # Target is to open at buy_price
                 entry_price = Decimal("0")
                 
         elif self.grid_bias == GridBias.SHORT:
             mode = ZoneMode.SHORT
             # GRID LOGIC:
-            # If zone is BELOW price (upper < initial): We already sold. Wait to BUY (Close).
-            # If zone is AT or ABOVE price (upper >= initial): We haven't sold. Wait to SELL (Open).
+            # If zone is BELOW price (sell_price < initial): We already sold. Wait to BUY (Close).
+            # If zone is AT or ABOVE price (sell_price >= initial): We haven't sold. Wait to SELL (Open).
             
-            if upper < initial_price:
+            if zone_sell_price < initial_price:
                # WE HOLD THIS ZONE (SHORT) - already opened short
-               pending_side = OrderSide.BUY  # Target is to close at Lower
+               pending_side = OrderSide.BUY  # Target is to close at buy_price
                position_delta = -size  # Negative for short
                entry_price = initial_price
             else:
                # WE DO NOT HOLD - waiting to open short
-               pending_side = OrderSide.SELL  # Target is to open at Upper
+               pending_side = OrderSide.SELL  # Target is to open at sell_price
                entry_price = Decimal("0")
                
         return pending_side, mode, entry_price, position_delta
