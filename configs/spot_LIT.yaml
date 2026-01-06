@@ -1,9 +1,0 @@
-type: spot_grid
-symbol: LIT/USDC
-upper_price: 2.75
-lower_price: 2.55
-grid_type: Geometric
-grid_count: 30
-total_investment: 1110.0
-
-

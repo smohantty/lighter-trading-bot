@@ -1,8 +1,8 @@
 type: spot_grid
-symbol: BTC/USDC
-upper_price: 100000.0
-lower_price: 90000.0
-grid_type: Arithmetic # Arithmetic or Geometric
-grid_count: 50
-total_investment: 1000.0
-# trigger_price: 95000.0 # Optional: Wait for price to hit this before starting
+symbol: LIT/USDC
+upper_price: 2.9
+lower_price:  2.6
+grid_type: Geometric # Arithmetic or Geometric
+grid_count: 55
+total_investment: 40000
+trigger_price: 2.7 # Optional: Wait for price to hit this before starting
