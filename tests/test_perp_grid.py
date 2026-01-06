@@ -57,7 +57,7 @@ def test_perp_grid_init_long_bias():
     # Rust logic: if lower > initial (100) -> Sell (Close). else -> Buy (Open).
     # 90 is NOT > 100. So Buy.
     z0 = strategy.zones[0]
-    assert z0.pending_side == OrderSide.BUY
+    assert z0.order_side == OrderSide.BUY
     assert z0.mode == ZoneMode.LONG
     
     # Zone 1: Lower 100, Upper 110.
@@ -68,7 +68,7 @@ def test_perp_grid_init_long_bias():
     # Z1: 100 > 100 False -> Buy
     
     z1 = strategy.zones[1]
-    assert z1.pending_side == OrderSide.BUY
+    assert z1.order_side == OrderSide.BUY
     assert z1.mode == ZoneMode.LONG
     
     # Check Active Orders
@@ -162,11 +162,11 @@ def test_perp_grid_short_bias():
     # Z1: 100-110. Upper 110 < 100? No. Sell.
     
     z0 = strategy.zones[0]
-    assert z0.pending_side == OrderSide.SELL
+    assert z0.order_side == OrderSide.SELL
     assert z0.mode == ZoneMode.SHORT
     
     z1 = strategy.zones[1]
-    assert z1.pending_side == OrderSide.SELL
+    assert z1.order_side == OrderSide.SELL
     assert z1.mode == ZoneMode.SHORT
     
     # Expect 2 Sell orders

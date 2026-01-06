@@ -189,7 +189,7 @@ class PerpGridStrategy(Strategy):
                     buy_price=z.buy_price,
                     sell_price=z.sell_price,
                     size=z.size,
-                    pending_side=str(z.pending_side),
+                    order_side=str(z.order_side),
                     has_order=z.order_id is not None,
                     is_reduce_only=self._is_reduce_only(z),
                     entry_price=z.entry_price,
@@ -242,7 +242,7 @@ class PerpGridStrategy(Strategy):
             raw_size = notional_per_zone / zone_buy_price
             size = market_info.round_size(raw_size)
             
-            pending_side, mode, entry_price, position_delta = self._calculate_zone_initial_state(
+            order_side, mode, entry_price, position_delta = self._calculate_zone_initial_state(
                 zone_buy_price, zone_sell_price, initial_price, size
             )
             required_position_size += position_delta
@@ -252,7 +252,7 @@ class PerpGridStrategy(Strategy):
                 buy_price=zone_buy_price,
                 sell_price=zone_sell_price,
                 size=size,
-                pending_side=pending_side,
+                order_side=order_side,
                 mode=mode,
                 entry_price=entry_price
             ))
@@ -328,7 +328,7 @@ class PerpGridStrategy(Strategy):
             return
         
         idx = zone.index
-        side = zone.pending_side
+        side = zone.order_side
         price = zone.buy_price if side.is_buy() else zone.sell_price
         reduce_only = self._is_reduce_only(zone)
         
@@ -365,9 +365,9 @@ class PerpGridStrategy(Strategy):
     ) -> tuple[OrderSide, ZoneMode, Decimal, Decimal]:
         """
         Calculate initial zone state based on bias and price position.
-        Returns: (pending_side, mode, entry_price, position_delta)
+        Returns: (order_side, mode, entry_price, position_delta)
         """
-        pending_side = OrderSide.BUY
+        order_side = OrderSide.BUY
         mode = ZoneMode.LONG
         entry_price = Decimal("0")
         position_delta = Decimal("0")
@@ -380,12 +380,12 @@ class PerpGridStrategy(Strategy):
             
             if zone_buy_price > initial_price:
                 # WE HOLD THIS ZONE - already opened long
-                pending_side = OrderSide.SELL  # Target is to close at sell_price
+                order_side = OrderSide.SELL  # Target is to close at sell_price
                 position_delta = size
                 entry_price = initial_price
             else:
                 # WE DO NOT HOLD - waiting to open long
-                pending_side = OrderSide.BUY  # Target is to open at buy_price
+                order_side = OrderSide.BUY  # Target is to open at buy_price
                 entry_price = Decimal("0")
                 
         elif self.grid_bias == GridBias.SHORT:
@@ -396,21 +396,21 @@ class PerpGridStrategy(Strategy):
             
             if zone_sell_price < initial_price:
                # WE HOLD THIS ZONE (SHORT) - already opened short
-               pending_side = OrderSide.BUY  # Target is to close at buy_price
+               order_side = OrderSide.BUY  # Target is to close at buy_price
                position_delta = -size  # Negative for short
                entry_price = initial_price
             else:
                # WE DO NOT HOLD - waiting to open short
-               pending_side = OrderSide.SELL  # Target is to open at sell_price
+               order_side = OrderSide.SELL  # Target is to open at sell_price
                entry_price = Decimal("0")
                
-        return pending_side, mode, entry_price, position_delta
+        return order_side, mode, entry_price, position_delta
 
     def _is_reduce_only(self, zone: GridZone) -> bool:
         """Determine if a zone order should be reduce_only."""
-        if zone.mode == ZoneMode.LONG and zone.pending_side.is_sell():
+        if zone.mode == ZoneMode.LONG and zone.order_side.is_sell():
             return True
-        if zone.mode == ZoneMode.SHORT and zone.pending_side.is_buy():
+        if zone.mode == ZoneMode.SHORT and zone.order_side.is_buy():
             return True
         return False
 
@@ -447,10 +447,10 @@ class PerpGridStrategy(Strategy):
         # Update Zones that were "holding"
         for zone in self.zones:
             # If Long Bias and zone is selling (Close) -> it implies we bought it.
-            if zone.mode == ZoneMode.LONG and zone.pending_side.is_sell():
+            if zone.mode == ZoneMode.LONG and zone.order_side.is_sell():
                 zone.entry_price = fill.price
             # If Short Bias and zone is buying (Close) -> it implies we sold it.
-            if zone.mode == ZoneMode.SHORT and zone.pending_side.is_buy():
+            if zone.mode == ZoneMode.SHORT and zone.order_side.is_buy():
                 zone.entry_price = fill.price
         
         logger.info(f"[PERP_GRID] Acquisition Complete. Pos: {self.position_size}. AvgEntry: {self.avg_entry_price}")
@@ -466,14 +466,14 @@ class PerpGridStrategy(Strategy):
         if fill.side.is_buy():
             # Filled OPEN (Buy at Lower) -> Next: Close at Upper
             zone.entry_price = fill.price
-            zone.pending_side = OrderSide.SELL
+            zone.order_side = OrderSide.SELL
             logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.sell_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
             # Filled CLOSE (Sell at Upper) -> Next: Open at Lower
             pnl = (fill.price - zone.entry_price) * fill.size
-            zone.pending_side = OrderSide.BUY
+            zone.order_side = OrderSide.BUY
             zone.roundtrip_count += 1
             logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.buy_price}")
             zone.retry_count = 0
@@ -489,14 +489,14 @@ class PerpGridStrategy(Strategy):
         if fill.side.is_sell():
             # Filled OPEN (Sell at Upper) -> Next: Close at Lower
             zone.entry_price = fill.price
-            zone.pending_side = OrderSide.BUY
+            zone.order_side = OrderSide.BUY
             logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.buy_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
             # Filled CLOSE (Buy at Lower) -> Next: Open at Upper
             pnl = (zone.entry_price - fill.price) * fill.size
-            zone.pending_side = OrderSide.SELL
+            zone.order_side = OrderSide.SELL
             zone.roundtrip_count += 1
             logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.sell_price}")
             zone.retry_count = 0

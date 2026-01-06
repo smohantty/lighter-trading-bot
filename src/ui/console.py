@@ -116,7 +116,7 @@ class ConsoleRenderer:
             spread_pct = ((z.upper_price - z.lower_price) / z.lower_price) * 100
             exp_pnl = (z.upper_price - z.lower_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<20} | {spread_pct:<8.2f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.pending_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<20} | {spread_pct:<8.2f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.order_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")

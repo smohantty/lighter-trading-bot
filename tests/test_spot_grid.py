@@ -45,10 +45,10 @@ class TestSpotGrid(unittest.TestCase):
         
         # Check Decimals
         self.assertEqual(strategy.zones[0].buy_price, Decimal("1.0"))
-        self.assertEqual(strategy.zones[0].pending_side, OrderSide.BUY)
+        self.assertEqual(strategy.zones[0].order_side, OrderSide.BUY)
         
         self.assertEqual(strategy.zones[1].buy_price, Decimal("1.5"))
-        self.assertEqual(strategy.zones[1].pending_side, OrderSide.BUY)
+        self.assertEqual(strategy.zones[1].order_side, OrderSide.BUY)
         
         self.assertEqual(strategy.inventory_base, Decimal("0.0"))
         self.assertGreater(strategy.inventory_quote, Decimal("0.0"))
@@ -57,8 +57,8 @@ class TestSpotGrid(unittest.TestCase):
         strategy = SpotGridStrategy(self.spot_config)
         strategy.initialize_zones(Decimal("0.5"), self.context)
         
-        self.assertEqual(strategy.zones[0].pending_side, OrderSide.SELL)
-        self.assertEqual(strategy.zones[1].pending_side, OrderSide.SELL)
+        self.assertEqual(strategy.zones[0].order_side, OrderSide.SELL)
+        self.assertEqual(strategy.zones[1].order_side, OrderSide.SELL)
 
     def test_fill_lifecycle_rust(self):
         strategy = SpotGridStrategy(self.spot_config)
@@ -70,7 +70,7 @@ class TestSpotGrid(unittest.TestCase):
             buy_price=Decimal("1.0"),
             sell_price=Decimal("2.0"),
             size=Decimal("10.0"),
-            pending_side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             mode=None,
             entry_price=Decimal("0.0")
         )
@@ -90,7 +90,7 @@ class TestSpotGrid(unittest.TestCase):
         
         strategy.on_order_filled(fill, self.context)
         
-        self.assertEqual(zone.pending_side, OrderSide.SELL)
+        self.assertEqual(zone.order_side, OrderSide.SELL)
         self.assertEqual(zone.entry_price, Decimal("1.0"))
         self.assertEqual(strategy.inventory_base, Decimal("10.0"))
         
@@ -109,7 +109,7 @@ class TestSpotGrid(unittest.TestCase):
             buy_price=Decimal("1.0"),
             sell_price=Decimal("2.0"),
             size=Decimal("10.0"),
-            pending_side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             mode=None
         )
         strategy.zones = [zone]

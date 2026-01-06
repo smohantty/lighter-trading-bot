@@ -47,7 +47,7 @@ class ZoneInfo:
     buy_price: Decimal
     sell_price: Decimal
     size: Decimal
-    pending_side: str
+    order_side: str
     has_order: bool
     is_reduce_only: bool
     entry_price: Decimal
@@ -63,7 +63,7 @@ class GridZone:
     buy_price: Decimal
     sell_price: Decimal
     size: Decimal
-    pending_side: Any # OrderSide
+    order_side: Any # OrderSide
     mode: Optional[ZoneMode] = None
     entry_price: Decimal = Decimal("0")
     order_id: Optional[Any] = None # Cloid

@@ -111,7 +111,7 @@ class SpotGridStrategy(Strategy):
                  market_info = ctx.market_info(self.symbol)
                  p_decimals = market_info.price_decimals if market_info else 4
                  
-                 if zone.pending_side.is_buy():
+                 if zone.order_side.is_buy():
                       # Buy Fill
                       logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}")
                       self.inventory_base += fill.size
@@ -121,7 +121,7 @@ class SpotGridStrategy(Strategy):
                            self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                       
                       # Flip to SELL at upper price
-                      zone.pending_side = OrderSide.SELL
+                      zone.order_side = OrderSide.SELL
                       zone.entry_price = fill.price
                       zone.retry_count = 0 # Reset retries on fill
                       self.place_zone_order(zone, ctx)
@@ -136,7 +136,7 @@ class SpotGridStrategy(Strategy):
                       zone.retry_count = 0 # Reset retries on fill
                       
                       # Flip to BUY at lower price
-                      zone.pending_side = OrderSide.BUY
+                      zone.order_side = OrderSide.BUY
                       zone.entry_price = Decimal("0.0")
                       self.place_zone_order(zone, ctx)
 
@@ -187,7 +187,7 @@ class SpotGridStrategy(Strategy):
                     buy_price=z.buy_price,
                     sell_price=z.sell_price,
                     size=z.size,
-                    pending_side=str(z.pending_side),
+                    order_side=str(z.order_side),
                     has_order=z.order_id is not None,
                     is_reduce_only=False,
                     entry_price=z.entry_price,
@@ -241,11 +241,11 @@ class SpotGridStrategy(Strategy):
             # 2. Zone is BELOW price: We enter with Quote asset -> Pending BUY at buy_price.
             
             if zone_buy_price > initial_price:
-                 pending_side = OrderSide.SELL
+                 order_side = OrderSide.SELL
                  required_base += size
                  entry_price = initial_price
             else:
-                 pending_side = OrderSide.BUY
+                 order_side = OrderSide.BUY
                  required_quote += (size * zone_buy_price)
                  entry_price = Decimal("0.0")
 
@@ -254,7 +254,7 @@ class SpotGridStrategy(Strategy):
                 buy_price=zone_buy_price,
                 sell_price=zone_sell_price,
                 size=size,
-                pending_side=pending_side,
+                order_side=order_side,
                 mode=None, # No ZoneMode for Spot
                 entry_price=entry_price,
                 roundtrip_count=0
@@ -419,7 +419,7 @@ class SpotGridStrategy(Strategy):
             return  # Already has an order
         
         idx = zone.index
-        side = zone.pending_side
+        side = zone.order_side
         price = zone.buy_price if side.is_buy() else zone.sell_price
         size = zone.size
         
@@ -497,7 +497,7 @@ class SpotGridStrategy(Strategy):
          
         # Determine entry price for zones now that we have inventory
         for zone in self.zones:
-             if zone.pending_side.is_sell():
+             if zone.order_side.is_sell():
                   zone.entry_price = fill.price
          
         self.state = StrategyState.Running
