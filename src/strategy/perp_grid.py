@@ -3,6 +3,7 @@ import time
 from typing import List, Dict, Optional
 from datetime import timedelta
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum, auto
 
 from src.strategy.base import Strategy
@@ -23,12 +24,12 @@ class StrategyState(Enum):
 @dataclass
 class GridZone:
     index: int
-    lower_price: float
-    upper_price: float
-    size: float
+    lower_price: Decimal
+    upper_price: Decimal
+    size: Decimal
     pending_side: OrderSide
     mode: ZoneMode
-    entry_price: float
+    entry_price: Decimal
     order_id: Optional[Cloid] = None
     roundtrip_count: int = 0
 
@@ -51,7 +52,7 @@ class PerpGridStrategy(Strategy):
         self.symbol = config.symbol
         self.leverage = config.leverage
         self.grid_count = config.grid_count
-        self.total_investment = config.total_investment # This is Margin amount (USDC)
+        self.total_investment = Decimal(str(config.total_investment)) # This is Margin amount (USDC)
         self.grid_bias = config.grid_bias
         
         self.zones: List[GridZone] = []
@@ -62,32 +63,32 @@ class PerpGridStrategy(Strategy):
         self.state = StrategyState.Initializing
         
         # Performance Metrics
-        self.realized_pnl = 0.0
-        self.total_fees = 0.0
-        self.unrealized_pnl = 0.0
+        self.realized_pnl = Decimal("0.0")
+        self.total_fees = Decimal("0.0")
+        self.unrealized_pnl = Decimal("0.0")
         
         # Position Tracking
-        self.position_size = 0.0 
-        self.avg_entry_price = 0.0
+        self.position_size = Decimal("0.0") 
+        self.avg_entry_price = Decimal("0.0")
         
         # Internal State
-        self.current_price = 0.0
+        self.current_price = Decimal("0.0")
         self.start_time = time.time()
-        self.initial_entry_price: Optional[float] = None
-        self.trigger_reference_price: Optional[float] = None
+        self.initial_entry_price: Optional[Decimal] = None
+        self.trigger_reference_price: Optional[Decimal] = None
         
         # Acquisition State
         self.acquisition_cloid: Optional[Cloid] = None
-        self.acquisition_target_size: float = 0.0
+        self.acquisition_target_size: Decimal = Decimal("0.0")
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
+            Decimal(str(self.config.lower_price)),
+            Decimal(str(self.config.upper_price)),
             self.config.grid_count
         )
 
-    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: float) -> tuple[List[GridZone], float]:
+    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: Decimal) -> tuple[List[GridZone], Decimal]:
         """
         Calculates grid zones and required position size.
         Returns: (zones, required_position_size)
@@ -95,8 +96,8 @@ class PerpGridStrategy(Strategy):
         # 1. Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
+            Decimal(str(self.config.lower_price)),
+            Decimal(str(self.config.upper_price)),
             self.config.grid_count
         )
         prices = [market_info.round_price(p) for p in prices] # Rounding
@@ -104,25 +105,29 @@ class PerpGridStrategy(Strategy):
         # 2. Calculate Size per Zone
         # Total Investment is Margin. Total Notional = Margin * Leverage
         # Deduct 0.05% buffer from total investment to ensure we cover fees
-        adjusted_investment = self.total_investment * 0.9995
-        total_notional = adjusted_investment * self.leverage
-        notional_per_zone = int(total_notional / float(self.grid_count - 1))
+        adjusted_investment = self.total_investment * Decimal("0.9995")
+        total_notional = adjusted_investment * Decimal(str(self.leverage))
+        
+        # Division with Decimal can be precise/long, so we quantize or int logic depends on strategy.
+        # Original logic: int(total_notional / float(grid_count - 1))
+        # We can keep simpler Decimal math:
+        notional_per_zone = total_notional / Decimal(str(self.config.grid_count - 1))
         
         # Validation
         # Estimate size at lowest price to be safe
-        max_size_estimate = notional_per_zone / self.config.lower_price
+        max_size_estimate = notional_per_zone / Decimal(str(self.config.lower_price))
         min_size_limit = market_info.min_base_amount
         if max_size_estimate < min_size_limit:
              # Just logging warning, will clamp later
              logger.warning(f"[PERP_GRID] improving size estimate: {max_size_estimate} < min {min_size_limit}")
 
-        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
+        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else reference_price
         
         # 3. Build Zones & Calculate Initial Requirement
         zones = []
-        required_position_size = 0.0 # Positive for Long, Negative for Short
+        required_position_size = Decimal("0.0") # Positive for Long, Negative for Short
         
-        for i in range(self.grid_count - 1):
+        for i in range(self.config.grid_count - 1):
             lower = prices[i]
             upper = prices[i+1]
             
@@ -134,7 +139,7 @@ class PerpGridStrategy(Strategy):
             # Logic for Bias
             pending_side = OrderSide.BUY # Placeholder
             mode = ZoneMode.LONG # Placeholder
-            entry_price = 0.0
+            entry_price = Decimal("0.0")
             
             if self.grid_bias == GridBias.LONG:
                 mode = ZoneMode.LONG
@@ -150,7 +155,7 @@ class PerpGridStrategy(Strategy):
                 else:
                     # WE DO NOT HOLD
                     pending_side = OrderSide.BUY # Target is to open at Lower
-                    entry_price = 0.0
+                    entry_price = Decimal("0.0")
                     
             elif self.grid_bias == GridBias.SHORT:
                 mode = ZoneMode.SHORT
@@ -166,7 +171,7 @@ class PerpGridStrategy(Strategy):
                 else:
                    # WE DO NOT HOLD
                    pending_side = OrderSide.SELL # Target is to open at Upper
-                   entry_price = 0.0
+                   entry_price = Decimal("0.0")
 
             zones.append(GridZone(
                 index=i,
@@ -180,7 +185,7 @@ class PerpGridStrategy(Strategy):
             
         return zones, required_position_size
 
-    def initialize_zones(self, price: float, ctx: StrategyContext):
+    def initialize_zones(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
         market_info = ctx.market_info(self.symbol)
         if not market_info:
@@ -200,7 +205,7 @@ class PerpGridStrategy(Strategy):
         self,
         ctx: StrategyContext,
         market_info: MarketInfo,
-        target_position: float
+        target_position: Decimal
     ):
         """
         Calculates required acquisition based on target position.
@@ -230,7 +235,7 @@ class PerpGridStrategy(Strategy):
         size = market_info.round_size(size)
         
         # Price determination
-        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
+        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else self.current_price
         
         # For immediate acquisition, we usually use Market or Aggressive Limit.
         # But if trigger is set, we might use Trigger Price.
@@ -305,14 +310,14 @@ class PerpGridStrategy(Strategy):
         for idx in zones_to_process:
             self.place_zone_order(idx, ctx)
 
-    def on_tick(self, price: float, ctx: StrategyContext):
+    def on_tick(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
         if self.state == StrategyState.Initializing:
             self.initialize_zones(price, ctx)
             
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
-                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
+                 if common.check_trigger(price, Decimal(str(self.config.trigger_price)), self.trigger_reference_price):
                      logger.info(f"[PERP_GRID] Triggered at {price}")
                      self.state = StrategyState.Running
                      self.refresh_orders(ctx)
@@ -388,7 +393,7 @@ class PerpGridStrategy(Strategy):
                     pass
 
                 # Handle PnL and State Flip
-                pnl = 0.0
+                pnl = Decimal("0.0")
                 market_info = ctx.market_info(self.symbol)
                 
                 if zone.mode == ZoneMode.LONG:
@@ -437,7 +442,7 @@ class PerpGridStrategy(Strategy):
             self.pending_retry_zones.add(idx)
 
     def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
-        unrealized = 0.0
+        unrealized = Decimal("0.0")
         if self.position_size != 0:
             diff = self.current_price - self.avg_entry_price
             if self.position_size < 0: diff = -diff
@@ -456,8 +461,8 @@ class PerpGridStrategy(Strategy):
             leverage=self.leverage,
             grid_bias=self.config.grid_bias.value,
             grid_count=len(self.zones),
-            range_low=self.config.lower_price,
-            range_high=self.config.upper_price,
+            range_low=Decimal(str(self.config.lower_price)),
+            range_high=Decimal(str(self.config.upper_price)),
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             margin_balance=ctx.get_perp_available("USDC"),

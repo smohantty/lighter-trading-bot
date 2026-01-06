@@ -4,6 +4,7 @@ from src.strategy.base import Strategy
 from src.engine.context import StrategyContext
 from src.model import OrderFill, Cloid, OrderFailure
 from src.strategy.types import StrategySummary, GridState, GridType
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class NoOpStrategy(Strategy):
     def __init__(self):
         logger.info("Initializing NoOpStrategy")
 
-    def on_tick(self, price: float, ctx: StrategyContext):
+    def on_tick(self, price: Decimal, ctx: StrategyContext):
         logger.info(f"NoOpStrategy Tick: {price}")
         pass
 

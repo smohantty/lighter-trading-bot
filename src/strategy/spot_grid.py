@@ -2,6 +2,7 @@ import logging
 
 import time
 from typing import List, Optional, Dict
+from decimal import Decimal
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import Enum, auto
@@ -13,6 +14,8 @@ from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Clo
 from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState
 
 logger = logging.getLogger("src.strategy.spot_grid")
+# Decimal logging helper for f-strings? 
+# Usually Decimal formats fine with {:.4f} or {}
 
 class StrategyState(Enum):
     Initializing = auto()
@@ -38,7 +41,7 @@ class SpotGridStrategy(Strategy):
         self.config = config
         self.symbol = config.symbol
         self.grid_count = config.grid_count
-        self.total_investment = config.total_investment
+        self.total_investment = Decimal(str(config.total_investment))
         
         # Spot grid specific: base/quote splitting
         try:
@@ -55,32 +58,32 @@ class SpotGridStrategy(Strategy):
         self.pending_retry_zones: set[int] = set()  # Zones needing order placement (e.g., after self-trade)
         
         # Performance tracking
-        self.realized_pnl = 0.0
-        self.total_fees = 0.0
-        self.unrealized_pnl = 0.0
+        self.realized_pnl = Decimal("0")
+        self.total_fees = Decimal("0")
+        self.unrealized_pnl = Decimal("0")
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
+            Decimal(str(self.config.lower_price)),
+            Decimal(str(self.config.upper_price)),
             self.config.grid_count
         )
         
         # Position Tracking
-        self.inventory_base = 0.0
-        self.inventory_quote = 0.0
-        self.avg_entry_price = 0.0
+        self.inventory_base = Decimal("0")
+        self.inventory_quote = Decimal("0")
+        self.avg_entry_price = Decimal("0")
         
         self.start_time = time.time()
-        self.initial_entry_price: Optional[float] = None
-        self.trigger_reference_price: Optional[float] = None
+        self.initial_entry_price: Optional[Decimal] = None
+        self.trigger_reference_price: Optional[Decimal] = None
         
         self.acquisition_cloid: Optional[Cloid] = None
-        self.acquisition_target_size: float = 0.0
+        self.acquisition_target_size: Decimal = Decimal("0")
         
-        self.current_price = 0.0
+        self.current_price = Decimal("0")
 
-    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: float) -> tuple[List[GridZone], float, float]:
+    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
         """
         Calculates the grid structure and validates basic constraints.
         Returns: (zones, required_base, required_quote)
@@ -88,16 +91,16 @@ class SpotGridStrategy(Strategy):
         # Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
+            Decimal(str(self.config.lower_price)),
+            Decimal(str(self.config.upper_price)),
             self.config.grid_count
         )
         # Round prices
         prices = [market_info.round_price(p) for p in prices]
 
         # Deduct 0.05% buffer from total investment to ensure we cover fees/slippage
-        adjusted_investment = self.config.total_investment * 0.9995
-        investment_per_zone_quote = int(adjusted_investment / float(self.config.grid_count - 1))
+        adjusted_investment = self.total_investment * Decimal("0.9995")
+        investment_per_zone_quote = adjusted_investment / Decimal(self.config.grid_count - 1)
 
         # Validation: Check minimum order size
         min_order_size = market_info.min_quote_amount
@@ -107,10 +110,10 @@ class SpotGridStrategy(Strategy):
             raise ValueError(msg)
 
         zones = []
-        required_base = 0.0
-        required_quote = 0.0
+        required_base = Decimal("0")
+        required_quote = Decimal("0")
 
-        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
+        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else reference_price
 
         for i in range(self.config.grid_count - 1):
             zone_lower_price = prices[i]
@@ -129,7 +132,7 @@ class SpotGridStrategy(Strategy):
             else:
                  pending_side = OrderSide.BUY
                  required_quote += (size * zone_lower_price)
-                 entry_price = 0.0
+                 entry_price = Decimal("0.0")
 
             zones.append(GridZone(
                 index=i,
@@ -144,7 +147,7 @@ class SpotGridStrategy(Strategy):
             
         return zones, required_base, required_quote
 
-    def initialize_zones(self, price: float, ctx: StrategyContext):
+    def initialize_zones(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
@@ -157,12 +160,12 @@ class SpotGridStrategy(Strategy):
         avail_base = ctx.get_spot_available(self.base_asset)
         avail_quote = ctx.get_spot_available(self.quote_asset)
         
-        initial_price = self.config.trigger_price if self.config.trigger_price else price
+        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else price
 
         # Upfront Total Investment Validation
         total_wallet_value = (avail_base * initial_price) + avail_quote
-        if total_wallet_value < self.config.total_investment:
-             msg = f"Insufficient Total Portfolio Value! Required: {self.config.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
+        if total_wallet_value < self.total_investment:
+             msg = f"Insufficient Total Portfolio Value! Required: {self.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
              logger.error(f"[SPOT_GRID] {msg}")
              raise ValueError(msg)
 
@@ -170,7 +173,7 @@ class SpotGridStrategy(Strategy):
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
         
-        if self.inventory_base > 0.0:
+        if self.inventory_base > Decimal("0.0"):
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
         
@@ -183,10 +186,10 @@ class SpotGridStrategy(Strategy):
         self, 
         ctx: StrategyContext, 
         market_info: MarketInfo, 
-        total_base_required: float, 
-        total_quote_required: float,
-        available_base: float,
-        available_quote: float
+        total_base_required: Decimal, 
+        total_quote_required: Decimal,
+        available_base: Decimal,
+        available_quote: Decimal
     ) -> None:
         """
         Pure logic to determine if we need to acquire assets.
@@ -196,14 +199,14 @@ class SpotGridStrategy(Strategy):
         quote_deficit = total_quote_required - available_quote
 
         # Use trigger_price if available, otherwise current_price
-        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
+        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else self.current_price
 
-        if base_deficit > 0.0:
+        if base_deficit > Decimal("0.0"):
             # Case 1: Not enough base asset. Need to BUY base asset.
             acquisition_price = initial_price
             
             # Add 0.1% buffer for fees/rounding safety
-            base_deficit = base_deficit * 1.001
+            base_deficit = base_deficit * Decimal("1.001")
             
             base_deficit = max(base_deficit, market_info.min_base_amount)
             # Use ceiling round for extra safety? market_info.round_size usually rounds half-up.
@@ -244,7 +247,7 @@ class SpotGridStrategy(Strategy):
             ))
             return
 
-        elif quote_deficit > 0.0:
+        elif quote_deficit > Decimal("0.0"):
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
             acquisition_price = initial_price
 
@@ -288,7 +291,7 @@ class SpotGridStrategy(Strategy):
             return
 
         # No Deficit (or negligible)
-        if self.inventory_base > 0.0:
+        if self.inventory_base > Decimal("0.0"):
              logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price} (No Rebalancing Needed)")
 
         if self.config.trigger_price:
@@ -320,7 +323,7 @@ class SpotGridStrategy(Strategy):
         # For SELL orders, use 99.95% of zone size to account for base asset fee deduction
         # (fees are deducted from the base asset when buying, so we have slightly less to sell)
         if side.is_sell():
-            size = market_info.round_size(size * 0.9995)
+            size = market_info.round_size(size * Decimal("0.9995"))
         
         cloid = ctx.generate_cloid()
         zone.order_id = cloid
@@ -353,13 +356,13 @@ class SpotGridStrategy(Strategy):
         for idx in zones_to_process:
             self.place_zone_order(idx, ctx)
 
-    def on_tick(self, price: float, ctx: StrategyContext):
+    def on_tick(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
         if self.state == StrategyState.Initializing:
              self.initialize_zones(price, ctx)
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
-                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
+                 if common.check_trigger(price, Decimal(str(self.config.trigger_price)), self.trigger_reference_price):
                       logger.info(f"[SPOT_GRID] [Triggered] at {price}")
                       self.initial_entry_price = price
                       self.state = StrategyState.Running
@@ -381,10 +384,10 @@ class SpotGridStrategy(Strategy):
                        self.inventory_base += fill.size
                        self.inventory_quote -= (fill.size * fill.price)
                  else:
-                       self.inventory_base = max(0.0, self.inventory_base - fill.size)
+                       self.inventory_base = max(Decimal("0.0"), self.inventory_base - fill.size)
                        self.inventory_quote += (fill.size * fill.price)
                  
-                 if self.inventory_base > 0.0:
+                 if self.inventory_base > Decimal("0.0"):
                      # Reset avg entry to rebalancing price for the entire position as requested
                      self.avg_entry_price = fill.price
                  
@@ -416,7 +419,7 @@ class SpotGridStrategy(Strategy):
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
-                      if self.inventory_base > 0.0:
+                      if self.inventory_base > Decimal("0.0"):
                            self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                       
                       # Flip to SELL at upper price
@@ -428,13 +431,13 @@ class SpotGridStrategy(Strategy):
                       pnl = (fill.price - zone.entry_price) * fill.size
                       logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
-                      self.inventory_base = max(0.0, self.inventory_base - fill.size)
+                      self.inventory_base = max(Decimal("0.0"), self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
                       
                       # Flip to BUY at lower price
                       zone.pending_side = OrderSide.BUY
-                      zone.entry_price = 0.0
+                      zone.entry_price = Decimal("0.0")
                       self.place_zone_order(idx, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
@@ -453,7 +456,7 @@ class SpotGridStrategy(Strategy):
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              
         # Approx unrealized pnl
-        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0.0 and self.avg_entry_price > 0.0) else 0.0
+        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > Decimal("0.0") and self.avg_entry_price > Decimal("0.0")) else Decimal("0.0")
              
         return SpotGridSummary(
             symbol=self.symbol,
@@ -466,8 +469,8 @@ class SpotGridStrategy(Strategy):
             total_fees=self.total_fees,
             initial_entry_price=self.initial_entry_price,
             grid_count=len(self.zones),
-            range_low=self.config.lower_price,
-            range_high=self.config.upper_price,
+            range_low=Decimal(str(self.config.lower_price)),
+            range_high=Decimal(str(self.config.upper_price)),
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             base_balance=self.inventory_base,

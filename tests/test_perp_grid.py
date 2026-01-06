@@ -1,5 +1,6 @@
 import pytest
 import math
+from decimal import Decimal
 from src.strategy.perp_grid import PerpGridStrategy, GridZone, StrategyState
 from src.config import PerpGridConfig
 from src.strategy.types import GridType, GridBias, ZoneMode
@@ -17,8 +18,8 @@ def create_test_context(symbol: str = "HYPE") -> StrategyContext:
             market_type="perp",
             base_asset_id=0,
             quote_asset_id=0,
-            min_base_amount=0.1,
-            min_quote_amount=10.0
+            min_base_amount=Decimal("0.1"),
+            min_quote_amount=Decimal("10.0")
         )
     }
     ctx = StrategyContext(markets)
@@ -43,7 +44,7 @@ def test_perp_grid_init_long_bias():
     )
     
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(100.0, ctx)
+    strategy.initialize_zones(Decimal("100.0"), ctx)
     
     # Grid: 90, 100, 110. (2 zones)
     # Zone 0: [90, 100]. Market 100.
@@ -93,7 +94,7 @@ def test_perp_grid_execution_flow():
         trigger_price=None
     )
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(100.0, ctx)
+    strategy.initialize_zones(Decimal("100.0"), ctx)
     
     # Expect 2 Buy Orders
     assert len(ctx.order_queue) == 2
@@ -102,11 +103,11 @@ def test_perp_grid_execution_flow():
     
     assert isinstance(o1, LimitOrderRequest)
     assert o1.side == OrderSide.BUY
-    assert o1.price == 90.0
+    assert o1.price == Decimal("90.0")
     
     assert isinstance(o2, LimitOrderRequest)
     assert o2.side == OrderSide.BUY
-    assert o2.price == 100.0
+    assert o2.price == Decimal("100.0")
     
     # Simulate Fill on Zone 1 (100.0)
     # o2 is associated with zone 1 (range 100-110)
@@ -118,9 +119,9 @@ def test_perp_grid_execution_flow():
     
     fill = OrderFill(
         side=OrderSide.BUY,
-        size=1.0, 
-        price=100.0,
-        fee=0.1,
+        size=Decimal("1.0"), 
+        price=Decimal("100.0"),
+        fee=Decimal("0.1"),
         cloid=zone1_cloid
     )
     
@@ -131,11 +132,11 @@ def test_perp_grid_execution_flow():
     counter_order = ctx.order_queue[0]
     assert isinstance(counter_order, LimitOrderRequest)
     assert counter_order.side == OrderSide.SELL
-    assert counter_order.price == 110.0
+    assert counter_order.price == Decimal("110.0")
     assert counter_order.reduce_only is True # Closing long
     
     # Position should be +1
-    assert strategy.position_size == 1.0
+    assert strategy.position_size == Decimal("1.0")
 
 def test_perp_grid_short_bias():
     symbol = "HYPE"
@@ -153,7 +154,7 @@ def test_perp_grid_short_bias():
         trigger_price=None
     )
     strategy = PerpGridStrategy(config)
-    strategy.initialize_zones(100.0, ctx)
+    strategy.initialize_zones(Decimal("100.0"), ctx)
     
     # Short Bias Logic:
     # If upper < initial (100) -> Buy (Close). Else -> Sell (Open).
@@ -174,4 +175,4 @@ def test_perp_grid_short_bias():
     o1 = ctx.order_queue[0]
     assert isinstance(o1, LimitOrderRequest)
     assert o1.side == OrderSide.SELL
-    assert o1.price == 100.0
+    assert o1.price == Decimal("100.0")

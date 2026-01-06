@@ -3,10 +3,11 @@ from src.engine.context import StrategyContext
 from src.model import OrderFill, Cloid, OrderFailure
 from src.strategy.types import StrategySummary, GridState
 from typing import Union
+from decimal import Decimal
 
 class Strategy(ABC):
     @abstractmethod
-    def on_tick(self, price: float, ctx: StrategyContext):
+    def on_tick(self, price: Decimal, ctx: StrategyContext):
         pass
 
     @abstractmethod

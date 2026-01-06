@@ -3,6 +3,7 @@ import logging
 import json
 import time
 from typing import Dict, List, Optional, Any, Union
+from decimal import Decimal
 from dataclasses import asdict, is_dataclass
 import websockets
 import lighter
@@ -40,7 +41,7 @@ class Engine(BaseEngine):
         self._shutdown_event = asyncio.Event()
         
         # Track last price per symbol to avoid duplicate on_tick calls
-        self.last_price: Dict[str, float] = {}
+        self.last_price: Dict[str, Decimal] = {}
         
         # Partial fill tracking (mirroring Rust SDK)
         self.pending_orders: Dict[Cloid, PendingOrder] = {}
@@ -339,9 +340,9 @@ class Engine(BaseEngine):
         return Trade(
             type=trade_data["type"],
             market_id=trade_data["market_id"],
-            size=float(trade_data["size"]),
-            price=float(trade_data["price"]),
-            usd_amount=trade_data["usd_amount"],
+            size=Decimal(str(trade_data["size"])),
+            price=Decimal(str(trade_data["price"])),
+            usd_amount=Decimal(str(trade_data["usd_amount"])),
             ask_id=trade_data["ask_id"],
             bid_id=trade_data["bid_id"],
             ask_account_id=trade_data["ask_account_id"],
@@ -361,9 +362,9 @@ class Engine(BaseEngine):
         return None
 
 
-    def _calculate_fee_usd(self, details: TradeDetails) -> float:
+    def _calculate_fee_usd(self, details: TradeDetails) -> Decimal:
         """
-        Calculates the fee in USD (float) based on the fee rate and trade volume.
+        Calculates the fee in USD (Decimal) based on the fee rate and trade volume.
         
         Logic:
         - `details.fee` is the Fee Rate in integer format, scaled by 1,000,000.
@@ -374,20 +375,20 @@ class Engine(BaseEngine):
              FeeUSD = (details.fee / 1_000_000) * (details.size * details.price)
         """
         if details.fee == 0:
-            return 0.0
+            return Decimal("0.0")
 
         symbol = self.reverse_market_map.get(details.market_id)
         if not symbol or not self.ctx:
-             return 0.0
+             return Decimal("0.0")
              
         market = self.ctx.market_info(symbol)
         if not market:
             # Fallback to simple calculation if market info is missing (should not happen)
-            return round((details.fee / 1_000_000.0) * (details.size * details.price), 6)
+            return round((Decimal(str(details.fee)) / Decimal("1000000.0")) * (details.size * details.price), 6)
 
         # Calculate Fee Amount in USD
         # 1. Get Fee Rate
-        fee_rate = details.fee / 1_000_000.0
+        fee_rate = Decimal(str(details.fee)) / Decimal("1000000.0")
         
         # 2. Get Trade Volume (USD)
         trade_volume_usd = details.size * details.price
@@ -396,7 +397,7 @@ class Engine(BaseEngine):
         fee_usd = fee_rate * trade_volume_usd
         
         # 4. Round to 4 decimals (standard for USD/USDC on this exchange)
-        return round(float(fee_usd), 4) 
+        return round(fee_usd, 4) 
 
 
 
@@ -413,7 +414,8 @@ class Engine(BaseEngine):
                 return
             
             # Round price to market's price decimals to avoid floating-point precision issues
-            rounded_price = round(mid_price, market_info.price_decimals)
+            # mid_price comes as float from websocket
+            rounded_price = round(Decimal(str(mid_price)), market_info.price_decimals)
             
             # Check if price actually changed
             last_price = self.last_price.get(symbol)
@@ -427,7 +429,11 @@ class Engine(BaseEngine):
             #logger.info(f"Price Update: {symbol} @ ${rounded_price:.{market_info.price_decimals}f}")
             
             if self.broadcaster:
-                self.broadcaster.send(btypes.market_update_event(btypes.MarketEvent(price=rounded_price)))
+                # Broadcast expects float usually? Let's cast for broadcast only if needed
+                # But let's check if btypes can handle Decimal or if we should cast.
+                # Usually JSON serialization handles int/float/str. Decimal might need casting.
+                # For safety, cast to float or str for broadcast.
+                 self.broadcaster.send(btypes.market_update_event(btypes.MarketEvent(price=float(rounded_price))))
 
             try:
                 self.strategy.on_tick(rounded_price, self.ctx)
@@ -489,8 +495,8 @@ class Engine(BaseEngine):
                                  oid=order.order_id,
                                  cloid=str(cloid),
                                  side=str(pending.side),
-                                 price=pending.price,
-                                 size=pending.target_size,
+                                 price=float(pending.price),
+                                 size=float(pending.target_size),
                                  status="open",
                                  fee=0.0,
                                  is_taker=False
@@ -508,7 +514,7 @@ class Engine(BaseEngine):
                                  cloid=str(cloid),
                                  side=str(pending.side),
                                  price=0.0,
-                                 size=pending.filled_size,
+                                 size=float(pending.filled_size),
                                  status="cancelled",
                                  fee=0.0,
                                  is_taker=False
@@ -598,15 +604,16 @@ class Engine(BaseEngine):
                         new_total_size = pending.filled_size + trade.size
                         
                         # Calculate weighted average price
+                        # pending.weighted_avg_px is Decimal, trade.price is Decimal
                         pending.weighted_avg_px = (
-                            pending.weighted_avg_px * pending.filled_size + trade.price * trade.size
+                            (pending.weighted_avg_px * pending.filled_size) + (trade.price * trade.size)
                         ) / new_total_size
                         
                         pending.filled_size = new_total_size
                         pending.accumulated_fees += fee
                         
                         # Check if fully filled (using 0.9999 threshold like Rust SDK)
-                        is_fully_filled = pending.filled_size >= pending.target_size * 0.9999
+                        is_fully_filled = pending.filled_size >= (pending.target_size * Decimal("0.9999"))
                         
                         if is_fully_filled:
                             # Order is fully filled - notify strategy
@@ -619,16 +626,16 @@ class Engine(BaseEngine):
                                     oid=pending.oid or 0,
                                     cloid=str(cloid),
                                     side=str(side),
-                                    price=pending.weighted_avg_px,
-                                    size=pending.filled_size,
+                                    price=float(pending.weighted_avg_px),
+                                    size=float(pending.filled_size),
                                     status="filled",
-                                    fee=float(f"{pending.accumulated_fees:.4f}"),
+                                    fee=float(pending.accumulated_fees),
                                     is_taker=role.is_taker()
                                 )))
                             
                             final_px = pending.weighted_avg_px
                             final_sz = pending.filled_size
-                            final_fee = float(f"{pending.accumulated_fees:.4f}")
+                            final_fee = pending.accumulated_fees
                             pending_reduce_only = pending.reduce_only
                             
                             # Remove from pending
@@ -772,12 +779,14 @@ class Engine(BaseEngine):
             
             if isinstance(order, LimitOrderRequest):
                 # Track pending order for partial fill accumulation
+                # PendingOrder uses Decimal fields
+                # order.sz and order.price are already Decimal (from LimitOrderRequest in model.py)
                 self.pending_orders[order.cloid] = PendingOrder(
                     target_size=order.sz,
                     side=order.side,
-                    filled_size=0.0,
-                    weighted_avg_px=0.0,
-                    accumulated_fees=0.0,
+                    filled_size=Decimal("0"),
+                    weighted_avg_px=Decimal("0"),
+                    accumulated_fees=Decimal("0"),
                     reduce_only=order.reduce_only,
                     oid=None,  # Will be set when we get confirmation
                     created_at=time.time(),  # Track when order was placed

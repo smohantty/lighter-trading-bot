@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
+from decimal import Decimal
 
 import lighter
 from src.config import StrategyConfig, ExchangeConfig, SimulationConfig
@@ -44,7 +45,7 @@ class SimulationEngine(BaseEngine):
         self._running = False
         
         # Track current price for fill checks
-        self._current_price: float = 0.0
+        self._current_price: Decimal = Decimal("0")
 
     async def initialize(self):
         """
@@ -94,7 +95,7 @@ class SimulationEngine(BaseEngine):
             base_asset = symbol
             quote_asset = "USDC"
         
-        amount = self.sim_config.unlimited_amount
+        amount = Decimal(str(self.sim_config.unlimited_amount))
         
         # Inject spot balances
         self.ctx.update_spot_balance(quote_asset, amount, amount)
@@ -111,23 +112,25 @@ class SimulationEngine(BaseEngine):
             return
         
         for asset, balance in self.sim_config.balance_overrides.items():
-            # Update spot balance for this asset
-            self.ctx.update_spot_balance(asset, balance, balance)
+            # Update spot balance for this asset, converting to Decimal
+            d_balance = Decimal(str(balance))
+            self.ctx.update_spot_balance(asset, d_balance, d_balance)
             logger.info(f"[SIMULATION] Override balance: {asset}={balance}")
             
             # If it's USDC, also update perp margin
             if asset.upper() == "USDC":
-                self.ctx.update_perp_balance("USDC", balance, balance)
+                self.ctx.update_perp_balance("USDC", d_balance, d_balance)
 
     async def run_single_step(self) -> float:
         """
         Fetches current price and runs a single on_tick.
         Returns the fetched price.
         """
-        current_price = await self._fetch_current_price()
-        if current_price <= 0:
+        current_price_f = await self._fetch_current_price()
+        if current_price_f <= 0:
             raise ValueError("Could not determine current market price.")
         
+        current_price = Decimal(str(current_price_f))
         self._current_price = current_price
             
         if self.ctx:
@@ -135,7 +138,7 @@ class SimulationEngine(BaseEngine):
             # Process any orders placed by strategy
             self._process_order_queue()
              
-        return current_price
+        return current_price_f
 
     async def run(self):
         """
@@ -155,12 +158,13 @@ class SimulationEngine(BaseEngine):
             while self._running:
                 try:
                     # 1. Fetch current price
-                    current_price = await self._fetch_current_price()
-                    if current_price <= 0:
+                    current_price_f = await self._fetch_current_price()
+                    if current_price_f <= 0:
                         logger.warning("Failed to fetch price, retrying...")
                         await asyncio.sleep(tick_interval)
                         continue
                     
+                    current_price = Decimal(str(current_price_f))
                     self._current_price = current_price
                     
                     # 2. Check and simulate fills for pending orders
@@ -208,7 +212,7 @@ class SimulationEngine(BaseEngine):
                 self.pending_orders[order.cloid] = order
                 logger.info(f"[SIMULATION] Order queued: {order.side} {order.sz} @ {order.price} (cloid={order.cloid.as_int()})")
 
-    def _check_and_simulate_fills(self, current_price: float):
+    def _check_and_simulate_fills(self, current_price: Decimal):
         """
         Check pending orders and simulate fills if price has crossed order price.
         
@@ -230,8 +234,8 @@ class SimulationEngine(BaseEngine):
             
             if should_fill:
                 # Simulate the fill
-                fill_price = order.price  # Limit order fills at order price
-                fee = order.sz * fill_price * self.sim_config.fee_rate
+                fill_price = order.price  # Limit order fills at order price (Decimal)
+                fee = order.sz * fill_price * Decimal(str(self.sim_config.fee_rate))
                 
                 fill = OrderFill(
                     side=order.side,
@@ -310,7 +314,7 @@ class SimulationEngine(BaseEngine):
         
         return orders
 
-    def get_current_price(self) -> float:
+    def get_current_price(self) -> Decimal:
         """Get the last fetched price."""
         return self._current_price
 

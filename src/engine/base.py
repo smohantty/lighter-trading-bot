@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Optional, List, Any
+from decimal import Decimal
 import lighter
 from src.config import StrategyConfig, ExchangeConfig
 from src.strategy.base import Strategy
@@ -115,8 +116,8 @@ class BaseEngine:
                         market_type=market_type,
                         base_asset_id=int(base_asset_id),
                         quote_asset_id=int(quote_asset_id),
-                        min_base_amount=float(min_base_amount_str),
-                        min_quote_amount=float(min_quote_amount_str)
+                        min_base_amount=Decimal(str(min_base_amount_str)),
+                        min_quote_amount=Decimal(str(min_quote_amount_str))
                     )
                     self.markets[symbol] = info
 

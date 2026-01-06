@@ -1,8 +1,10 @@
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
+from decimal import Decimal
 from dataclasses import dataclass, field
 import math
 import time
 from src.model import Cloid, OrderRequest, CancelOrderRequest
+from src.engine.precision import Precision
 
 
 
@@ -16,49 +18,32 @@ class MarketInfo:
     market_type: str
     base_asset_id: int
     quote_asset_id: int
-    min_base_amount: float
-    min_quote_amount: float
+    min_base_amount: Decimal
+    min_quote_amount: Decimal
 
-    def round_price(self, price: float) -> float:
-        return round(price, self.price_decimals)
+    def __post_init__(self):
+        self.price_precision = Precision(self.price_decimals)
+        self.size_precision = Precision(self.sz_decimals)
 
-    def round_size(self, sz: float) -> float:
-        return round(sz, self.sz_decimals)
+    def round_price(self, price: Union[float, Decimal]) -> Decimal:
+        return self.price_precision.round(price)
 
-    def to_sdk_price(self, price: float) -> int:
-        """Convert float price to SDK integer format."""
-        return int(round(price * (10 ** self.price_decimals)))
+    def round_size(self, sz: Union[float, Decimal]) -> Decimal:
+        return self.size_precision.round(sz)
 
-    def to_sdk_size(self, sz: float) -> int:
-        """Convert float size to SDK integer format."""
-        return int(round(sz * (10 ** self.sz_decimals)))
+    def to_sdk_price(self, price: Union[float, Decimal]) -> int:
+        """Convert float/decimal price to SDK integer format (atoms)."""
+        return self.price_precision.to_int(price)
 
-    def clamp_to_min_size(self, size: float) -> float:
-        """
-        Ensure size meets the exchange's minimum base amount requirement.
-        """
-        clamped = max(size, self.min_base_amount)
-        return self.round_size(clamped)
+    def to_sdk_size(self, sz: Union[float, Decimal]) -> int:
+        """Convert float/decimal size to SDK integer format (atoms)."""
+        return self.size_precision.to_int(sz)
 
-    def clamp_to_min_notional(self, size: float, price: float) -> float:
-        """
-        Ensure size * price >= min_notional (min_quote_amount).
-        If size is too small, returns a size s.t. size * price >= min_quote_amount.
-        """
-        if size * price >= self.min_quote_amount:
-            return self.round_size(size)
-        
-        # Calculate required size
-        if price == 0: return self.round_size(size) # Prevent div/0
-
-        required_size = self.min_quote_amount / price
-        # Round up to ensure we meet the threshold
-        return self.round_size(max(size, required_size) * 1.01) # Add tiny buffer
 
 @dataclass
 class Balance:
-    total: float
-    available: float
+    total: Decimal
+    available: Decimal
 
 class StrategyContext:
     def __init__(self, markets: Dict[str, MarketInfo]):
@@ -88,24 +73,24 @@ class StrategyContext:
         self._cloid_counter += 1
         return Cloid(self._cloid_counter)
 
-    def update_spot_balance(self, asset: str, total: float, available: float):
-        self.spot_balances[asset] = Balance(total=total, available=available)
+    def update_spot_balance(self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]):
+        self.spot_balances[asset] = Balance(total=Decimal(str(total)), available=Decimal(str(available)))
 
-    def update_perp_balance(self, asset: str, total: float, available: float):
-        self.perp_balances[asset] = Balance(total=total, available=available)
+    def update_perp_balance(self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]):
+        self.perp_balances[asset] = Balance(total=Decimal(str(total)), available=Decimal(str(available)))
 
-    def get_spot_total(self, asset: str) -> float:
+    def get_spot_total(self, asset: str) -> Decimal:
         b = self.spot_balances.get(asset)
-        return b.total if b else 0.0
+        return b.total if b else Decimal("0")
 
-    def get_spot_available(self, asset: str) -> float:
+    def get_spot_available(self, asset: str) -> Decimal:
         b = self.spot_balances.get(asset)
-        return b.available if b else 0.0
+        return b.available if b else Decimal("0")
 
-    def get_perp_total(self, asset: str) -> float:
+    def get_perp_total(self, asset: str) -> Decimal:
         b = self.perp_balances.get(asset)
-        return b.total if b else 0.0
+        return b.total if b else Decimal("0")
 
-    def get_perp_available(self, asset: str) -> float:
+    def get_perp_available(self, asset: str) -> Decimal:
         b = self.perp_balances.get(asset)
-        return b.available if b else 0.0
+        return b.available if b else Decimal("0")

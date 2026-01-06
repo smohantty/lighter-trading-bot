@@ -44,13 +44,13 @@ class Spread:
 @dataclass
 class ZoneInfo:
     index: int
-    lower_price: float
-    upper_price: float
-    size: float
+    lower_price: Decimal
+    upper_price: Decimal
+    size: Decimal
     pending_side: str
     has_order: bool
     is_reduce_only: bool
-    entry_price: float
+    entry_price: Decimal
     roundtrip_count: int
 
 class ZoneStatus(Enum):
@@ -60,12 +60,12 @@ class ZoneStatus(Enum):
 @dataclass
 class GridZone:
     index: int
-    lower_price: float
-    upper_price: float
-    size: float
+    lower_price: Decimal
+    upper_price: Decimal
+    size: Decimal
     pending_side: Any # OrderSide
     mode: Optional[ZoneMode] = None
-    entry_price: float = 0.0
+    entry_price: Decimal = Decimal("0")
     order_id: Optional[Any] = None # Cloid
     roundtrip_count: int = 0
 
@@ -81,39 +81,39 @@ class PerpGridSummary:
     symbol: str
     state: str
     uptime: str
-    position_size: float
+    position_size: Decimal
     position_side: str
-    avg_entry_price: float
-    realized_pnl: float
-    unrealized_pnl: float
-    total_fees: float
+    avg_entry_price: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_fees: Decimal
     leverage: int
     grid_bias: str
     grid_count: int
-    range_low: float
-    range_high: float
+    range_low: Decimal
+    range_high: Decimal
     grid_spacing_pct: Any
     roundtrips: int
-    margin_balance: float
-    initial_entry_price: Optional[float]
+    margin_balance: Decimal
+    initial_entry_price: Optional[Decimal]
 
 @dataclass
 class SpotGridSummary:
     symbol: str
     state: str
     uptime: str
-    position_size: float
-    avg_entry_price: float
-    realized_pnl: float
-    unrealized_pnl: float
-    total_fees: float
-    initial_entry_price: Optional[float]
+    position_size: Decimal
+    avg_entry_price: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    total_fees: Decimal
+    initial_entry_price: Optional[Decimal]
     grid_count: int
-    range_low: float
-    range_high: float
+    range_low: Decimal
+    range_high: Decimal
     grid_spacing_pct: Any # (min, max)
     roundtrips: int
-    base_balance: float
-    quote_balance: float
+    base_balance: Decimal
+    quote_balance: Decimal
 
 StrategySummary = Union[PerpGridSummary, SpotGridSummary, None]

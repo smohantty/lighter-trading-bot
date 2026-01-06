@@ -1,6 +1,7 @@
 from datetime import timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from src.strategy.types import GridType
+from decimal import Decimal
 
 def format_uptime(duration: timedelta) -> str:
     total_secs = int(duration.total_seconds())
@@ -18,7 +19,7 @@ def format_uptime(duration: timedelta) -> str:
     else:
         return f"{seconds}s"
 
-def check_trigger(current_price: float, trigger_price: float, start_price: float) -> bool:
+def check_trigger(current_price: Decimal, trigger_price: Decimal, start_price: Decimal) -> bool:
     if start_price < trigger_price:
         # Waiting for price to go UP to trigger
         if current_price >= trigger_price:
@@ -29,36 +30,37 @@ def check_trigger(current_price: float, trigger_price: float, start_price: float
             return True
     return False
 
-def calculate_grid_prices(grid_type: GridType, lower_price: float, upper_price: float, grid_count: int) -> List[float]:
-    prices: List[float] = []
+def calculate_grid_prices(grid_type: GridType, lower_price: Decimal, upper_price: Decimal, grid_count: int) -> List[Decimal]:
+    prices: List[Decimal] = []
     if grid_count <= 1:
         return prices
     
-    n_minus_1 = float(grid_count - 1)
+    n_minus_1 = Decimal(grid_count - 1)
     
     if grid_type == GridType.ARITHMETIC:
         step = (upper_price - lower_price) / n_minus_1
         for i in range(grid_count):
-            price = lower_price + (i * step)
+            price = lower_price + (Decimal(i) * step)
             prices.append(price)
             
     elif grid_type == GridType.GEOMETRIC:
-        ratio = (upper_price / lower_price) ** (1.0 / n_minus_1)
+        # Decimal pow: (ratio) = (up/low) ** (1/n-1)
+        ratio = (upper_price / lower_price) ** (Decimal("1") / n_minus_1)
         for i in range(grid_count):
-            price = lower_price * (ratio ** i)
+            price = lower_price * (ratio ** Decimal(i))
             prices.append(price)
             
     return prices
 
-def calculate_grid_spacing_pct(grid_type: GridType, lower_price: float, upper_price: float, grid_count: int) -> Tuple[float, float]:
-    n = float(grid_count)
+def calculate_grid_spacing_pct(grid_type: GridType, lower_price: Decimal, upper_price: Decimal, grid_count: int) -> Tuple[Decimal, Decimal]:
+    n = Decimal(grid_count)
     
     if grid_type == GridType.GEOMETRIC:
-        ratio = (upper_price / lower_price) ** (1.0 / n)
-        spacing_pct = (ratio - 1.0) * 100.0
+        ratio = (upper_price / lower_price) ** (Decimal("1") / n)
+        spacing_pct = (ratio - Decimal("1")) * Decimal("100")
         return (spacing_pct, spacing_pct)
     else:
         spacing = (upper_price - lower_price) / n
-        min_pct = (spacing / upper_price) * 100.0
-        max_pct = (spacing / lower_price) * 100.0
+        min_pct = (spacing / upper_price) * Decimal("100")
+        max_pct = (spacing / lower_price) * Decimal("100")
         return (min_pct, max_pct)

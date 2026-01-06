@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Union
+from decimal import Decimal
 
 class Cloid:
     """
@@ -58,57 +59,61 @@ class TradeRole(Enum):
 @dataclass
 class OrderFill:
     side: OrderSide
-    size: float
-    price: float
-    fee: float
+    size: Decimal
+    price: Decimal
+    fee: Decimal
     role: Optional[TradeRole] = None
     cloid: Optional[Cloid] = None
     reduce_only: Optional[bool] = None
     raw_dir: Optional[str] = None
 
 @dataclass
+@dataclass
 class PendingOrder:
     """Tracks an order that may fill in multiple parts."""
-    target_size: float
+    target_size: Decimal
     side: OrderSide
-    filled_size: float = 0.0
-    weighted_avg_px: float = 0.0
-    accumulated_fees: float = 0.0
+    filled_size: Decimal = Decimal("0")
+    weighted_avg_px: Decimal = Decimal("0")
+    accumulated_fees: Decimal = Decimal("0")
     reduce_only: bool = False
     oid: Optional[int] = None
     created_at: float = 0.0  # Timestamp when order was placed
-    price: float = 0.0
+    price: Decimal = Decimal("0")
 
 
+@dataclass
 @dataclass
 class OrderFailure:
     """Information about a failed order, including any partial fills."""
     cloid: 'Cloid'
     side: OrderSide
-    target_size: float
-    filled_size: float
-    filled_price: float  # weighted avg price of partial fills
-    accumulated_fees: float
+    target_size: Decimal
+    filled_size: Decimal
+    filled_price: Decimal  # weighted avg price of partial fills
+    accumulated_fees: Decimal
     failure_reason: str  # e.g. "canceled-self-trade", "canceled-not-enough-liquidity"
     reduce_only: bool = False
 
 
 @dataclass
+@dataclass
 class LimitOrderRequest:
     symbol: str
     side: OrderSide
-    price: float
-    sz: float
+    price: Decimal
+    sz: Decimal
     reduce_only: bool
     cloid: Optional[Cloid] = None
 
 @dataclass
+@dataclass
 class MarketOrderRequest:
     symbol: str
     side: OrderSide
-    sz: float
+    sz: Decimal
     reduce_only: bool = False
-    price: float = 0.0 # Worst price / slippage limit
+    price: Decimal = Decimal("0") # Worst price / slippage limit
     cloid: Optional[Cloid] = None
 
 @dataclass
@@ -140,14 +145,15 @@ class Order:
 
 
 @dataclass
+@dataclass
 class TradeDetails:
     side: OrderSide
     oid: int
     role: TradeRole
     fee: int
     market_id: int
-    price: float
-    size: float
+    price: Decimal
+    size: Decimal
 
     def __repr__(self):
         return (f"TradeDetails(side={self.side.value}, oid={self.oid}, "
@@ -155,12 +161,13 @@ class TradeDetails:
                 f"market_id={self.market_id}, price={self.price}, size={self.size})")
 
 @dataclass
+@dataclass
 class Trade:
     type: str
     market_id: int
-    size: float
-    price: float
-    usd_amount: str
+    size: Decimal
+    price: Decimal
+    usd_amount: Decimal
     ask_id: int
     bid_id: int
     ask_account_id: int
