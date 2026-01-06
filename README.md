@@ -10,7 +10,6 @@ This project uses the `lighter-python` SDK to provide automated grid trading str
 - **Safety**: 
   - Validates startup configuration (margin requirements, grid range).
   - Uses local virtual environments for isolation.
-- **Ported Logic**: 1:1 strategy implementation matching the proven Rust codebase.
 - **Dry Run Mode Checks**: Simulates grid placement and validates asset requirements before execution.
 
 ## Prerequisites
@@ -129,12 +128,6 @@ uv run python main.py --dry-run --config configs/my_strategy.yaml
 **Run Tests:**
 ```bash
 uv run pytest tests
-```
-
-**Run Visual TUI (Interactive):**
-Launch the terminal user interface to configure strategies and run visual simulations:
-```bash
-uv run python -m src.ui.app
 ```
 
 ## SDK Management
