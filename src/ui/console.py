@@ -51,7 +51,7 @@ class ConsoleRenderer:
             print(f"Grid Bias:   {c.grid_bias.name}")
             
         if hasattr(c, "total_investment"):
-            print(f"Total Inv:   {c.total_investment}")
+            print(f"Total Inv:   {c.total_investment:.3f}")
         
         if hasattr(c, "leverage"):
             print(f"Leverage:    {c.leverage}x")
@@ -60,10 +60,10 @@ class ConsoleRenderer:
             print(f"Grid Count:  {c.grid_count}")
             
         if isinstance(c, (SpotGridConfig, PerpGridConfig)):
-             print(f"Range:       {c.lower_price} - {c.upper_price}")
+             print(f"Range:       {c.lower_price:.3f} - {c.upper_price:.3f}")
              
         if hasattr(c, "trigger_price") and c.trigger_price:
-             print(f"Trigger:     {c.trigger_price}")
+             print(f"Trigger:     {c.trigger_price:.3f}")
 
     @staticmethod
     def _render_summary(s: StrategySummary):
@@ -74,18 +74,18 @@ class ConsoleRenderer:
         if hasattr(s, "grid_spacing_pct"):
             val = s.grid_spacing_pct
             if isinstance(val, tuple):
-                 print(f"Spacing:  {val[0]}% - {val[1]}%")
+                 print(f"Spacing:  {val[0]:.3f}% - {val[1]:.3f}%")
             else:
-                 print(f"Spacing:  {val}%")
+                 print(f"Spacing:  {val:.3f}%")
         
         if isinstance(s, SpotGridSummary):
             print(f"Type:     SPOT GRID")
-            print(f"Balance:  {s.base_balance} {s.symbol.split('/')[0]} | {s.quote_balance} USDC")
-            print(f"Inv Base: {s.position_size}")
+            print(f"Balance:  {s.base_balance:.3f} {s.symbol.split('/')[0]} | {s.quote_balance:.3f} USDC")
+            print(f"Inv Base: {s.position_size:.3f}")
         elif isinstance(s, PerpGridSummary):
             print(f"Type:     PERP GRID ({s.grid_bias})")
-            print(f"Margin:   {s.margin_balance} USDC")
-            print(f"Position: {s.position_size} ({s.position_side})")
+            print(f"Margin:   {s.margin_balance:.3f} USDC")
+            print(f"Position: {s.position_size:.3f} ({s.position_side})")
             print(f"Leverage: {s.leverage}x")
 
     @staticmethod
@@ -110,7 +110,7 @@ class ConsoleRenderer:
             spread_pct = ((z.sell_price - z.buy_price) / z.buy_price) * 100
             exp_pnl = (z.sell_price - z.buy_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10.2f} | {z.size:<12} | {exp_pnl:<12.2f} | {z.order_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10.2f} | {z.size:<12.3f} | {exp_pnl:<12.2f} | {z.order_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")
@@ -128,6 +128,6 @@ class ConsoleRenderer:
                  if o.reduce_only: ro_tag = " [ReduceOnly]"
                  
             if isinstance(o, (LimitOrderRequest, MarketOrderRequest)):
-                print(f"  [ORDER] {o.side} {o.sz} @ {o.price} {ro_tag}")
+                print(f"  [ORDER] {o.side} {o.sz:.3f} @ {o.price:.3f} {ro_tag}")
             elif isinstance(o, CancelOrderRequest):
                 print(f"  [CANCEL] CLOID {o.cloid}")
