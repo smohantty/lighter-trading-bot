@@ -30,7 +30,7 @@ class ConsoleRenderer:
         ConsoleRenderer._render_config(config)
         
         if current_price:
-            print(f"\nCurrent Price: {current_price:.4f}")
+            print(f"\nCurrent Price: {current_price}")
         
         print(f"\n{'-'*60}")
         if summary:
@@ -67,56 +67,50 @@ class ConsoleRenderer:
 
     @staticmethod
     def _render_summary(s: StrategySummary):
-        if not s: return  # MyPy safety
-        if not s: return  # MyPy safety
+        if not s: return
         print(f"STRATEGY: {s.symbol}")
-        # 'price' is not in the Summary types anymore, removing it
         print(f"State:    {s.state}")
         
         if hasattr(s, "grid_spacing_pct"):
             val = s.grid_spacing_pct
             if isinstance(val, tuple):
-                 print(f"Spacing:  {val[0]:.2f}% - {val[1]:.2f}%")
+                 print(f"Spacing:  {val[0]}% - {val[1]}%")
             else:
-                 print(f"Spacing:  {val:.2f}%")
+                 print(f"Spacing:  {val}%")
         
         if isinstance(s, SpotGridSummary):
             print(f"Type:     SPOT GRID")
-            print(f"Balance:  {s.base_balance:.4f} {s.symbol.split('/')[0]} | {s.quote_balance:.2f} USDC")
-            print(f"Inv Base: {s.position_size:.4f}")
+            print(f"Balance:  {s.base_balance} {s.symbol.split('/')[0]} | {s.quote_balance} USDC")
+            print(f"Inv Base: {s.position_size}")
         elif isinstance(s, PerpGridSummary):
             print(f"Type:     PERP GRID ({s.grid_bias})")
-            print(f"Margin:   {s.margin_balance:.2f} USDC")
-            print(f"Position: {s.position_size:.4f} ({s.position_side})")
+            print(f"Margin:   {s.margin_balance} USDC")
+            print(f"Position: {s.position_size} ({s.position_side})")
             print(f"Leverage: {s.leverage}x")
 
     @staticmethod
     def _render_grid(g: GridState):
         print(f"GRID STATE ({len(g.zones)} Zones)")
-        print(f"{'IDX':<4} | {'RANGE':<20} | {'SPD %':<8} | {'SIZE':<8} | {'EXP_PNL':<8} | {'SIDE':<6} | {'STATUS'}")
-        print("-" * 85)
+        print(f"{'IDX':<4} | {'RANGE':<25} | {'SPD %':<10} | {'SIZE':<12} | {'EXP_PNL':<12} | {'SIDE':<6} | {'STATUS'}")
+        print("-" * 100)
         
-        # Limit to first few, last few if too many?
+        # Limit to first few, last few if too many
         display_zones = g.zones
         if len(display_zones) > 100:
              display_zones = display_zones[:50] + display_zones[-50:]
              
         for z in display_zones:
-            rng = f"{z.buy_price:.2f}-{z.sell_price:.2f}"
+            rng = f"{z.buy_price}-{z.sell_price}"
             status = "ACTIVE" if z.has_order else "WAITING"
             if z.has_order: status += " (RO)" if z.is_reduce_only else ""
             
-            # Simple highlight
             caret = " "
-            # g.current_price doesn't exist in GridState definition, removing highlight logic requiring it
-            # if z.lower_price <= g.current_price <= z.upper_price:
-            #    caret = "*"
                 
-            # Calculations
+            # Calculations - print as-is
             spread_pct = ((z.sell_price - z.buy_price) / z.buy_price) * 100
             exp_pnl = (z.sell_price - z.buy_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<20} | {spread_pct:<8.2f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.order_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10} | {z.size:<12} | {exp_pnl:<12} | {z.order_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")
@@ -133,11 +127,6 @@ class ConsoleRenderer:
             if isinstance(o, (LimitOrderRequest)):
                  if o.reduce_only: ro_tag = " [ReduceOnly]"
                  
-            # Extract common attributes safely or check instance
-            side = o.side if hasattr(o, "side") else "?"
-            sz = o.sz if hasattr(o, "sz") else "?"
-            price = o.price if hasattr(o, "price") else "?"
-            
             if isinstance(o, (LimitOrderRequest, MarketOrderRequest)):
                 print(f"  [ORDER] {o.side} {o.sz} @ {o.price} {ro_tag}")
             elif isinstance(o, CancelOrderRequest):
