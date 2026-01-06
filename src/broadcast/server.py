@@ -4,9 +4,22 @@ import json
 import websockets
 from typing import Optional, Set, Deque, Any
 from collections import deque
+from decimal import Decimal
+from enum import Enum
 from src.broadcast.types import WSEvent
 
 logger = logging.getLogger(__name__)
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle Decimal and Enum types."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            # Convert Decimal to float for frontend compatibility
+            return float(obj)
+        if isinstance(obj, Enum):
+            # Convert Enum to its value
+            return obj.value
+        return super(DecimalEncoder, self).default(obj)
 
 class StatusBroadcaster:
     def __init__(self, host: str, port: int):
@@ -76,7 +89,7 @@ class StatusBroadcaster:
 
     async def _send_to_client(self, websocket: Any, event: WSEvent):
         try:
-            msg = json.dumps(event.to_dict())
+            msg = json.dumps(event.to_dict(), cls=DecimalEncoder)
             await websocket.send(msg)
         except Exception as e:
             logger.error(f"Failed to send to client: {e}")
@@ -100,7 +113,7 @@ class StatusBroadcaster:
         if not self.clients:
             return
             
-        message = json.dumps(event.to_dict())
+        message = json.dumps(event.to_dict(), cls=DecimalEncoder)
         
         # Create tasks for sending to all clients
         # We assume this is called from the main event loop
