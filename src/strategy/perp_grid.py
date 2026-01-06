@@ -270,19 +270,19 @@ class PerpGridStrategy(Strategy):
         if zone.mode == ZoneMode.SHORT and side.is_buy():
             reduce_only = True
         
-        cloid = ctx.generate_cloid()
+        # Order Request
+        cloid = ctx.place_order(LimitOrderRequest(
+            symbol=self.config.symbol,
+            side=side,
+            price=price,
+            sz=zone.size,
+            reduce_only=reduce_only
+        ))
+        
         zone.order_id = cloid
         self.active_order_map[cloid] = zone
         
         logger.info(f"[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} @ {price}")
-        ctx.place_order(LimitOrderRequest(
-            symbol=self.symbol,
-            side=side,
-            price=price,
-            sz=zone.size,
-            reduce_only=reduce_only,
-            cloid=cloid
-        ))
 
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""

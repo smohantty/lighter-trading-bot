@@ -229,21 +229,22 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
-            cloid = ctx.generate_cloid()
+            # Place Order
+            # Cloid is generated and returned by context
+            cloid = ctx.place_order(LimitOrderRequest(
+                symbol=self.config.symbol,
+                side=OrderSide.BUY,
+                price=acquisition_price,
+                sz=base_deficit,
+                reduce_only=False
+            ))
+            
             self.state = StrategyState.AcquiringAssets
             self.acquisition_cloid = cloid
             self.acquisition_target_size = base_deficit
 
             logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] cloid: {cloid.as_int()}, LIMIT BUY {base_deficit} {self.base_asset} @ {acquisition_price}")
-
-            ctx.place_order(LimitOrderRequest(
-                symbol=self.config.symbol,
-                side=OrderSide.BUY,
-                price=acquisition_price,
-                sz=base_deficit,
-                reduce_only=False,
-                cloid=cloid
-            ))
+            
             return
 
         elif quote_deficit > 0:
@@ -274,19 +275,20 @@ class SpotGridStrategy(Strategy):
                     raise ValueError(msg)
 
             logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}")
-            cloid = ctx.generate_cloid()
-            self.state = StrategyState.AcquiringAssets
-            self.acquisition_cloid = cloid
-            self.acquisition_target_size = base_to_sell
-
-            ctx.place_order(LimitOrderRequest(
+            
+            # Place Order
+            # Let context generated cloid
+            cloid = ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
                 side=OrderSide.SELL,
                 price=acquisition_price,
                 sz=base_to_sell,
-                reduce_only=False,
-                cloid=cloid
+                reduce_only=False
             ))
+            
+            self.state = StrategyState.AcquiringAssets
+            self.acquisition_cloid = cloid
+            self.acquisition_target_size = base_to_sell
             return
 
         # No Deficit (or negligible)
@@ -324,19 +326,20 @@ class SpotGridStrategy(Strategy):
         if side.is_sell():
             size = market_info.round_size(size * Decimal("0.9995"))
         
-        cloid = ctx.generate_cloid()
-        zone.order_id = cloid
-        self.active_order_map[cloid] = zone
-
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
-        ctx.place_order(LimitOrderRequest(
+        # Order Request
+        # Let context manage cloid
+        cloid = ctx.place_order(LimitOrderRequest(
             symbol=self.config.symbol,
             side=side,
             price=price,
             sz=size,
-            reduce_only=False,
-            cloid=cloid
+            reduce_only=False
         ))
+        
+        zone.order_id = cloid
+        self.active_order_map[cloid] = zone
+
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
 
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""

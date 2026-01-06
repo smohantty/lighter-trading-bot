@@ -59,8 +59,19 @@ class StrategyContext:
     def market_info(self, symbol: str) -> Optional[MarketInfo]:
         return self.markets.get(symbol)
 
-    def place_order(self, order: OrderRequest):
+    def place_order(self, order: OrderRequest) -> Cloid:
+        # User ensures OrderRequest types have cloid attribute (OrderRequest union types do)
+        # We rely on dynamic typing here or explicit checks if needed, but per request implies simple logic.
+        
+        # Access cloid dynamically to handle Union
+        current_cloid = getattr(order, 'cloid', None)
+        
+        if current_cloid is None:
+             current_cloid = self.generate_cloid()
+             setattr(order, 'cloid', current_cloid)
+             
         self.order_queue.append(order)
+        return current_cloid # type: ignore
 
     def cancel_order(self, cloid: Cloid):
         # We assume symbol knowledge isn't strictly needed for the internal queue for now, 
