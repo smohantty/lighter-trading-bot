@@ -508,22 +508,21 @@ class PerpGridStrategy(Strategy):
 
     def _handle_long_bias_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle fill logic for LONG bias zones."""
-        idx = zone.index
         pnl = Decimal("0.0")
         
         if fill.side.is_buy():
-            # Filled OPEN (Buy at Lower) -> Next: Close at Upper
+            # Buy to Open -> Sell to Close
             zone.entry_price = fill.price
             zone.order_side = OrderSide.SELL
-            logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.sell_price}")
+            logger.info(f"[PERP_GRID] Z{zone.index} Buy to Open @ {fill.price}. Next: Sell to Close @ {zone.sell_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
-            # Filled CLOSE (Sell at Upper) -> Next: Open at Lower
+            # Sell to Close -> Buy to Open
             pnl = (fill.price - zone.entry_price) * fill.size
             zone.order_side = OrderSide.BUY
             zone.roundtrip_count += 1
-            logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.buy_price}")
+            logger.info(f"[PERP_GRID] Z{zone.index} Sell to Close @ {fill.price}. PnL: {pnl:.4f}. Next: Buy to Open @ {zone.buy_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         
@@ -531,22 +530,21 @@ class PerpGridStrategy(Strategy):
 
     def _handle_short_bias_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle fill logic for SHORT bias zones."""
-        idx = zone.index
         pnl = Decimal("0.0")
         
         if fill.side.is_sell():
-            # Filled OPEN (Sell at Upper) -> Next: Close at Lower
+            # Sell to Open -> Buy to Close
             zone.entry_price = fill.price
             zone.order_side = OrderSide.BUY
-            logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.buy_price}")
+            logger.info(f"[PERP_GRID] Z{zone.index} Sell to Open @ {fill.price}. Next: Buy to Close @ {zone.buy_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
-            # Filled CLOSE (Buy at Lower) -> Next: Open at Upper
+            # Buy to Close -> Sell to Open
             pnl = (zone.entry_price - fill.price) * fill.size
             zone.order_side = OrderSide.SELL
             zone.roundtrip_count += 1
-            logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.sell_price}")
+            logger.info(f"[PERP_GRID] Z{zone.index} Buy to Close @ {fill.price}. PnL: {pnl:.4f}. Next: Sell to Open @ {zone.sell_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         
