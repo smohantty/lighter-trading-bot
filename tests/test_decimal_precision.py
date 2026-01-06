@@ -21,19 +21,36 @@ class TestDecimalPrecision(unittest.TestCase):
         # Precise rounding
         price = Decimal("123.456789")
         rounded = self.market_info.round_price(price)
-        self.assertEqual(rounded, Decimal("123.4568"))
+        self.assertEqual(rounded, Decimal("123.4567"))
         self.assertIsInstance(rounded, Decimal)
 
         # Float input handling
         price_f = 123.456789
         rounded_f = self.market_info.round_price(price_f)
-        self.assertEqual(rounded_f, Decimal("123.4568"))
+        self.assertEqual(rounded_f, Decimal("123.4567"))
         self.assertIsInstance(rounded_f, Decimal)
 
     def test_round_size(self):
         size = Decimal("1.23456")
         rounded = self.market_info.round_size(size)
-        self.assertEqual(rounded, Decimal("1.235"))
+        self.assertEqual(rounded, Decimal("1.234"))
+
+    def test_truncation_behavior(self):
+        # User specified case: 1.23456 with 4 decimals should be 1.2345
+        from src.engine.precision import Precision
+        p = Precision(4)
+        val = Decimal("1.23456")
+        self.assertEqual(p.round(val), Decimal("1.2345"))
+        
+        # Test negative numbers (ROUND_DOWN usually implies towards zero for positive, 
+        # but ROUND_FLOOR is strictly lower. ROUND_DOWN matches 'truncate extra digits')
+        # -1.23456 -> -1.2345 (ROUND_DOWN) vs -1.2346 (ROUND_FLOOR? No floor is lower)
+        # ROUND_DOWN: toward zero. -1.23456 -> -1.2345.
+        # ROUND_FLOOR: -infinity. -1.23456 -> -1.2346 (if standard).
+        # We used ROUND_DOWN.
+        val_neg = Decimal("-1.23456")
+        self.assertEqual(p.round(val_neg), Decimal("-1.2345"))
+
 
     def test_to_sdk_conversion(self):
         # Price to atoms

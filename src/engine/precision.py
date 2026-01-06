@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Union
 
 class Precision:
@@ -19,13 +19,9 @@ class Precision:
         if not isinstance(value, Decimal):
             value = Decimal(str(value))
         
-        # QUANTIZE rounds to the nearest even number by default (ROUND_HALF_EVEN),
-        # but standard financial rounding often expects ROUND_HALF_UP.
-        # Python's round() uses ROUND_HALF_EVEN. 
-        # For simplicity and consistency with previous float round(), we used standard round().
-        # Here we use quantized rounding.
-        
-        return value.quantize(Decimal("10") ** -self.decimals)
+        # Changed to ROUND_DOWN (truncation) as per requirement:
+        # 1.23456 (4 dec) -> 1.2345
+        return value.quantize(Decimal("10") ** -self.decimals, rounding=ROUND_DOWN)
 
     def to_int(self, value: Union[float, Decimal, int, str]) -> int:
         """
