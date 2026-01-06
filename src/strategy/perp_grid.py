@@ -10,10 +10,12 @@ from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import Cloid, OrderFill, OrderSide, LimitOrderRequest, OrderFailure
 from src.config import PerpGridConfig
-from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo
+from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo, GridZone
 from src.strategy import common
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 5
 
 class StrategyState(Enum):
     Initializing = auto()
@@ -21,17 +23,7 @@ class StrategyState(Enum):
     AcquiringAssets = auto()
     Running = auto()
 
-@dataclass
-class GridZone:
-    index: int
-    lower_price: Decimal
-    upper_price: Decimal
-    size: Decimal
-    pending_side: OrderSide
-    mode: ZoneMode
-    entry_price: Decimal
-    order_id: Optional[Cloid] = None
-    roundtrip_count: int = 0
+
 
 class PerpGridStrategy(Strategy):
     """
@@ -57,7 +49,6 @@ class PerpGridStrategy(Strategy):
         
         self.zones: List[GridZone] = []
         self.active_order_map: Dict[Cloid, GridZone] = {} 
-        self.pending_retry_zones: set[int] = set()  # Zones needing order placement
         
         self.trade_count = 0
         self.state = StrategyState.Initializing
@@ -263,12 +254,12 @@ class PerpGridStrategy(Strategy):
             cloid=cloid
         ))
 
-    def place_zone_order(self, idx: int, ctx: StrategyContext):
+    def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""
-        zone = self.zones[idx]
         if zone.order_id is not None:
             return
         
+        idx = zone.index
         side = zone.pending_side
         price = zone.lower_price if side.is_buy() else zone.upper_price
         
@@ -294,21 +285,13 @@ class PerpGridStrategy(Strategy):
         ))
 
     def refresh_orders(self, ctx: StrategyContext):
-        """Place orders for all zones that don't have one."""
-        for idx, zone in enumerate(self.zones):
+        """Place orders for all zones that don't have one and haven't exceeded max retries."""
+        for zone in self.zones:
             if zone.order_id is None:
-                self.place_zone_order(idx, ctx)
-
-    def _process_pending_retries(self, ctx: StrategyContext):
-        """Process only zones that are queued for retry (efficient for large grids)."""
-        if not self.pending_retry_zones:
-            return
-        
-        zones_to_process = list(self.pending_retry_zones)
-        self.pending_retry_zones.clear()
-        
-        for idx in zones_to_process:
-            self.place_zone_order(idx, ctx)
+                if zone.retry_count < MAX_RETRIES:
+                     self.place_zone_order(zone, ctx)
+                else:
+                     pass
 
     def on_tick(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
@@ -323,12 +306,8 @@ class PerpGridStrategy(Strategy):
                      self.refresh_orders(ctx)
                      
         elif self.state == StrategyState.Running:
-             # Process only zones in the retry queue (efficient for large grids)
-             if self.pending_retry_zones:
-                 self._process_pending_retries(ctx)
-             # Full refresh only needed if no orders are active at all
-             elif not self.active_order_map and self.zones:
-                 self.refresh_orders(ctx)
+             # Continuously ensure orders are active
+             self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
         if fill.cloid:
@@ -402,14 +381,16 @@ class PerpGridStrategy(Strategy):
                         zone.entry_price = fill.price
                         zone.pending_side = OrderSide.SELL
                         logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.upper_price}")
-                        self.place_zone_order(idx, ctx)
+                        zone.retry_count = 0
+                        self.place_zone_order(zone, ctx)
                     else:
                         # Filled CLOSE (Sell at Upper) -> Next: Open at Lower
                         pnl = (fill.price - zone.entry_price) * fill.size
                         zone.pending_side = OrderSide.BUY
                         zone.roundtrip_count += 1
                         logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.lower_price}")
-                        self.place_zone_order(idx, ctx)
+                        zone.retry_count = 0
+                        self.place_zone_order(zone, ctx)
                         
                 elif zone.mode == ZoneMode.SHORT:
                     if fill.side.is_sell():
@@ -417,14 +398,16 @@ class PerpGridStrategy(Strategy):
                         zone.entry_price = fill.price
                         zone.pending_side = OrderSide.BUY
                         logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.lower_price}")
-                        self.place_zone_order(idx, ctx)
+                        zone.retry_count = 0
+                        self.place_zone_order(zone, ctx)
                     else:
                         # Filled CLOSE (Buy at Lower) -> Next: Open at Upper
                         pnl = (zone.entry_price - fill.price) * fill.size
                         zone.pending_side = OrderSide.SELL
                         zone.roundtrip_count += 1
                         logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.upper_price}")
-                        self.place_zone_order(idx, ctx)
+                        zone.retry_count = 0
+                        self.place_zone_order(zone, ctx)
 
                 self.realized_pnl += pnl
 
@@ -436,10 +419,9 @@ class PerpGridStrategy(Strategy):
             zone.order_id = None
             
             logger.warning(f"[ORDER_FAILED][PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
-                          f"reason: {failure.failure_reason}. Queued for retry on next tick.")
+                          f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
             
-            # Queue for retry on next tick
-            self.pending_retry_zones.add(idx)
+            zone.retry_count += 1
 
     def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
         unrealized = Decimal("0")

@@ -68,6 +68,7 @@ class GridZone:
     entry_price: Decimal = Decimal("0")
     order_id: Optional[Any] = None # Cloid
     roundtrip_count: int = 0
+    retry_count: int = 0
 
 @dataclass
 class GridState:

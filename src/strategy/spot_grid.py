@@ -16,6 +16,7 @@ from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, Zo
 logger = logging.getLogger("src.strategy.spot_grid")
 
 FEE_BUFFER = Spread("0.1") # 0.1% buffer
+MAX_RETRIES = 5
 
 class StrategyState(Enum):
     Initializing = auto()
@@ -54,7 +55,6 @@ class SpotGridStrategy(Strategy):
         self.zones: List[GridZone] = []
         self.state = StrategyState.Initializing
         self.active_order_map: Dict[Cloid, GridZone] = {} # Cloid -> GridZone
-        self.pending_retry_zones: set[int] = set()  # Zones needing order placement (e.g., after self-trade)
         
         # Performance tracking
         self.realized_pnl = Decimal("0")
@@ -305,16 +305,16 @@ class SpotGridStrategy(Strategy):
              self.state = StrategyState.Running
              self.refresh_orders(ctx)
 
-    def place_zone_order(self, idx: int, ctx: StrategyContext):
+    def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
             return
         
-        zone = self.zones[idx]
         if zone.order_id is not None:
             return  # Already has an order
         
+        idx = zone.index
         side = zone.pending_side
         price = zone.lower_price if side.is_buy() else zone.upper_price
         size = zone.size
@@ -339,21 +339,14 @@ class SpotGridStrategy(Strategy):
         ))
 
     def refresh_orders(self, ctx: StrategyContext):
-        """Place orders for all zones that don't have one."""
-        for idx, zone in enumerate(self.zones):
+        """Place orders for all zones that don't have one and haven't exceeded max retries."""
+        for zone in self.zones:
             if zone.order_id is None:
-                self.place_zone_order(idx, ctx)
-
-    def _process_pending_retries(self, ctx: StrategyContext):
-        """Process only zones that are queued for retry (efficient for large grids)."""
-        if not self.pending_retry_zones:
-            return
-        
-        zones_to_process = list(self.pending_retry_zones)
-        self.pending_retry_zones.clear()
-        
-        for idx in zones_to_process:
-            self.place_zone_order(idx, ctx)
+                if zone.retry_count < MAX_RETRIES:
+                     self.place_zone_order(zone, ctx)
+                else:
+                     # Optional: Log zombie state occasionally?
+                     pass
 
     def on_tick(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
@@ -367,12 +360,8 @@ class SpotGridStrategy(Strategy):
                       self.state = StrategyState.Running
                       self.refresh_orders(ctx)
         elif self.state == StrategyState.Running:
-             # Process only zones in the retry queue (efficient for large grids)
-             if self.pending_retry_zones:
-                 self._process_pending_retries(ctx)
-             # Full refresh only needed if no orders are active at all
-             elif not self.active_order_map and len(self.zones) > 0:
-                 self.refresh_orders(ctx)
+             # Continuously ensure orders are active
+             self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
         if fill.cloid:
@@ -424,7 +413,8 @@ class SpotGridStrategy(Strategy):
                       # Flip to SELL at upper price
                       zone.pending_side = OrderSide.SELL
                       zone.entry_price = fill.price
-                      self.place_zone_order(idx, ctx)
+                      zone.retry_count = 0 # Reset retries on fill
+                      self.place_zone_order(zone, ctx)
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
@@ -433,11 +423,12 @@ class SpotGridStrategy(Strategy):
                       self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
+                      zone.retry_count = 0 # Reset retries on fill
                       
                       # Flip to BUY at lower price
                       zone.pending_side = OrderSide.BUY
                       zone.entry_price = Decimal("0.0")
-                      self.place_zone_order(idx, ctx)
+                      self.place_zone_order(zone, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
         cloid = failure.cloid
@@ -447,10 +438,9 @@ class SpotGridStrategy(Strategy):
              zone.order_id = None
              
              logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
-                           f"reason: {failure.failure_reason}. Queued for retry on next tick.")
+                           f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
              
-             # Queue for retry on next tick
-             self.pending_retry_zones.add(idx)
+             zone.retry_count += 1
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              

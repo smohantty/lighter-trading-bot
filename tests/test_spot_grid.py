@@ -98,6 +98,58 @@ class TestSpotGrid(unittest.TestCase):
         
         self.assertEqual(strategy.inventory_base, Decimal("10.0"))
 
+    def test_retry_mechanism(self):
+        strategy = SpotGridStrategy(self.spot_config)
+        
+        # Setup Zone
+        zone = GridZone(
+            index=0,
+            lower_price=Decimal("1.0"),
+            upper_price=Decimal("2.0"),
+            size=Decimal("10.0"),
+            pending_side=OrderSide.BUY,
+            mode=None
+        )
+        strategy.zones = [zone]
+        
+        # Test Failure Increment
+        fail_cloid = Cloid(999)
+        strategy.active_order_map[fail_cloid] = zone
+        zone.order_id = fail_cloid
+        
+        # Simulate Failure
+        failure = MagicMock()
+        failure.cloid = fail_cloid
+        failure.failure_reason = "Test Failure"
+        
+        strategy.on_order_failed(failure, self.context)
+        
+        self.assertEqual(zone.retry_count, 1)
+        self.assertIsNone(zone.order_id)
+        
+        # Simulate Max Retries
+        from src.strategy.spot_grid import MAX_RETRIES
+        zone.retry_count = MAX_RETRIES
+        
+        # Should NOT place order if max retries reached
+        strategy.refresh_orders(self.context)
+        self.assertEqual(self.context.place_order.call_count, 0)
+        
+        # Simulate Reset on Fill
+        zone.retry_count = 2
+        strategy.active_order_map[fail_cloid] = zone
+        zone.order_id = fail_cloid
+        
+        fill = OrderFill(
+            side=OrderSide.BUY,
+            size=Decimal("10.0"),
+            price=Decimal("1.0"),
+            fee=Decimal("0.1"),
+            cloid=fail_cloid
+        )
+        strategy.on_order_filled(fill, self.context)
+        self.assertEqual(zone.retry_count, 0)
+
     def test_get_summary(self):
         strategy = SpotGridStrategy(self.spot_config)
         strategy.initialize_zones(Decimal("1.6"), self.context)
