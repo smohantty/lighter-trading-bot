@@ -75,7 +75,7 @@ class TestSpotGrid(unittest.TestCase):
         strategy.zones = [zone]
         
         cloid = Cloid(100)
-        strategy.active_order_map[cloid] = 0
+        strategy.active_order_map[cloid] = zone
         zone.order_id = cloid
         
         fill = OrderFill(

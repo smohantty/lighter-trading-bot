@@ -53,8 +53,7 @@ class SpotGridStrategy(Strategy):
 
         self.zones: List[GridZone] = []
         self.state = StrategyState.Initializing
-        
-        self.active_order_map: Dict[Cloid, int] = {} # Cloid -> Zone Index
+        self.active_order_map: Dict[Cloid, GridZone] = {} # Cloid -> GridZone
         self.pending_retry_zones: set[int] = set()  # Zones needing order placement (e.g., after self-trade)
         
         # Performance tracking
@@ -327,7 +326,7 @@ class SpotGridStrategy(Strategy):
         
         cloid = ctx.generate_cloid()
         zone.order_id = cloid
-        self.active_order_map[cloid] = idx
+        self.active_order_map[cloid] = zone
 
         logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
         ctx.place_order(LimitOrderRequest(
@@ -405,8 +404,8 @@ class SpotGridStrategy(Strategy):
 
             # Grid Fill
             if fill.cloid in self.active_order_map:
-                 idx = self.active_order_map.pop(fill.cloid)
-                 zone = self.zones[idx]
+                 zone = self.active_order_map.pop(fill.cloid)
+                 idx = zone.index
                  zone.order_id = None
                  self.total_fees += fill.fee
                  
@@ -443,8 +442,8 @@ class SpotGridStrategy(Strategy):
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
         cloid = failure.cloid
         if cloid in self.active_order_map:
-             idx = self.active_order_map.pop(cloid)
-             zone = self.zones[idx]
+             zone = self.active_order_map.pop(cloid)
+             idx = zone.index
              zone.order_id = None
              
              logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
