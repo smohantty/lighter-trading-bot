@@ -1,7 +1,7 @@
 # Lighter Trading Bot
 
-A Python-based algorithmic trading bot for [Lighter.xyz](https://lighter.xyz) Perpetual DEX. 
-This project is a direct port of the logic and architecture from the Rust-based `hyperliquid-trading-bot`, ensuring consistent strategy behavior while leveraging the `lighter-python` SDK.
+A Python-based algorithmic trading bot for [Lighter.xyz](https://lighter.xyz) Perpetual DEX.
+This project uses the `lighter-python` SDK to provide automated grid trading strategies.
 
 ## Features
 
@@ -62,13 +62,13 @@ This project is a direct port of the logic and architecture from the Rust-based 
         "mainnet": {
             "baseUrl": "https://api.lighter.xyz",
             "agentApiKeys": {
-                "0": "0xYourEd25519ApiKey"
+                "42": "0xYourEd25519ApiKey"
             }
         },
         "testnet": {
             "baseUrl": "https://testnet.zklighter.elliot.ai",
             "agentApiKeys": {
-                "0": "0xYourEd25519ApiKey"
+                "42": "0xYourEd25519ApiKey"
             }
         }
     }
@@ -77,14 +77,14 @@ This project is a direct port of the logic and architecture from the Rust-based 
     1.  **Account Index**:
         - Go to [Lighter Portfolio](https://app.lighter.xyz/portfolio).
         - Connect your wallet.
-        - Your **Account Index** is displayed in the account details or URL (e.g. `.../portfolio/1234`).
+        - Your **Account Index** is displayed in the account details.
         - *Alternatively*: Use the [Accounts by Address API](https://apidocs.lighter.xyz/reference/accountsbyl1address) with your Master Account (Wallet) Address.
 
     2.  **API Keys**:
         - Go to [Lighter API Keys](https://app.lighter.xyz/apikeys).
         - Click "Create New API Key".
-        - Sign the transaction to generate a new key pair.
-        - Copy the **Private Key** (starts with `0x...`) into `agentApiKeys` -> `"0"`.
+        - Sign the transaction to generate a new key pair.(index , key )
+        - Copy the **Private Key** (starts with `0x...`) into `agentApiKeys` -> "index":"key"
 
 3.  **Strategy Config**:
     We provide templates for both Spot and Perpetual grid strategies.
