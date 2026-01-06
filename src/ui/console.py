@@ -102,7 +102,7 @@ class ConsoleRenderer:
              display_zones = display_zones[:50] + display_zones[-50:]
              
         for z in display_zones:
-            rng = f"{z.lower_price:.2f}-{z.upper_price:.2f}"
+            rng = f"{z.buy_price:.2f}-{z.sell_price:.2f}"
             status = "ACTIVE" if z.has_order else "WAITING"
             if z.has_order: status += " (RO)" if z.is_reduce_only else ""
             
@@ -113,8 +113,8 @@ class ConsoleRenderer:
             #    caret = "*"
                 
             # Calculations
-            spread_pct = ((z.upper_price - z.lower_price) / z.lower_price) * 100
-            exp_pnl = (z.upper_price - z.lower_price) * z.size
+            spread_pct = ((z.sell_price - z.buy_price) / z.buy_price) * 100
+            exp_pnl = (z.sell_price - z.buy_price) * z.size
             
             print(f"{caret}{z.index:<3} | {rng:<20} | {spread_pct:<8.2f} | {z.size:<8} | {exp_pnl:<8.4f} | {z.order_side:<6} | {status}")
             
