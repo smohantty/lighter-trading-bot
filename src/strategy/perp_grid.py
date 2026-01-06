@@ -52,7 +52,7 @@ class PerpGridStrategy(Strategy):
         self.symbol = config.symbol
         self.leverage = config.leverage
         self.grid_count = config.grid_count
-        self.total_investment = Decimal(str(config.total_investment)) # This is Margin amount (USDC)
+        self.total_investment = config.total_investment # This is Margin amount (USDC)
         self.grid_bias = config.grid_bias
         
         self.zones: List[GridZone] = []
@@ -83,8 +83,8 @@ class PerpGridStrategy(Strategy):
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
-            Decimal(str(self.config.lower_price)),
-            Decimal(str(self.config.upper_price)),
+            self.config.lower_price,
+            self.config.upper_price,
             self.config.grid_count
         )
 
@@ -96,8 +96,8 @@ class PerpGridStrategy(Strategy):
         # 1. Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
-            Decimal(str(self.config.lower_price)),
-            Decimal(str(self.config.upper_price)),
+            self.config.lower_price,
+            self.config.upper_price,
             self.config.grid_count
         )
         prices = [market_info.round_price(p) for p in prices] # Rounding
@@ -121,7 +121,7 @@ class PerpGridStrategy(Strategy):
              # Just logging warning, will clamp later
              logger.warning(f"[PERP_GRID] improving size estimate: {max_size_estimate} < min {min_size_limit}")
 
-        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else reference_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
         
         # 3. Build Zones & Calculate Initial Requirement
         zones = []
@@ -235,7 +235,7 @@ class PerpGridStrategy(Strategy):
         size = market_info.round_size(size)
         
         # Price determination
-        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else self.current_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
         
         # For immediate acquisition, we usually use Market or Aggressive Limit.
         # But if trigger is set, we might use Trigger Price.
@@ -317,7 +317,7 @@ class PerpGridStrategy(Strategy):
             
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
-                 if common.check_trigger(price, Decimal(str(self.config.trigger_price)), self.trigger_reference_price):
+                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
                      logger.info(f"[PERP_GRID] Triggered at {price}")
                      self.state = StrategyState.Running
                      self.refresh_orders(ctx)
@@ -461,8 +461,8 @@ class PerpGridStrategy(Strategy):
             leverage=self.leverage,
             grid_bias=self.config.grid_bias.value,
             grid_count=len(self.zones),
-            range_low=Decimal(str(self.config.lower_price)),
-            range_high=Decimal(str(self.config.upper_price)),
+            range_low=self.config.lower_price,
+            range_high=self.config.upper_price,
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             margin_balance=ctx.get_perp_available("USDC"),

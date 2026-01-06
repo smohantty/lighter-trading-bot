@@ -18,11 +18,11 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
         
         strat_conf = SpotGridConfig(
              symbol="DOT", 
-             lower_price=1.0, 
-             upper_price=2.0, 
+             lower_price=Decimal("1.0"), 
+             upper_price=Decimal("2.0"), 
              grid_type=GridType.ARITHMETIC, 
              grid_count=10, 
-             total_investment=100.0
+             total_investment=Decimal("100.0")
         )
         strategy = SpotGridStrategy(strat_conf)
         

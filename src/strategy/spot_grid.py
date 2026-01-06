@@ -41,7 +41,7 @@ class SpotGridStrategy(Strategy):
         self.config = config
         self.symbol = config.symbol
         self.grid_count = config.grid_count
-        self.total_investment = Decimal(str(config.total_investment))
+        self.total_investment = config.total_investment
         
         # Spot grid specific: base/quote splitting
         try:
@@ -64,8 +64,8 @@ class SpotGridStrategy(Strategy):
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
-            Decimal(str(self.config.lower_price)),
-            Decimal(str(self.config.upper_price)),
+            self.config.lower_price,
+            self.config.upper_price,
             self.config.grid_count
         )
         
@@ -91,8 +91,8 @@ class SpotGridStrategy(Strategy):
         # Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
-            Decimal(str(self.config.lower_price)),
-            Decimal(str(self.config.upper_price)),
+            self.config.lower_price,
+            self.config.upper_price,
             self.config.grid_count
         )
         # Round prices
@@ -113,7 +113,7 @@ class SpotGridStrategy(Strategy):
         required_base = Decimal("0")
         required_quote = Decimal("0")
 
-        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else reference_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
 
         for i in range(self.config.grid_count - 1):
             zone_lower_price = prices[i]
@@ -160,7 +160,7 @@ class SpotGridStrategy(Strategy):
         avail_base = ctx.get_spot_available(self.base_asset)
         avail_quote = ctx.get_spot_available(self.quote_asset)
         
-        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else price
+        initial_price = self.config.trigger_price if self.config.trigger_price else price
 
         # Upfront Total Investment Validation
         total_wallet_value = (avail_base * initial_price) + avail_quote
@@ -199,7 +199,7 @@ class SpotGridStrategy(Strategy):
         quote_deficit = total_quote_required - available_quote
 
         # Use trigger_price if available, otherwise current_price
-        initial_price = Decimal(str(self.config.trigger_price)) if self.config.trigger_price else self.current_price
+        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
 
         if base_deficit > Decimal("0.0"):
             # Case 1: Not enough base asset. Need to BUY base asset.
@@ -362,7 +362,7 @@ class SpotGridStrategy(Strategy):
              self.initialize_zones(price, ctx)
         elif self.state == StrategyState.WaitingForTrigger:
              if self.config.trigger_price and self.trigger_reference_price:
-                 if common.check_trigger(price, Decimal(str(self.config.trigger_price)), self.trigger_reference_price):
+                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
                       logger.info(f"[SPOT_GRID] [Triggered] at {price}")
                       self.initial_entry_price = price
                       self.state = StrategyState.Running
@@ -469,8 +469,8 @@ class SpotGridStrategy(Strategy):
             total_fees=self.total_fees,
             initial_entry_price=self.initial_entry_price,
             grid_count=len(self.zones),
-            range_low=Decimal(str(self.config.lower_price)),
-            range_high=Decimal(str(self.config.upper_price)),
+            range_low=self.config.lower_price,
+            range_high=self.config.upper_price,
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             base_balance=self.inventory_base,

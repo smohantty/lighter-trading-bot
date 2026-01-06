@@ -1,6 +1,7 @@
 import yaml
 import os
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Optional, Literal, Union, Dict
 from src.strategy.types import GridBias, GridType
 
@@ -29,17 +30,17 @@ class SimulationConfig:
     execution_mode: Literal["single_step", "continuous"] = "single_step"
     
     # For override balance mode - map asset symbol to balance
-    balance_overrides: Dict[str, float] = field(default_factory=dict)
+    balance_overrides: Dict[str, Decimal] = field(default_factory=dict)
     
     # For unlimited balance mode (default fallback)
-    unlimited_amount: float = 1_000_000.0
+    unlimited_amount: Decimal = Decimal("1000000.0")
     
     # For continuous execution mode
     tick_interval_ms: int = 1000
     
     # Fill simulation (only in continuous mode)
     simulate_fills: bool = True
-    fee_rate: float = 0.0005  # 0.05% default fee
+    fee_rate: Decimal = Decimal("0.0005")  # 0.05% default fee
 
 
 def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
@@ -88,7 +89,7 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
         # Extract balance_overrides from "balances" key
         balance_overrides = {}
         if "balances" in data:
-            balance_overrides = {str(k): float(v) for k, v in data["balances"].items()}
+            balance_overrides = {str(k): Decimal(str(v)) for k, v in data["balances"].items()}
             del data["balances"]
         
         # Map known fields
@@ -96,10 +97,10 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
             balance_mode=data.get("balance_mode", "unlimited"),
             execution_mode=data.get("execution_mode", "single_step"),
             balance_overrides=balance_overrides,
-            unlimited_amount=data.get("unlimited_amount", 1_000_000.0),
+            unlimited_amount=Decimal(str(data.get("unlimited_amount", 1_000_000.0))),
             tick_interval_ms=data.get("tick_interval_ms", 1000),
             simulate_fills=data.get("simulate_fills", True),
-            fee_rate=data.get("fee_rate", 0.0005),
+            fee_rate=Decimal(str(data.get("fee_rate", 0.0005))),
         )
         
         return config
@@ -112,12 +113,12 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
 @dataclass
 class SpotGridConfig:
     symbol: str
-    upper_price: float
-    lower_price: float
+    upper_price: Decimal
+    lower_price: Decimal
     grid_type: GridType
     grid_count: int
-    total_investment: float
-    trigger_price: Optional[float] = None
+    total_investment: Decimal
+    trigger_price: Optional[Decimal] = None
     type: Literal["spot_grid"] = "spot_grid"
 
     def validate(self):
@@ -128,25 +129,25 @@ class SpotGridConfig:
         if self.trigger_price is not None:
             if self.trigger_price < self.lower_price or self.trigger_price > self.upper_price:
                 raise ValueError(f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}].")
-            if self.trigger_price <= 0.0:
+            if self.trigger_price <= Decimal("0.0"):
                 raise ValueError("Trigger price must be positive.")
         if "/" not in self.symbol or len(self.symbol) < 3:
             raise ValueError("Spot symbol must be in 'Base/Quote' format")
-        if self.total_investment <= 0.0:
+        if self.total_investment <= Decimal("0.0"):
             raise ValueError("Total investment must be positive.")
 
 @dataclass
 class PerpGridConfig:
     symbol: str
     leverage: int
-    upper_price: float
-    lower_price: float
+    upper_price: Decimal
+    lower_price: Decimal
     grid_type: GridType
     grid_count: int
-    total_investment: float
+    total_investment: Decimal
     grid_bias: GridBias
     is_isolated: bool = False
-    trigger_price: Optional[float] = None
+    trigger_price: Optional[Decimal] = None
     type: Literal["perp_grid"] = "perp_grid"
 
     def validate(self):
@@ -157,11 +158,11 @@ class PerpGridConfig:
         if self.trigger_price is not None:
             if self.trigger_price < self.lower_price or self.trigger_price > self.upper_price:
                 raise ValueError(f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}].")
-            if self.trigger_price <= 0.0:
+            if self.trigger_price <= Decimal("0.0"):
                 raise ValueError("Trigger price must be positive.")
         if self.leverage <= 0 or self.leverage > 50:
             raise ValueError("Leverage must be between 1 and 50")
-        if self.total_investment <= 0.0:
+        if self.total_investment <= Decimal("0.0"):
             raise ValueError("Total investment must be positive.")
 
 
@@ -257,12 +258,27 @@ def load_config(path: str) -> Config:
         data["grid_type"] = GridType(data["grid_type"])
     
     if strategy_type == "spot_grid":
+        # Convert floats to Decimal
+        if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
+        if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
+        if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
+        if "trigger_price" in data and data["trigger_price"] is not None: 
+            data["trigger_price"] = Decimal(str(data["trigger_price"]))
+
         spot_cfg = SpotGridConfig(**data)
         spot_cfg.validate()
         return spot_cfg
     elif strategy_type == "perp_grid":
         if "grid_bias" in data:
             data["grid_bias"] = GridBias(data["grid_bias"])
+            
+        # Convert floats to Decimal
+        if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
+        if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
+        if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
+        if "trigger_price" in data and data["trigger_price"] is not None:
+             data["trigger_price"] = Decimal(str(data["trigger_price"]))
+
         perp_cfg = PerpGridConfig(**data)
         perp_cfg.validate()
         return perp_cfg
