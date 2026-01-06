@@ -163,7 +163,7 @@ class TestSpotGrid(unittest.TestCase):
         self.assertEqual(summary.base_balance, Decimal("0.0"))
         self.assertGreater(summary.quote_balance, Decimal("0.0"))
 
-    def test_initialization_out_of_range_error(self):
+    def test_initialization_out_of_range_fallback(self):
         def get_balance(asset):
             if asset == "LIT": return Decimal("0.0")
             if asset == "USDC": return Decimal("200.0")
@@ -173,8 +173,16 @@ class TestSpotGrid(unittest.TestCase):
         
         strategy = SpotGridStrategy(self.spot_config)
         
-        with self.assertRaisesRegex(ValueError, "Current price 0.5 is below grid range"):
-             strategy.initialize_zones(Decimal("0.5"), self.context)
+        # Should not raise error, but place order with markdown
+        # Price 0.5 is below grid (1.0 - 2.0)
+        strategy.initialize_zones(Decimal("0.5"), self.context)
+        
+        self.assertEqual(self.context.place_order.call_count, 1)
+        args = self.context.place_order.call_args[0][0]
+        self.assertEqual(args.side, OrderSide.BUY)
+        # 0.5 * (1 - 0.001) = 0.4995. Rounding is truncation (ROUND_DOWN) for Precision(4)?
+        # 0.4995 -> 0.4995.
+        self.assertAlmostEqual(args.price, Decimal("0.4995"))
 
 if __name__ == '__main__':
     unittest.main()

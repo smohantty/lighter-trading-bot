@@ -16,6 +16,7 @@ from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, Zo
 logger = logging.getLogger("src.strategy.spot_grid")
 
 FEE_BUFFER = Spread("0.1") # 0.1% buffer
+ACQUISITION_SPREAD = Spread("0.1") # 0.1% spread for off-grid acquisition
 MAX_RETRIES = 5
 
 class StrategyState(Enum):
@@ -146,20 +147,43 @@ class SpotGridStrategy(Strategy):
             
         return zones, required_base, required_quote
 
-    def initialize_zones(self, price: Decimal, ctx: StrategyContext):
-        self.current_price = price
+    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal, market_info: MarketInfo) -> Decimal:
+        if self.config.trigger_price:
+            return market_info.round_price(self.config.trigger_price)
+            
+        if side == OrderSide.BUY:
+             # Find nearest level LOWER than market to buy at (Limit Buy below market)
+             candidates = [z.lower_price for z in self.zones if z.lower_price < current_price]
+             if candidates:
+                 return market_info.round_price(max(candidates))
+             elif self.zones:
+                  # Fallback: Price is below grid. Return markdown of current price for BUY.
+                  return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price))
+        else: # SELL
+             # Find nearest level ABOVE market to sell at (Limit Sell above market)
+             candidates = [z.upper_price for z in self.zones if z.upper_price > current_price]
+             if candidates:
+                 return market_info.round_price(min(candidates))
+             elif self.zones:
+                  # Fallback: Price is above grid. Return markup of current price for SELL.
+                  return market_info.round_price(ACQUISITION_SPREAD.markup(current_price))
+                  
+        return current_price
+
+    def initialize_zones(self, initial_price: Decimal, ctx: StrategyContext):
+        self.current_price = initial_price
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
         
         # Calculate Grid
-        self.zones, required_base, required_quote = self.calculate_grid_plan(market_info, price)
+        self.zones, required_base, required_quote = self.calculate_grid_plan(market_info, initial_price)
 
         # Seed inventory
         avail_base = ctx.get_spot_available(self.base_asset)
         avail_quote = ctx.get_spot_available(self.quote_asset)
         
-        initial_price = self.config.trigger_price if self.config.trigger_price else price
+        initial_price = self.config.trigger_price if self.config.trigger_price else initial_price
 
         # Upfront Total Investment Validation
         total_wallet_value = (avail_base * initial_price) + avail_quote
@@ -212,15 +236,7 @@ class SpotGridStrategy(Strategy):
             # But the buffer handles the slight edge case.
             base_deficit = market_info.round_size(base_deficit)
 
-            if self.config.trigger_price:
-                acquisition_price = market_info.round_price(self.config.trigger_price)
-            else:
-                # Find nearest level LOWER than market to buy at
-                candidates = [z.lower_price for z in self.zones if z.lower_price < self.current_price]
-                if candidates:
-                    acquisition_price = market_info.round_price(max(candidates))
-                elif self.zones:
-                     raise ValueError(f"Current price {self.current_price} is below grid range (Min: {self.zones[0].lower_price}). Cannot acquire base asset safely.")            
+            acquisition_price = self._calculate_acquisition_price(OrderSide.BUY, self.current_price, market_info)
 
             estimated_cost = base_deficit * acquisition_price
             
@@ -251,15 +267,7 @@ class SpotGridStrategy(Strategy):
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
             acquisition_price = initial_price
 
-            if self.config.trigger_price:
-                 acquisition_price = market_info.round_price(self.config.trigger_price)
-            else:
-                 # Find nearest level ABOVE market to sell at
-                 candidates = [z.upper_price for z in self.zones if z.upper_price > self.current_price]
-                 if candidates:
-                     acquisition_price = market_info.round_price(min(candidates))
-                 elif self.zones:
-                     raise ValueError(f"Current price {self.current_price} is above grid range (Max: {self.zones[-1].upper_price}). Cannot acquire quote asset safely.")
+            acquisition_price = self._calculate_acquisition_price(OrderSide.SELL, self.current_price, market_info)
 
             base_to_sell = quote_deficit / acquisition_price
             # Ensure min base amount and min notional
