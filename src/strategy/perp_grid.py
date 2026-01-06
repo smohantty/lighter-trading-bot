@@ -274,9 +274,10 @@ class PerpGridStrategy(Strategy):
 
     def initialize_zones(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
-        self.market = ctx.market_info(self.symbol)
-        if not self.market:
+        market_info = ctx.market_info(self.symbol)
+        if not market_info:
             raise ValueError(f"No market info for {self.symbol}")
+        self.market = market_info
 
         # Validate balance: available_usdc * leverage must cover total_investment
         available_usdc = ctx.get_perp_available("USDC")

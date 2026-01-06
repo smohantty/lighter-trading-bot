@@ -11,7 +11,7 @@ from src.strategy.base import Strategy
 from src.strategy import common
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Cloid, OrderFailure
-from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState, Spread
+from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, SpotGridSummary, GridState, Spread
 
 logger = logging.getLogger("src.strategy.spot_grid")
 
@@ -130,7 +130,7 @@ class SpotGridStrategy(Strategy):
                  else:
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{self.market.price_decimals}f}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
                       self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
@@ -274,9 +274,10 @@ class SpotGridStrategy(Strategy):
 
     def initialize_zones(self, initial_price: Decimal, ctx: StrategyContext):
         self.current_price = initial_price
-        self.market = ctx.market_info(self.config.symbol)
-        if not self.market:
+        market_info = ctx.market_info(self.config.symbol)
+        if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
+        self.market = market_info
         
         # Calculate Grid
         self.zones, required_base, required_quote = self.calculate_grid_plan(initial_price)

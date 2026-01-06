@@ -57,10 +57,6 @@ class ZoneInfo:
     entry_price: Decimal
     roundtrip_count: int
 
-class ZoneStatus(Enum):
-    Idle = auto()
-    Active = auto()
-
 @dataclass
 class GridZone:
     index: int
