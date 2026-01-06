@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 FEE_BUFFER = Spread("0.05")  # 0.05% buffer for fees/slippage
+ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
 INVESTMENT_BUFFER = Spread("0.05")  # 0.05% buffer from total investment
 MAX_RETRIES = 5
 
@@ -325,7 +326,7 @@ class PerpGridStrategy(Strategy):
         size = self.market.round_size(abs(needed_change))
         
         # Price determination
-        price = self.config.trigger_price if self.config.trigger_price else self.current_price
+        price = self._calculate_acquisition_price(side, self.current_price)
         
         logger.info(f"[ORDER_REQUEST] [PERP_GRID] [ACQUISITION] {side} {size} @ {price}")
         
@@ -454,6 +455,30 @@ class PerpGridStrategy(Strategy):
             old_val = abs(old_pos) * self.avg_entry_price
             if current_abs > 0:
                 self.avg_entry_price = (old_val + fill_val) / current_abs
+
+    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal) -> Decimal:
+        """Calculate optimal price for acquiring assets during initial setup."""
+        if self.config.trigger_price:
+            return self.market.round_price(self.config.trigger_price)
+            
+        if side == OrderSide.BUY:
+             # Find nearest level LOWER than market to buy at (Limit Buy below market)
+             candidates = [z.buy_price for z in self.zones if z.buy_price < current_price]
+             if candidates:
+                 return self.market.round_price(max(candidates))
+             elif self.zones:
+                  # Fallback: Price is below grid. Return markdown of current price for BUY.
+                  return self.market.round_price(ACQUISITION_SPREAD.markdown(current_price))
+        else: # SELL
+             # Find nearest level ABOVE market to sell at (Limit Sell above market)
+             candidates = [z.sell_price for z in self.zones if z.sell_price > current_price]
+             if candidates:
+                 return self.market.round_price(min(candidates))
+             elif self.zones:
+                  # Fallback: Price is above grid. Return markup of current price for SELL.
+                  return self.market.round_price(ACQUISITION_SPREAD.markup(current_price))
+                  
+        return self.market.round_price(current_price)
 
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle the fill of an acquisition order during initial setup."""
