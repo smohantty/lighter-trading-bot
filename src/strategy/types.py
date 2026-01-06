@@ -16,6 +16,30 @@ class ZoneMode(Enum):
 
 from dataclasses import dataclass
 from typing import List, Optional, Any, Optional, Union, Any
+from decimal import Decimal
+
+class Spread:
+    """
+    Represents a percentage spread for markup/markdown calculations.
+    
+    0.1 means 0.1% (pips).
+    stored as Decimal('0.1')
+    """
+    def __init__(self, percentage: Union[float, str, Decimal]):
+        self.value = Decimal(str(percentage))
+        
+    def markup(self, value: Union[Decimal, float, int]) -> Decimal:
+        """Returns value * (1 + spread/100)"""
+        d_val = Decimal(str(value))
+        return d_val * (Decimal("1") + (self.value / Decimal("100")))
+
+    def markdown(self, value: Union[Decimal, float, int]) -> Decimal:
+        """Returns value * (1 - spread/100)"""
+        d_val = Decimal(str(value))
+        return d_val * (Decimal("1") - (self.value / Decimal("100")))
+
+    def __repr__(self) -> str:
+        return f"Spread({self.value}%)"
 
 @dataclass
 class ZoneInfo:
