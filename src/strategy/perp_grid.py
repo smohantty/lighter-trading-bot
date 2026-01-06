@@ -217,10 +217,10 @@ class PerpGridStrategy(Strategy):
         prices = [market_info.round_price(p) for p in prices]
 
         # 2. Calculate Size per Zone
-        # Total Investment is Margin. Total Notional = Margin * Leverage
+        # total_investment = Total Notional Value (not margin)
+        # Margin Required = total_investment / leverage (checked against available balance)
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
-        total_notional = adjusted_investment * Decimal(str(self.leverage))
-        notional_per_zone = total_notional / Decimal(str(self.config.grid_count - 1))
+        notional_per_zone = adjusted_investment / Decimal(str(self.config.grid_count - 1))
         
         # Validation
         max_size_estimate = notional_per_zone / Decimal(str(self.config.lower_price))
