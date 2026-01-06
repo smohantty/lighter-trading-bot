@@ -63,23 +63,23 @@ class PerpGridStrategy(Strategy):
         self.state = StrategyState.Initializing
         
         # Performance Metrics
-        self.realized_pnl = Decimal("0.0")
-        self.total_fees = Decimal("0.0")
-        self.unrealized_pnl = Decimal("0.0")
+        self.realized_pnl = Decimal("0")
+        self.total_fees = Decimal("0")
+        self.unrealized_pnl = Decimal("0")
         
         # Position Tracking
-        self.position_size = Decimal("0.0") 
-        self.avg_entry_price = Decimal("0.0")
+        self.position_size = Decimal("0") 
+        self.avg_entry_price = Decimal("0")
         
         # Internal State
-        self.current_price = Decimal("0.0")
+        self.current_price = Decimal("0")
         self.start_time = time.time()
         self.initial_entry_price: Optional[Decimal] = None
         self.trigger_reference_price: Optional[Decimal] = None
         
         # Acquisition State
         self.acquisition_cloid: Optional[Cloid] = None
-        self.acquisition_target_size: Decimal = Decimal("0.0")
+        self.acquisition_target_size: Decimal = Decimal("0")
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
@@ -139,7 +139,7 @@ class PerpGridStrategy(Strategy):
             # Logic for Bias
             pending_side = OrderSide.BUY # Placeholder
             mode = ZoneMode.LONG # Placeholder
-            entry_price = Decimal("0.0")
+            entry_price = Decimal("0")
             
             if self.grid_bias == GridBias.LONG:
                 mode = ZoneMode.LONG
@@ -155,7 +155,7 @@ class PerpGridStrategy(Strategy):
                 else:
                     # WE DO NOT HOLD
                     pending_side = OrderSide.BUY # Target is to open at Lower
-                    entry_price = Decimal("0.0")
+                    entry_price = Decimal("0")
                     
             elif self.grid_bias == GridBias.SHORT:
                 mode = ZoneMode.SHORT
@@ -171,7 +171,7 @@ class PerpGridStrategy(Strategy):
                 else:
                    # WE DO NOT HOLD
                    pending_side = OrderSide.SELL # Target is to open at Upper
-                   entry_price = Decimal("0.0")
+                   entry_price = Decimal("0")
 
             zones.append(GridZone(
                 index=i,
@@ -442,7 +442,7 @@ class PerpGridStrategy(Strategy):
             self.pending_retry_zones.add(idx)
 
     def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
-        unrealized = Decimal("0.0")
+        unrealized = Decimal("0")
         if self.position_size != 0:
             diff = self.current_price - self.avg_entry_price
             if self.position_size < 0: diff = -diff

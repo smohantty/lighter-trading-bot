@@ -173,7 +173,7 @@ class SpotGridStrategy(Strategy):
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
         
-        if self.inventory_base > Decimal("0.0"):
+        if self.inventory_base > 0:
             # Mark to Market existing inventory
             self.avg_entry_price = initial_price
         
@@ -201,7 +201,7 @@ class SpotGridStrategy(Strategy):
         # Use trigger_price if available, otherwise current_price
         initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
 
-        if base_deficit > Decimal("0.0"):
+        if base_deficit > 0:
             # Case 1: Not enough base asset. Need to BUY base asset.
             acquisition_price = initial_price
             
@@ -247,7 +247,7 @@ class SpotGridStrategy(Strategy):
             ))
             return
 
-        elif quote_deficit > Decimal("0.0"):
+        elif quote_deficit > 0:
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
             acquisition_price = initial_price
 
@@ -291,7 +291,7 @@ class SpotGridStrategy(Strategy):
             return
 
         # No Deficit (or negligible)
-        if self.inventory_base > Decimal("0.0"):
+        if self.inventory_base > 0:
              logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price} (No Rebalancing Needed)")
 
         if self.config.trigger_price:
@@ -384,10 +384,10 @@ class SpotGridStrategy(Strategy):
                        self.inventory_base += fill.size
                        self.inventory_quote -= (fill.size * fill.price)
                  else:
-                       self.inventory_base = max(Decimal("0.0"), self.inventory_base - fill.size)
+                       self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
                        self.inventory_quote += (fill.size * fill.price)
                  
-                 if self.inventory_base > Decimal("0.0"):
+                 if self.inventory_base > 0:
                      # Reset avg entry to rebalancing price for the entire position as requested
                      self.avg_entry_price = fill.price
                  
@@ -419,7 +419,7 @@ class SpotGridStrategy(Strategy):
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
-                      if self.inventory_base > Decimal("0.0"):
+                      if self.inventory_base > 0:
                            self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
                       
                       # Flip to SELL at upper price
@@ -431,7 +431,7 @@ class SpotGridStrategy(Strategy):
                       pnl = (fill.price - zone.entry_price) * fill.size
                       logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
                       self.realized_pnl += pnl
-                      self.inventory_base = max(Decimal("0.0"), self.inventory_base - fill.size)
+                      self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
                       
@@ -456,7 +456,7 @@ class SpotGridStrategy(Strategy):
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
              
         # Approx unrealized pnl
-        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > Decimal("0.0") and self.avg_entry_price > Decimal("0.0")) else Decimal("0.0")
+        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0 and self.avg_entry_price > 0) else Decimal("0")
              
         return SpotGridSummary(
             symbol=self.symbol,
