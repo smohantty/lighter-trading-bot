@@ -44,8 +44,8 @@ class Spread:
 @dataclass
 class ZoneInfo:
     index: int
-    lower_price: Decimal
-    upper_price: Decimal
+    buy_price: Decimal
+    sell_price: Decimal
     size: Decimal
     pending_side: str
     has_order: bool
@@ -60,8 +60,8 @@ class ZoneStatus(Enum):
 @dataclass
 class GridZone:
     index: int
-    lower_price: Decimal
-    upper_price: Decimal
+    buy_price: Decimal
+    sell_price: Decimal
     size: Decimal
     pending_side: Any # OrderSide
     mode: Optional[ZoneMode] = None

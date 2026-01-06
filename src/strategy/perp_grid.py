@@ -186,8 +186,8 @@ class PerpGridStrategy(Strategy):
             zones=[
                 ZoneInfo(
                     index=z.index,
-                    lower_price=z.lower_price,
-                    upper_price=z.upper_price,
+                    buy_price=z.buy_price,
+                    sell_price=z.sell_price,
                     size=z.size,
                     pending_side=str(z.pending_side),
                     has_order=z.order_id is not None,
@@ -249,8 +249,8 @@ class PerpGridStrategy(Strategy):
 
             zones.append(GridZone(
                 index=i,
-                lower_price=zone_buy_price,
-                upper_price=zone_sell_price,
+                buy_price=zone_buy_price,
+                sell_price=zone_sell_price,
                 size=size,
                 pending_side=pending_side,
                 mode=mode,
@@ -329,7 +329,7 @@ class PerpGridStrategy(Strategy):
         
         idx = zone.index
         side = zone.pending_side
-        price = zone.lower_price if side.is_buy() else zone.upper_price
+        price = zone.buy_price if side.is_buy() else zone.sell_price
         reduce_only = self._is_reduce_only(zone)
         
         cloid = ctx.place_order(LimitOrderRequest(
@@ -467,7 +467,7 @@ class PerpGridStrategy(Strategy):
             # Filled OPEN (Buy at Lower) -> Next: Close at Upper
             zone.entry_price = fill.price
             zone.pending_side = OrderSide.SELL
-            logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.upper_price}")
+            logger.info(f"[PERP_GRID] Z{idx} BUY (Open) @ {fill.price}. Next: SELL @ {zone.sell_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
@@ -475,7 +475,7 @@ class PerpGridStrategy(Strategy):
             pnl = (fill.price - zone.entry_price) * fill.size
             zone.pending_side = OrderSide.BUY
             zone.roundtrip_count += 1
-            logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.lower_price}")
+            logger.info(f"[PERP_GRID] Z{idx} SELL (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: BUY @ {zone.buy_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         
@@ -490,7 +490,7 @@ class PerpGridStrategy(Strategy):
             # Filled OPEN (Sell at Upper) -> Next: Close at Lower
             zone.entry_price = fill.price
             zone.pending_side = OrderSide.BUY
-            logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.lower_price}")
+            logger.info(f"[PERP_GRID] Z{idx} SELL (Open) @ {fill.price}. Next: BUY @ {zone.buy_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         else:
@@ -498,7 +498,7 @@ class PerpGridStrategy(Strategy):
             pnl = (zone.entry_price - fill.price) * fill.size
             zone.pending_side = OrderSide.SELL
             zone.roundtrip_count += 1
-            logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.upper_price}")
+            logger.info(f"[PERP_GRID] Z{idx} BUY (Close) @ {fill.price}. PnL: {pnl:.4f}. Next: SELL @ {zone.sell_price}")
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         

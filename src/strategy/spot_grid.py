@@ -184,8 +184,8 @@ class SpotGridStrategy(Strategy):
              zones=[
                  ZoneInfo(
                     index=z.index,
-                    lower_price=z.lower_price,
-                    upper_price=z.upper_price,
+                    buy_price=z.buy_price,
+                    sell_price=z.sell_price,
                     size=z.size,
                     pending_side=str(z.pending_side),
                     has_order=z.order_id is not None,
@@ -231,28 +231,28 @@ class SpotGridStrategy(Strategy):
         initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
 
         for i in range(self.config.grid_count - 1):
-            zone_lower_price = prices[i]
-            zone_upper_price = prices[i+1]
-            # Calculate size based on quote investment per zone using zone_lower_price
-            size = market_info.round_size(investment_per_zone_quote / zone_lower_price)
+            zone_buy_price = prices[i]
+            zone_sell_price = prices[i+1]
+            # Calculate size based on quote investment per zone using zone_buy_price
+            size = market_info.round_size(investment_per_zone_quote / zone_buy_price)
             
             # Determine initial state based on zone position relative to current market price:
-            # 1. Zone is ABOVE price: We enter with Base asset -> Pending SELL at Upper Price.
-            # 2. Zone is BELOW price: We enter with Quote asset -> Pending BUY at Lower Price.
+            # 1. Zone is ABOVE price: We enter with Base asset -> Pending SELL at sell_price.
+            # 2. Zone is BELOW price: We enter with Quote asset -> Pending BUY at buy_price.
             
-            if zone_lower_price > initial_price:
+            if zone_buy_price > initial_price:
                  pending_side = OrderSide.SELL
                  required_base += size
                  entry_price = initial_price
             else:
                  pending_side = OrderSide.BUY
-                 required_quote += (size * zone_lower_price)
+                 required_quote += (size * zone_buy_price)
                  entry_price = Decimal("0.0")
 
             zones.append(GridZone(
                 index=i,
-                lower_price=zone_lower_price,
-                upper_price=zone_upper_price,
+                buy_price=zone_buy_price,
+                sell_price=zone_sell_price,
                 size=size,
                 pending_side=pending_side,
                 mode=None, # No ZoneMode for Spot
@@ -420,7 +420,7 @@ class SpotGridStrategy(Strategy):
         
         idx = zone.index
         side = zone.pending_side
-        price = zone.lower_price if side.is_buy() else zone.upper_price
+        price = zone.buy_price if side.is_buy() else zone.sell_price
         size = zone.size
         
         if side.is_sell():
@@ -462,7 +462,7 @@ class SpotGridStrategy(Strategy):
             
         if side == OrderSide.BUY:
              # Find nearest level LOWER than market to buy at (Limit Buy below market)
-             candidates = [z.lower_price for z in self.zones if z.lower_price < current_price]
+             candidates = [z.buy_price for z in self.zones if z.buy_price < current_price]
              if candidates:
                  return market_info.round_price(max(candidates))
              elif self.zones:
@@ -470,7 +470,7 @@ class SpotGridStrategy(Strategy):
                   return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price))
         else: # SELL
              # Find nearest level ABOVE market to sell at (Limit Sell above market)
-             candidates = [z.upper_price for z in self.zones if z.upper_price > current_price]
+             candidates = [z.sell_price for z in self.zones if z.sell_price > current_price]
              if candidates:
                  return market_info.round_price(min(candidates))
              elif self.zones:

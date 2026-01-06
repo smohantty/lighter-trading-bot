@@ -44,10 +44,10 @@ class TestSpotGrid(unittest.TestCase):
         self.assertEqual(len(strategy.zones), 2)
         
         # Check Decimals
-        self.assertEqual(strategy.zones[0].lower_price, Decimal("1.0"))
+        self.assertEqual(strategy.zones[0].buy_price, Decimal("1.0"))
         self.assertEqual(strategy.zones[0].pending_side, OrderSide.BUY)
         
-        self.assertEqual(strategy.zones[1].lower_price, Decimal("1.5"))
+        self.assertEqual(strategy.zones[1].buy_price, Decimal("1.5"))
         self.assertEqual(strategy.zones[1].pending_side, OrderSide.BUY)
         
         self.assertEqual(strategy.inventory_base, Decimal("0.0"))
@@ -67,8 +67,8 @@ class TestSpotGrid(unittest.TestCase):
         # Manual Zone Setup
         zone = GridZone(
             index=0,
-            lower_price=Decimal("1.0"),
-            upper_price=Decimal("2.0"),
+            buy_price=Decimal("1.0"),
+            sell_price=Decimal("2.0"),
             size=Decimal("10.0"),
             pending_side=OrderSide.BUY,
             mode=None,
@@ -106,8 +106,8 @@ class TestSpotGrid(unittest.TestCase):
         # Setup Zone
         zone = GridZone(
             index=0,
-            lower_price=Decimal("1.0"),
-            upper_price=Decimal("2.0"),
+            buy_price=Decimal("1.0"),
+            sell_price=Decimal("2.0"),
             size=Decimal("10.0"),
             pending_side=OrderSide.BUY,
             mode=None
