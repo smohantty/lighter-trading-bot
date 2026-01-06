@@ -26,19 +26,6 @@ class StrategyState(Enum):
     Running = auto()
 
 class SpotGridStrategy(Strategy):
-    """
-    Spot Grid Trading Strategy.
-    
-    Places a grid of limit orders.
-    - Buy orders below current price
-    - Sell orders above current price
-    
-    For Spot:
-    - Requires QUOTE asset (e.g. USDC) to place BUY orders.
-    - Requires BASE asset (e.g. WETH) to place SELL orders.
-    - No leverage, no liquidation logic.
-    - No ZoneMode (Long/Short). Bias is implied by price relation.
-    """
     def __init__(self, config):
         self.config = config
         self.symbol = config.symbol
