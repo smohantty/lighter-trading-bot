@@ -11,11 +11,11 @@ from src.strategy.base import Strategy
 from src.strategy import common
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Cloid, OrderFailure
-from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState
+from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, ZoneStatus, SpotGridSummary, GridState, Spread
 
 logger = logging.getLogger("src.strategy.spot_grid")
-# Decimal logging helper for f-strings? 
-# Usually Decimal formats fine with {:.4f} or {}
+
+FEE_BUFFER = Spread("0.1") # 0.1% buffer
 
 class StrategyState(Enum):
     Initializing = auto()
@@ -206,7 +206,7 @@ class SpotGridStrategy(Strategy):
             acquisition_price = initial_price
             
             # Add 0.1% buffer for fees/rounding safety
-            base_deficit = base_deficit * Decimal("1.001")
+            base_deficit = FEE_BUFFER.markup(base_deficit)
             
             base_deficit = max(base_deficit, market_info.min_base_amount)
             # Use ceiling round for extra safety? market_info.round_size usually rounds half-up.
