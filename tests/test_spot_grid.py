@@ -32,8 +32,8 @@ class TestSpotGrid(unittest.TestCase):
         self.context = MagicMock(spec=StrategyContext)
         self.context.market_info.return_value = self.market_info
         # Default big balance
+        # Default big balance
         self.context.get_spot_available.return_value = Decimal("1000.0")
-        self.context.generate_cloid.side_effect = lambda: Cloid(123)
         # Mock place_order to return a Cloid (since strategy expects it now)
         self.context.place_order.side_effect = lambda req: req.cloid if req.cloid else Cloid(12345)
 

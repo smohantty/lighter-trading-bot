@@ -238,21 +238,19 @@ class PerpGridStrategy(Strategy):
         
         logger.info(f"[PERP_GRID] Acquiring Initial Position: {side} {size} @ {price}")
         
-        cloid = ctx.generate_cloid()
+        # Using Limit order at current/trigger price. 
+        # Ideally should be marketable if we want immediate entry, but limit is safer.
+        cloid = ctx.place_order(LimitOrderRequest(
+            symbol=self.symbol,
+            side=side,
+            price=price,
+            sz=size,
+            reduce_only=False
+        ))
+        
         self.state = StrategyState.AcquiringAssets
         self.acquisition_cloid = cloid
         self.acquisition_target_size = size
-        
-        # Using Limit order at current/trigger price. 
-        # Ideally should be marketable if we want immediate entry, but limit is safer.
-        ctx.place_order(LimitOrderRequest(
-            symbol=self.symbol,
-            side=side,
-            price=market_info.round_price(price),
-            sz=size,
-            reduce_only=False,
-            cloid=cloid
-        ))
 
     def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""

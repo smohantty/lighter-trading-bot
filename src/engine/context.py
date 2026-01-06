@@ -60,18 +60,12 @@ class StrategyContext:
         return self.markets.get(symbol)
 
     def place_order(self, order: OrderRequest) -> Cloid:
-        # User ensures OrderRequest types have cloid attribute (OrderRequest union types do)
-        # We rely on dynamic typing here or explicit checks if needed, but per request implies simple logic.
+        self._cloid_counter += 1
+        cloid = Cloid(self._cloid_counter)
         
-        # Access cloid dynamically to handle Union
-        current_cloid = getattr(order, 'cloid', None)
-        
-        if current_cloid is None:
-             current_cloid = self.generate_cloid()
-             setattr(order, 'cloid', current_cloid)
-             
+        order.cloid = cloid
         self.order_queue.append(order)
-        return current_cloid # type: ignore
+        return cloid
 
     def cancel_order(self, cloid: Cloid):
         # We assume symbol knowledge isn't strictly needed for the internal queue for now, 
@@ -79,10 +73,6 @@ class StrategyContext:
         # But Rust implementation just pushes Cloid.
         self.cancellation_queue.append(cloid)
 
-    def generate_cloid(self) -> Cloid:
-        """Generate a unique client order ID using a counter."""
-        self._cloid_counter += 1
-        return Cloid(self._cloid_counter)
 
     def update_spot_balance(self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]):
         self.spot_balances[asset] = Balance(total=Decimal(str(total)), available=Decimal(str(available)))
