@@ -73,7 +73,17 @@ This project is a direct port of the logic and architecture from the Rust-based 
         }
     }
     ```
-    *To obtain these credentials, use the `system_setup.py` example script in the SDK or export them from the Lighter UI if available.*
+    ### How to obtain credentials:
+    1.  **Account Index**:
+        - Go to [Lighter Portfolio](https://app.lighter.xyz/portfolio).
+        - Connect your wallet.
+        - Your **Account Index** is displayed in the account details or URL (e.g. `.../portfolio/1234`).
+
+    2.  **API Keys**:
+        - Go to [Lighter API Keys](https://app.lighter.xyz/apikeys).
+        - Click "Create New API Key".
+        - Sign the transaction to generate a new key pair.
+        - Copy the **Private Key** (starts with `0x...`) into `agentApiKeys` -> `"0"`.
 
 3.  **Strategy Config**:
     We provide templates for both Spot and Perpetual grid strategies.
