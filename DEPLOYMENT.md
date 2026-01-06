@@ -9,17 +9,11 @@ This guide describes how to deploy the Lighter Trading Bot using `tmux`. This me
 ## Quick Start
 
 ### 1. Start the Bot
-Run the start script. By default, it uses `configs/spot_LIT.yaml`.
+Run the start script. You **must** specify your configuration file.
 
 ```bash
-./deployment/start.sh
+./deployment/start.sh --config configs/my_strategy.yaml
 ```
-
-**Options:**
-- Specify a custom config:
-  ```bash
-  ./deployment/start.sh --config path/to/my_config.yaml
-  ```
 
 ### 2. View the Bot
 To see what the bot is doing (logs, status):

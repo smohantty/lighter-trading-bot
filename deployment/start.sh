@@ -5,8 +5,8 @@ SESSION_NAME="lighter-bot"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
-# Default config path
-CONFIG_PATH="configs/spot_LIT.yaml"
+# Default config path (Must be provided)
+CONFIG_PATH=""
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -16,6 +16,12 @@ while [[ "$#" -gt 0 ]]; do
     esac
     shift
 done
+
+if [ -z "$CONFIG_PATH" ]; then
+    echo "Error: You must provide a configuration file using --config"
+    echo "Usage: ./deployment/start.sh --config configs/my_strategy.yaml"
+    exit 1
+fi
 
 # Check if tmux is installed
 if ! command -v tmux &> /dev/null; then

@@ -76,35 +76,43 @@ This project is a direct port of the logic and architecture from the Rust-based 
     *To obtain these credentials, use the `system_setup.py` example script in the SDK or export them from the Lighter UI if available.*
 
 3.  **Strategy Config**:
-    Edit `config.yaml` to define your grid parameters.
-    ```yaml
-    type: perp_grid
-    symbol: ETH
-    upper_price: 3000.0
-    lower_price: 2000.0
-    grid_type: Geometric  # or Arithmetic
-    grid_count: 10
-    total_investment: 100.0
-    leverage: 5
-    grid_bias: Long      # Long, Short, or Neutral
+    We provide templates for both Spot and Perpetual grid strategies.
+    
+    *   **Spot Grid**: `configs/spot_grid.template.yaml`
+    *   **Perp Grid**: `configs/perp_grid.template.yaml`
+    
+    To create your own strategy:
+    
+    ```bash
+    cp configs/spot_grid.template.yaml configs/my_strategy.yaml
     ```
+    
+    Edit `configs/my_strategy.yaml` with your desired parameters. **Note:** `configs/*.yaml` files (excluding templates) are git-ignored to prevent accidental commits of production settings.
+
+4.  **Simulation Config** (Optional):
+    To customize dry-run/simulation behavior (balances, fees, tick usage):
+    
+    ```bash
+    cp simulation_config.template.json simulation_config.json
+    ```
+    Edit `simulation_config.json` to override balances or set execution modes. You can also specify a custom path using `LIGHTER_SIMULATION_CONFIG_FILE`.
 
 ## Usage
 
 **Run Manually (Deployment):**
 ```bash
-./deployment/start.sh
+./deployment/start.sh --config configs/my_strategy.yaml
 ```
 
 **Run Manually (Dev):**
 ```bash
-uv run python main.py --config configs/spot_LIT.yaml
+uv run python main.py --config configs/my_strategy.yaml
 ```
 
 **Run Dry Run (Simulation):**
-Visualize the grid strategy and required assets without placing orders:
+Visualize the grid strategy and required assets without placing orders. Uses `simulation_config.json` if present.
 ```bash
-uv run python main.py --dry-run --config configs/spot_LIT.yaml
+uv run python main.py --dry-run --config configs/my_strategy.yaml
 ```
 
 **Run Tests:**
