@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import MagicMock
 from decimal import Decimal
-from src.strategy.spot_grid import SpotGridStrategy, GridZone, StrategyState
-from src.strategy.types import GridType, GridBias
+from src.strategy.spot_grid import SpotGridStrategy
+from src.strategy.types import GridType, GridBias, GridZone, StrategyState
 from src.config import SpotGridConfig
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import OrderSide, LimitOrderRequest, OrderFill, Cloid
@@ -63,6 +63,7 @@ class TestSpotGrid(unittest.TestCase):
     def test_fill_lifecycle_rust(self):
         strategy = SpotGridStrategy(self.spot_config)
         strategy.state = StrategyState.Running
+        strategy.market = self.market_info
         
         # Manual Zone Setup
         zone = GridZone(
@@ -102,6 +103,7 @@ class TestSpotGrid(unittest.TestCase):
 
     def test_retry_mechanism(self):
         strategy = SpotGridStrategy(self.spot_config)
+        strategy.state = StrategyState.Running
         
         # Setup Zone
         zone = GridZone(

@@ -15,6 +15,12 @@ class ZoneMode(Enum):
     SHORT = "Short"
     # NEUTRAL = "Neutral"
 
+class StrategyState(Enum):
+    Initializing = auto()
+    WaitingForTrigger = auto()
+    AcquiringAssets = auto()
+    Running = auto()
+
 from dataclasses import dataclass
 from typing import List, Optional, Union, Tuple, TYPE_CHECKING
 from decimal import Decimal

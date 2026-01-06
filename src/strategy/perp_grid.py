@@ -10,7 +10,7 @@ from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import Cloid, OrderFill, OrderSide, LimitOrderRequest, OrderFailure
 from src.config import PerpGridConfig
-from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo, GridZone, Spread
+from src.strategy.types import GridBias, ZoneMode, StrategySummary, PerpGridSummary, GridState, ZoneInfo, GridZone, Spread, StrategyState
 from src.strategy import common
 
 logger = logging.getLogger(__name__)
@@ -20,13 +20,6 @@ logger = logging.getLogger(__name__)
 ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
 INVESTMENT_BUFFER = Spread("0.05")  # 0.05% buffer from total investment
 MAX_RETRIES = 5
-
-
-class StrategyState(Enum):
-    Initializing = auto()
-    WaitingForTrigger = auto()
-    AcquiringAssets = auto()
-    Running = auto()
 
 
 class PerpGridStrategy(Strategy):

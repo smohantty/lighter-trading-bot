@@ -1,9 +1,9 @@
 import pytest
 import math
 from decimal import Decimal
-from src.strategy.perp_grid import PerpGridStrategy, GridZone, StrategyState
+from src.strategy.perp_grid import PerpGridStrategy
 from src.config import PerpGridConfig
-from src.strategy.types import GridType, GridBias, ZoneMode
+from src.strategy.types import GridType, GridBias, ZoneMode, GridZone, StrategyState
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.model import OrderSide, LimitOrderRequest, OrderFill
 

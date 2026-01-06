@@ -11,7 +11,7 @@ from src.strategy.base import Strategy
 from src.strategy import common
 from src.engine.context import StrategyContext, MarketInfo
 from src.model import OrderRequest, LimitOrderRequest, OrderSide, OrderFill, Cloid, OrderFailure
-from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, SpotGridSummary, GridState, Spread
+from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, ZoneInfo, SpotGridSummary, GridState, Spread, StrategyState
 
 logger = logging.getLogger("src.strategy.spot_grid")
 
@@ -20,11 +20,7 @@ ACQUISITION_SPREAD = Spread("0.1") # 0.1% spread for off-grid acquisition
 INVESTMENT_BUFFER = Spread("0.1")
 MAX_RETRIES = 5
 
-class StrategyState(Enum):
-    Initializing = auto()
-    WaitingForTrigger = auto()
-    AcquiringAssets = auto()
-    Running = auto()
+
 
 class SpotGridStrategy(Strategy):
     # =========================================================================
