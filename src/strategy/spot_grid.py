@@ -361,32 +361,35 @@ class SpotGridStrategy(Strategy):
              # Continuously ensure orders are active
              self.refresh_orders(ctx)
 
+    def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
+         self.total_fees += fill.fee
+         if fill.side.is_buy():
+               self.inventory_base += fill.size
+               self.inventory_quote -= (fill.size * fill.price)
+         else:
+               self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
+               self.inventory_quote += (fill.size * fill.price)
+         
+         if self.inventory_base > 0:
+             # Reset avg entry to rebalancing price for the entire position as requested
+             self.avg_entry_price = fill.price
+         
+         logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
+         
+         # Determine entry price for zones now that we have inventory
+         for zone in self.zones:
+              if zone.pending_side.is_sell():
+                   zone.entry_price = fill.price
+         
+         self.state = StrategyState.Running
+         self.initial_entry_price = fill.price
+         self.refresh_orders(ctx)
+
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
         if fill.cloid:
             # Acquisition Fill
             if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
-                 self.total_fees += fill.fee
-                 if fill.side.is_buy():
-                       self.inventory_base += fill.size
-                       self.inventory_quote -= (fill.size * fill.price)
-                 else:
-                       self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
-                       self.inventory_quote += (fill.size * fill.price)
-                 
-                 if self.inventory_base > 0:
-                     # Reset avg entry to rebalancing price for the entire position as requested
-                     self.avg_entry_price = fill.price
-                 
-                 logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
-                 
-                 # Determine entry price for zones now that we have inventory
-                 for zone in self.zones:
-                      if zone.pending_side.is_sell():
-                           zone.entry_price = fill.price
-                 
-                 self.state = StrategyState.Running
-                 self.initial_entry_price = fill.price
-                 self.refresh_orders(ctx)
+                 self._handle_acquisition_fill(fill, ctx)
                  return
 
             # Grid Fill
