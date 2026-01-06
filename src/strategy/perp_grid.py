@@ -79,6 +79,7 @@ class PerpGridStrategy(Strategy):
         # Acquisition State
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: Decimal = Decimal("0")
+        self.market: MarketInfo = None  # type: ignore
         
         self.grid_spacing_pct = common.calculate_grid_spacing_pct(
             self.config.grid_type,
@@ -108,6 +109,9 @@ class PerpGridStrategy(Strategy):
              self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
+        if self.state == StrategyState.Initializing:
+             return
+
         if fill.cloid:
             # 1. Acquisition Fill
             if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
@@ -138,6 +142,9 @@ class PerpGridStrategy(Strategy):
                     self._handle_short_fill(zone, fill, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        if self.state == StrategyState.Initializing:
+             return
+
         cloid = failure.cloid
         if cloid in self.active_order_map:
             zone = self.active_order_map.pop(cloid)
@@ -150,6 +157,9 @@ class PerpGridStrategy(Strategy):
             zone.retry_count += 1
 
     def get_summary(self, ctx: StrategyContext) -> PerpGridSummary:
+        if self.state == StrategyState.Initializing:
+            raise ValueError("Strategy not initialized")
+
         unrealized = Decimal("0")
         if self.position_size != 0:
             diff = self.current_price - self.avg_entry_price
@@ -179,6 +189,9 @@ class PerpGridStrategy(Strategy):
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
+        if self.state == StrategyState.Initializing:
+            raise ValueError("Strategy not initialized")
+
         return GridState(
             symbol=self.symbol,
             strategy_type="perp_grid",
@@ -202,7 +215,7 @@ class PerpGridStrategy(Strategy):
     # GRID SETUP & INITIALIZATION
     # =========================================================================
 
-    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: Decimal) -> tuple[List[GridZone], Decimal]:
+    def calculate_grid_plan(self, reference_price: Decimal) -> tuple[List[GridZone], Decimal]:
         """
         Calculates grid zones and required position size.
         Returns: (zones, required_position_size)
@@ -214,7 +227,7 @@ class PerpGridStrategy(Strategy):
             self.config.upper_price,
             self.config.grid_count
         )
-        prices = [market_info.round_price(p) for p in prices]
+        prices = [self.market.round_price(p) for p in prices]
 
         # 2. Calculate Size per Zone
         # total_investment = Total Notional Value (not margin)
@@ -224,7 +237,7 @@ class PerpGridStrategy(Strategy):
         
         # Validation
         max_size_estimate = notional_per_zone / Decimal(str(self.config.lower_price))
-        min_size_limit = market_info.min_base_amount
+        min_size_limit = self.market.min_base_amount
         if max_size_estimate < min_size_limit:
              logger.warning(f"[PERP_GRID] Size estimate below minimum: {max_size_estimate} < {min_size_limit}")
 
@@ -240,7 +253,7 @@ class PerpGridStrategy(Strategy):
             
             # Use buy price for conservative Notional -> Size conversion
             raw_size = notional_per_zone / zone_buy_price
-            size = market_info.round_size(raw_size)
+            size = self.market.round_size(raw_size)
             
             order_side, mode, entry_price, position_delta = self._calculate_zone_initial_state(
                 zone_buy_price, zone_sell_price, initial_price, size
@@ -261,8 +274,8 @@ class PerpGridStrategy(Strategy):
 
     def initialize_zones(self, price: Decimal, ctx: StrategyContext):
         self.current_price = price
-        market_info = ctx.market_info(self.symbol)
-        if not market_info:
+        self.market = ctx.market_info(self.symbol)
+        if not self.market:
             raise ValueError(f"No market info for {self.symbol}")
 
         # Validate balance: available_usdc * leverage must cover total_investment
@@ -275,17 +288,16 @@ class PerpGridStrategy(Strategy):
             logger.error(f"[PERP_GRID] {msg}")
             raise ValueError(msg)
 
-        self.zones, required_position_size = self.calculate_grid_plan(market_info, price)
+        self.zones, required_position_size = self.calculate_grid_plan(price)
             
         logger.info(f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}")
         
         # Check Initial Acquisition
-        self.check_initial_acquisition(ctx, market_info, required_position_size)
+        self.check_initial_acquisition(ctx, required_position_size)
 
     def check_initial_acquisition(
         self,
         ctx: StrategyContext,
-        market_info: MarketInfo,
         target_position: Decimal
     ) -> None:
         """
@@ -293,7 +305,7 @@ class PerpGridStrategy(Strategy):
         Assumes starting from 0 internal position.
         """
         needed_change = target_position
-        minimal_size = market_info.min_base_amount
+        minimal_size = self.market.min_base_amount
         
         if abs(needed_change) < minimal_size:
             # Negligible
@@ -309,7 +321,7 @@ class PerpGridStrategy(Strategy):
 
         # Need to Acquire
         side = OrderSide.BUY if needed_change > 0 else OrderSide.SELL
-        size = market_info.round_size(abs(needed_change))
+        size = self.market.round_size(abs(needed_change))
         
         # Price determination
         price = self.config.trigger_price if self.config.trigger_price else self.current_price

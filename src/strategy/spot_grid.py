@@ -74,6 +74,7 @@ class SpotGridStrategy(Strategy):
         self.acquisition_target_size: Decimal = Decimal("0")
         
         self.current_price = Decimal("0")
+        self.market: MarketInfo = None  # type: ignore
 
     # =========================================================================
     # STRATEGY LIFECYCLE (Base Class Interface)
@@ -95,6 +96,9 @@ class SpotGridStrategy(Strategy):
              self.refresh_orders(ctx)
 
     def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
+        if self.state == StrategyState.Initializing:
+             return
+
         if fill.cloid:
             # Acquisition Fill
             if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
@@ -108,12 +112,10 @@ class SpotGridStrategy(Strategy):
                  zone.cloid = None
                  self.total_fees += fill.fee
                  
-                 market_info = ctx.market_info(self.symbol)
-                 p_decimals = market_info.price_decimals if market_info else 4
                  
                  if zone.order_side.is_buy():
                       # Buy Fill
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}")
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
                       # Update avg entry
@@ -141,6 +143,9 @@ class SpotGridStrategy(Strategy):
                       self.place_zone_order(zone, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        if self.state == StrategyState.Initializing:
+             return
+
         cloid = failure.cloid
         if cloid in self.active_order_map:
              zone = self.active_order_map.pop(cloid)
@@ -153,6 +158,8 @@ class SpotGridStrategy(Strategy):
              zone.retry_count += 1
 
     def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
+        if self.state == StrategyState.Initializing:
+            raise ValueError("Strategy not initialized")
              
         # Approx unrealized pnl
         unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0 and self.avg_entry_price > 0) else Decimal("0")
@@ -177,6 +184,9 @@ class SpotGridStrategy(Strategy):
         )
 
     def get_grid_state(self, ctx: StrategyContext) -> GridState:
+        if self.state == StrategyState.Initializing:
+            raise ValueError("Strategy not initialized")
+
         return GridState(
              symbol=self.symbol,
              strategy_type="spot_grid",
@@ -200,7 +210,7 @@ class SpotGridStrategy(Strategy):
     # GRID SETUP & INITIALIZATION
     # =========================================================================
 
-    def calculate_grid_plan(self, market_info: MarketInfo, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
+    def calculate_grid_plan(self, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
         """
         Calculates the grid structure and validates basic constraints.
         Returns: (zones, required_base, required_quote)
@@ -213,12 +223,12 @@ class SpotGridStrategy(Strategy):
             self.config.grid_count
         )
         # Round prices
-        prices = [market_info.round_price(p) for p in prices]
+        prices = [self.market.round_price(p) for p in prices]
 
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
         investment_per_zone_quote = adjusted_investment / Decimal(self.config.grid_count - 1)
 
-        min_order_size = market_info.min_quote_amount
+        min_order_size = self.market.min_quote_amount
         if investment_per_zone_quote < min_order_size:
             msg = f"Investment per zone ({investment_per_zone_quote:.2f} {self.quote_asset}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
             logger.error(f"[SPOT_GRID] {msg}")
@@ -234,7 +244,7 @@ class SpotGridStrategy(Strategy):
             zone_buy_price = prices[i]
             zone_sell_price = prices[i+1]
             # Calculate size based on quote investment per zone using zone_buy_price
-            size = market_info.round_size(investment_per_zone_quote / zone_buy_price)
+            size = self.market.round_size(investment_per_zone_quote / zone_buy_price)
             
             # Determine initial state based on zone position relative to current market price:
             # 1. Zone is ABOVE price: We enter with Base asset -> Pending SELL at sell_price.
@@ -264,12 +274,12 @@ class SpotGridStrategy(Strategy):
 
     def initialize_zones(self, initial_price: Decimal, ctx: StrategyContext):
         self.current_price = initial_price
-        market_info = ctx.market_info(self.config.symbol)
-        if not market_info:
+        self.market = ctx.market_info(self.config.symbol)
+        if not self.market:
             raise ValueError(f"No market info for {self.config.symbol}")
         
         # Calculate Grid
-        self.zones, required_base, required_quote = self.calculate_grid_plan(market_info, initial_price)
+        self.zones, required_base, required_quote = self.calculate_grid_plan(initial_price)
 
         # Seed inventory
         avail_base = ctx.get_spot_available(self.base_asset)
@@ -293,12 +303,11 @@ class SpotGridStrategy(Strategy):
             self.avg_entry_price = initial_price
         
         # Check Assets & Rebalance
-        self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
+        self.check_initial_acquisition(ctx, required_base, required_quote, avail_base, avail_quote)
 
     def check_initial_acquisition(
         self, 
         ctx: StrategyContext, 
-        market_info: MarketInfo, 
         total_base_required: Decimal, 
         total_quote_required: Decimal,
         available_base: Decimal,
@@ -321,12 +330,12 @@ class SpotGridStrategy(Strategy):
             # Add 0.1% buffer for fees/rounding safety
             base_deficit = FEE_BUFFER.markup(base_deficit)
             
-            base_deficit = max(base_deficit, market_info.min_base_amount)
+            base_deficit = max(base_deficit, self.market.min_base_amount)
             # Use ceiling round for extra safety? market_info.round_size usually rounds half-up.
             # But the buffer handles the slight edge case.
-            base_deficit = market_info.round_size(base_deficit)
+            base_deficit = self.market.round_size(base_deficit)
 
-            acquisition_price = self._calculate_acquisition_price(OrderSide.BUY, self.current_price, market_info)
+            acquisition_price = self._calculate_acquisition_price(OrderSide.BUY, self.current_price)
 
             estimated_cost = base_deficit * acquisition_price
             
@@ -357,12 +366,12 @@ class SpotGridStrategy(Strategy):
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
             acquisition_price = initial_price
 
-            acquisition_price = self._calculate_acquisition_price(OrderSide.SELL, self.current_price, market_info)
+            acquisition_price = self._calculate_acquisition_price(OrderSide.SELL, self.current_price)
 
             base_to_sell = quote_deficit / acquisition_price
             # Ensure min base amount and min notional
-            base_to_sell = max(base_to_sell, market_info.min_base_amount)
-            base_to_sell = market_info.round_size(base_to_sell)
+            base_to_sell = max(base_to_sell, self.market.min_base_amount)
+            base_to_sell = self.market.round_size(base_to_sell)
 
             estimated_proceeds = base_to_sell * acquisition_price
             logger.info(f"[SPOT_GRID] Quote deficit detected: deficit={quote_deficit} {self.quote_asset}, need to sell ~{base_to_sell} {self.base_asset} (~${estimated_proceeds:.2f}) @ price {acquisition_price}")
@@ -411,8 +420,7 @@ class SpotGridStrategy(Strategy):
 
     def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""
-        market_info = ctx.market_info(self.config.symbol)
-        if not market_info:
+        if not self.market:
             return
         
         if zone.cloid is not None:
@@ -424,7 +432,7 @@ class SpotGridStrategy(Strategy):
         size = zone.size
         
         if side.is_sell():
-            size = market_info.round_size(FEE_BUFFER.markdown(size))
+            size = self.market.round_size(FEE_BUFFER.markdown(size))
         
         # Order Request
         # Let context manage cloid
@@ -455,27 +463,27 @@ class SpotGridStrategy(Strategy):
     # INTERNAL HELPERS
     # =========================================================================
 
-    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal, market_info: MarketInfo) -> Decimal:
+    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal) -> Decimal:
         """Calculate optimal price for acquiring assets during initial setup."""
         if self.config.trigger_price:
-            return market_info.round_price(self.config.trigger_price)
+            return self.market.round_price(self.config.trigger_price)
             
         if side == OrderSide.BUY:
              # Find nearest level LOWER than market to buy at (Limit Buy below market)
              candidates = [z.buy_price for z in self.zones if z.buy_price < current_price]
              if candidates:
-                 return market_info.round_price(max(candidates))
+                 return self.market.round_price(max(candidates))
              elif self.zones:
                   # Fallback: Price is below grid. Return markdown of current price for BUY.
-                  return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price))
+                  return self.market.round_price(ACQUISITION_SPREAD.markdown(current_price))
         else: # SELL
              # Find nearest level ABOVE market to sell at (Limit Sell above market)
              candidates = [z.sell_price for z in self.zones if z.sell_price > current_price]
              if candidates:
-                 return market_info.round_price(min(candidates))
+                 return self.market.round_price(min(candidates))
              elif self.zones:
                   # Fallback: Price is above grid. Return markup of current price for SELL.
-                  return market_info.round_price(ACQUISITION_SPREAD.markup(current_price))
+                  return self.market.round_price(ACQUISITION_SPREAD.markup(current_price))
                   
         return current_price
 
