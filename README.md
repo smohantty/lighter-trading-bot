@@ -78,6 +78,7 @@ This project is a direct port of the logic and architecture from the Rust-based 
         - Go to [Lighter Portfolio](https://app.lighter.xyz/portfolio).
         - Connect your wallet.
         - Your **Account Index** is displayed in the account details or URL (e.g. `.../portfolio/1234`).
+        - *Alternatively*: Use the [Accounts by Address API](https://apidocs.lighter.xyz/reference/accountsbyl1address) with your Master Account (Wallet) Address.
 
     2.  **API Keys**:
         - Go to [Lighter API Keys](https://app.lighter.xyz/apikeys).
