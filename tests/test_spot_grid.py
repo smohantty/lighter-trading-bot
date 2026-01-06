@@ -78,7 +78,7 @@ class TestSpotGrid(unittest.TestCase):
         
         cloid = Cloid(100)
         strategy.active_order_map[cloid] = zone
-        zone.order_id = cloid
+        zone.cloid = cloid
         
         fill = OrderFill(
             side=OrderSide.BUY,
@@ -117,7 +117,7 @@ class TestSpotGrid(unittest.TestCase):
         # Test Failure Increment
         fail_cloid = Cloid(999)
         strategy.active_order_map[fail_cloid] = zone
-        zone.order_id = fail_cloid
+        zone.cloid = fail_cloid
         
         # Simulate Failure
         failure = MagicMock()
@@ -127,7 +127,7 @@ class TestSpotGrid(unittest.TestCase):
         strategy.on_order_failed(failure, self.context)
         
         self.assertEqual(zone.retry_count, 1)
-        self.assertIsNone(zone.order_id)
+        self.assertIsNone(zone.cloid)
         
         # Simulate Max Retries
         from src.strategy.spot_grid import MAX_RETRIES
@@ -140,7 +140,7 @@ class TestSpotGrid(unittest.TestCase):
         # Simulate Reset on Fill
         zone.retry_count = 2
         strategy.active_order_map[fail_cloid] = zone
-        zone.order_id = fail_cloid
+        zone.cloid = fail_cloid
         
         fill = OrderFill(
             side=OrderSide.BUY,

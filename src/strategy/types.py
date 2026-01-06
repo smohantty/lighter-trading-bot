@@ -66,7 +66,7 @@ class GridZone:
     order_side: Any # OrderSide
     mode: Optional[ZoneMode] = None
     entry_price: Decimal = Decimal("0")
-    order_id: Optional[Any] = None # Cloid
+    cloid: Optional[Any] = None # Cloid
     roundtrip_count: int = 0
     retry_count: int = 0
 

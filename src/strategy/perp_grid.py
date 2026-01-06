@@ -118,7 +118,7 @@ class PerpGridStrategy(Strategy):
             if fill.cloid in self.active_order_map:
                 zone = self.active_order_map.pop(fill.cloid)
                 idx = zone.index
-                zone.order_id = None
+                zone.cloid = None
                 self.total_fees += fill.fee
                 
                 # Update Position
@@ -142,7 +142,7 @@ class PerpGridStrategy(Strategy):
         if cloid in self.active_order_map:
             zone = self.active_order_map.pop(cloid)
             idx = zone.index
-            zone.order_id = None
+            zone.cloid = None
             
             logger.warning(f"[ORDER_FAILED][PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
                           f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
@@ -190,7 +190,7 @@ class PerpGridStrategy(Strategy):
                     sell_price=z.sell_price,
                     size=z.size,
                     order_side=str(z.order_side),
-                    has_order=z.order_id is not None,
+                    has_order=z.cloid is not None,
                     is_reduce_only=self._is_reduce_only(z),
                     entry_price=z.entry_price,
                     roundtrip_count=z.roundtrip_count
@@ -324,7 +324,7 @@ class PerpGridStrategy(Strategy):
 
     def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""
-        if zone.order_id is not None:
+        if zone.cloid is not None:
             return
         
         idx = zone.index
@@ -340,7 +340,7 @@ class PerpGridStrategy(Strategy):
             reduce_only=reduce_only
         ))
         
-        zone.order_id = cloid
+        zone.cloid = cloid
         self.active_order_map[cloid] = zone
         
         logger.info(f"[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} @ {price}")
@@ -348,7 +348,7 @@ class PerpGridStrategy(Strategy):
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
         for zone in self.zones:
-            if zone.order_id is None:
+            if zone.cloid is None:
                 if zone.retry_count < MAX_RETRIES:
                      self.place_zone_order(zone, ctx)
 

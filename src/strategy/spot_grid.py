@@ -105,7 +105,7 @@ class SpotGridStrategy(Strategy):
             if fill.cloid in self.active_order_map:
                  zone = self.active_order_map.pop(fill.cloid)
                  idx = zone.index
-                 zone.order_id = None
+                 zone.cloid = None
                  self.total_fees += fill.fee
                  
                  market_info = ctx.market_info(self.symbol)
@@ -145,7 +145,7 @@ class SpotGridStrategy(Strategy):
         if cloid in self.active_order_map:
              zone = self.active_order_map.pop(cloid)
              idx = zone.index
-             zone.order_id = None
+             zone.cloid = None
              
              logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
                            f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
@@ -188,7 +188,7 @@ class SpotGridStrategy(Strategy):
                     sell_price=z.sell_price,
                     size=z.size,
                     order_side=str(z.order_side),
-                    has_order=z.order_id is not None,
+                    has_order=z.cloid is not None,
                     is_reduce_only=False,
                     entry_price=z.entry_price,
                     roundtrip_count=z.roundtrip_count
@@ -415,7 +415,7 @@ class SpotGridStrategy(Strategy):
         if not market_info:
             return
         
-        if zone.order_id is not None:
+        if zone.cloid is not None:
             return  # Already has an order
         
         idx = zone.index
@@ -436,7 +436,7 @@ class SpotGridStrategy(Strategy):
             reduce_only=False
         ))
         
-        zone.order_id = cloid
+        zone.cloid = cloid
         self.active_order_map[cloid] = zone
 
         logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
@@ -444,7 +444,7 @@ class SpotGridStrategy(Strategy):
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
         for zone in self.zones:
-            if zone.order_id is None:
+            if zone.cloid is None:
                 if zone.retry_count < MAX_RETRIES:
                      self.place_zone_order(zone, ctx)
                 else:

@@ -114,7 +114,7 @@ def test_perp_grid_execution_flow():
     ctx.order_queue.clear()
     
     # Find cloid for zone 1
-    zone1_cloid = strategy.zones[1].order_id
+    zone1_cloid = strategy.zones[1].cloid
     assert zone1_cloid is not None
     
     fill = OrderFill(
