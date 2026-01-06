@@ -1,8 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
+from decimal import Decimal
 from src.engine.engine import Engine
-from src.config import ExchangeConfig, NoOpConfig
-from src.strategy.noop import NoOpStrategy
+from src.config import ExchangeConfig, SpotGridConfig
+from src.strategy.spot_grid import SpotGridStrategy
+from src.strategy.types import GridType
 
 class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
     async def test_market_map_parsing(self):
@@ -14,8 +16,15 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
         exch_conf.agent_private_key = "00"*32 # Valid hex
         exch_conf.symbol = "DOT"
         
-        strat_conf = NoOpConfig(symbol="DOT", type="noop")
-        strategy = NoOpStrategy()
+        strat_conf = SpotGridConfig(
+             symbol="DOT", 
+             lower_price=1.0, 
+             upper_price=2.0, 
+             grid_type=GridType.ARITHMETIC, 
+             grid_count=10, 
+             total_investment=100.0
+        )
+        strategy = SpotGridStrategy(strat_conf)
         
         # Mock Engine clients
         with patch('src.engine.engine.lighter') as mock_lighter:
@@ -122,7 +131,7 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(dot_info.market_type, "perp")
             self.assertEqual(dot_info.price_decimals, 5)
             self.assertEqual(dot_info.sz_decimals, 1)
-            self.assertEqual(dot_info.min_base_amount, 2.0)
+            self.assertEqual(dot_info.min_base_amount, Decimal("2.0"))
             
             # WLD (Perp) -> 6
             self.assertIn("WLD", engine.market_map)

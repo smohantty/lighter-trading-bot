@@ -164,14 +164,6 @@ class PerpGridConfig:
         if self.total_investment <= 0.0:
             raise ValueError("Total investment must be positive.")
 
-@dataclass
-class NoOpConfig:
-    symbol: str
-    type: str = "noop"
-
-    def validate(self):
-        if not self.symbol:
-            raise ValueError("Symbol is required for NoOpStrategy.")
 
 @dataclass
 class WalletConfig:
@@ -251,7 +243,7 @@ class ExchangeConfig:
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
 
-Config = Union[SpotGridConfig, PerpGridConfig, NoOpConfig]
+Config = Union[SpotGridConfig, PerpGridConfig]
 StrategyConfig = Config
 
 def load_config(path: str) -> Config:
@@ -274,9 +266,5 @@ def load_config(path: str) -> Config:
         perp_cfg = PerpGridConfig(**data)
         perp_cfg.validate()
         return perp_cfg
-    elif strategy_type == "noop":
-         noop_cfg = NoOpConfig(**data)
-         noop_cfg.validate()
-         return noop_cfg
     else:
         raise ValueError(f"Unknown strategy type: {strategy_type}")
