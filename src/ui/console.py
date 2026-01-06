@@ -106,11 +106,11 @@ class ConsoleRenderer:
             
             caret = " "
                 
-            # Calculations - print as-is
+            # Calculations - format spread and pnl to 2 decimals
             spread_pct = ((z.sell_price - z.buy_price) / z.buy_price) * 100
             exp_pnl = (z.sell_price - z.buy_price) * z.size
             
-            print(f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10} | {z.size:<12} | {exp_pnl:<12} | {z.order_side:<6} | {status}")
+            print(f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10.2f} | {z.size:<12} | {exp_pnl:<12.2f} | {z.order_side:<6} | {status}")
             
         if len(g.zones) > 100:
             print(f"... (Hiding {len(g.zones)-100} zones) ...")
