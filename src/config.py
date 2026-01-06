@@ -1,5 +1,7 @@
 import yaml
 import os
+import json
+import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional, Literal, Union, Dict
@@ -69,7 +71,6 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
     }
     ```
     """
-    import json
     
     # Resolution order: arg > env > default
     if path is None:
@@ -106,7 +107,6 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
         return config
         
     except Exception as e:
-        import logging
         logging.getLogger(__name__).warning(f"Failed to load simulation config from {path}: {e}. Using defaults.")
         return SimulationConfig()
 
@@ -189,8 +189,6 @@ class ExchangeConfig:
 
     @staticmethod
     def from_env():
-        import json
-        
         config_path = os.getenv("LIGHTER_WALLET_CONFIG_FILE")
         if not config_path:
             raise ValueError("LIGHTER_WALLET_CONFIG_FILE environment variable must be set")

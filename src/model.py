@@ -68,7 +68,6 @@ class OrderFill:
     raw_dir: Optional[str] = None
 
 @dataclass
-@dataclass
 class PendingOrder:
     """Tracks an order that may fill in multiple parts."""
     target_size: Decimal
@@ -83,7 +82,6 @@ class PendingOrder:
 
 
 @dataclass
-@dataclass
 class OrderFailure:
     """Information about a failed order, including any partial fills."""
     cloid: 'Cloid'
@@ -97,7 +95,6 @@ class OrderFailure:
 
 
 @dataclass
-@dataclass
 class LimitOrderRequest:
     symbol: str
     side: OrderSide
@@ -106,7 +103,6 @@ class LimitOrderRequest:
     reduce_only: bool
     cloid: Optional[Cloid] = None
 
-@dataclass
 @dataclass
 class MarketOrderRequest:
     symbol: str
@@ -145,7 +141,6 @@ class Order:
 
 
 @dataclass
-@dataclass
 class TradeDetails:
     side: OrderSide
     oid: int
@@ -160,7 +155,6 @@ class TradeDetails:
                 f"role={self.role.value}, fee={self.fee}, "
                 f"market_id={self.market_id}, price={self.price}, size={self.size})")
 
-@dataclass
 @dataclass
 class Trade:
     type: str
