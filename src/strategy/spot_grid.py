@@ -15,8 +15,9 @@ from src.strategy.types import GridZone, GridType, GridBias, StrategySummary, Zo
 
 logger = logging.getLogger("src.strategy.spot_grid")
 
-FEE_BUFFER = Spread("0.1") # 0.1% buffer
+FEE_BUFFER = Spread("0.05") # 0.05% buffer
 ACQUISITION_SPREAD = Spread("0.1") # 0.1% spread for off-grid acquisition
+INVESTMENT_BUFFER = Spread("0.1")
 MAX_RETRIES = 5
 
 class StrategyState(Enum):
@@ -85,11 +86,9 @@ class SpotGridStrategy(Strategy):
         # Round prices
         prices = [market_info.round_price(p) for p in prices]
 
-        # Deduct 0.05% buffer from total investment to ensure we cover fees/slippage
-        adjusted_investment = self.total_investment * Decimal("0.9995")
+        adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
         investment_per_zone_quote = adjusted_investment / Decimal(self.config.grid_count - 1)
 
-        # Validation: Check minimum order size
         min_order_size = market_info.min_quote_amount
         if investment_per_zone_quote < min_order_size:
             msg = f"Investment per zone ({investment_per_zone_quote:.2f} {self.quote_asset}) is less than minimum order value ({min_order_size}). Increase total_investment or decrease grid_count."
@@ -316,10 +315,8 @@ class SpotGridStrategy(Strategy):
         price = zone.lower_price if side.is_buy() else zone.upper_price
         size = zone.size
         
-        # For SELL orders, use 99.95% of zone size to account for base asset fee deduction
-        # (fees are deducted from the base asset when buying, so we have slightly less to sell)
         if side.is_sell():
-            size = market_info.round_size(size * Decimal("0.9995"))
+            size = market_info.round_size(FEE_BUFFER.markdown(size))
         
         # Order Request
         # Let context manage cloid
