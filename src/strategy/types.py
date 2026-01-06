@@ -1,3 +1,4 @@
+from __future__ import annotations
 from enum import Enum, auto
 
 class GridBias(str, Enum):
@@ -15,8 +16,11 @@ class ZoneMode(Enum):
     # NEUTRAL = "Neutral"
 
 from dataclasses import dataclass
-from typing import List, Optional, Any, Optional, Union, Any
+from typing import List, Optional, Union, Tuple, TYPE_CHECKING
 from decimal import Decimal
+
+if TYPE_CHECKING:
+    from src.model import Cloid, OrderSide
 
 class Spread:
     """
@@ -63,10 +67,10 @@ class GridZone:
     buy_price: Decimal
     sell_price: Decimal
     size: Decimal
-    order_side: Any # OrderSide
+    order_side: OrderSide
     mode: Optional[ZoneMode] = None
     entry_price: Decimal = Decimal("0")
-    cloid: Optional[Any] = None # Cloid
+    cloid: Optional[Cloid] = None
     roundtrip_count: int = 0
     retry_count: int = 0
 
@@ -93,7 +97,7 @@ class PerpGridSummary:
     grid_count: int
     range_low: Decimal
     range_high: Decimal
-    grid_spacing_pct: Any
+    grid_spacing_pct: Tuple[Decimal, Decimal]
     roundtrips: int
     margin_balance: Decimal
     initial_entry_price: Optional[Decimal]
@@ -112,7 +116,7 @@ class SpotGridSummary:
     grid_count: int
     range_low: Decimal
     range_high: Decimal
-    grid_spacing_pct: Any # (min, max)
+    grid_spacing_pct: Tuple[Decimal, Decimal]
     roundtrips: int
     base_balance: Decimal
     quote_balance: Decimal
