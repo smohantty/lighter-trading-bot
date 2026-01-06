@@ -1,0 +1,10 @@
+type: perp_grid
+symbol: BTC-PERP
+leverage: 5
+upper_price: 110000.0
+lower_price: 90000.0
+grid_type: Arithmetic # Arithmetic or Geometric
+grid_count: 50
+total_investment: 1000.0 # Total notional value at risk (margin * leverage must cover this)
+grid_bias: Long # Long, Short (Neutral removed)
+# trigger_price: 95000.0 # Optional: Wait for price to hit this before starting

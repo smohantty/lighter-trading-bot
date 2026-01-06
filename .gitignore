@@ -8,6 +8,13 @@ venv/
 # Configuration (Sensitive)
 wallet_config.json
 
+# Strategy Configs
+configs/*.yaml
+!configs/*.template.yaml
+!configs/example_*.yaml
+# Keep existing examples if they are already tracked/committed, or user explicitly renames them.
+
+
 # IDE
 .vscode/
 .idea/
