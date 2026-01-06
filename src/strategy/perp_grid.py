@@ -52,7 +52,7 @@ class PerpGridStrategy(Strategy):
         self.symbol = config.symbol
         self.leverage = config.leverage
         self.grid_count = config.grid_count
-        self.total_investment = config.total_investment  # This is Margin amount (USDC)
+        self.total_investment = config.total_investment  # Max notional exposure at grid extremes
         self.grid_bias = config.grid_bias
         
         self.zones: List[GridZone] = []
@@ -264,6 +264,16 @@ class PerpGridStrategy(Strategy):
         market_info = ctx.market_info(self.symbol)
         if not market_info:
             raise ValueError(f"No market info for {self.symbol}")
+
+        # Validate balance: available_usdc * leverage must cover total_investment
+        available_usdc = ctx.get_perp_available("USDC")
+        max_notional = available_usdc * Decimal(str(self.leverage))
+        if max_notional < self.total_investment:
+            margin_required = self.total_investment / Decimal(str(self.leverage))
+            msg = (f"Insufficient margin! Available: {available_usdc:.2f} USDC (max notional: {max_notional:.2f}). "
+                   f"Required: {margin_required:.2f} USDC for {self.total_investment:.2f} notional at {self.leverage}x leverage.")
+            logger.error(f"[PERP_GRID] {msg}")
+            raise ValueError(msg)
 
         self.zones, required_position_size = self.calculate_grid_plan(market_info, price)
             
