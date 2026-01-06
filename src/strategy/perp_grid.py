@@ -16,7 +16,7 @@ from src.strategy import common
 logger = logging.getLogger(__name__)
 
 # Constants
-FEE_BUFFER = Spread("0.05")  # 0.05% buffer for fees/slippage
+
 ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
 INVESTMENT_BUFFER = Spread("0.05")  # 0.05% buffer from total investment
 MAX_RETRIES = 5
