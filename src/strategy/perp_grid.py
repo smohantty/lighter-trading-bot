@@ -137,9 +137,9 @@ class PerpGridStrategy(Strategy):
 
                 # Handle PnL and State Flip based on zone mode
                 if zone.mode == ZoneMode.LONG:
-                    self._handle_long_fill(zone, fill, ctx)
+                    self._handle_long_bias_fill(zone, fill, ctx)
                 elif zone.mode == ZoneMode.SHORT:
-                    self._handle_short_fill(zone, fill, ctx)
+                    self._handle_short_bias_fill(zone, fill, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
         if self.state == StrategyState.Initializing:
@@ -481,7 +481,7 @@ class PerpGridStrategy(Strategy):
         self.initial_entry_price = fill.price
         self.refresh_orders(ctx)
 
-    def _handle_long_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
+    def _handle_long_bias_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle fill logic for LONG bias zones."""
         idx = zone.index
         pnl = Decimal("0.0")
@@ -504,7 +504,7 @@ class PerpGridStrategy(Strategy):
         
         self.realized_pnl += pnl
 
-    def _handle_short_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
+    def _handle_short_bias_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle fill logic for SHORT bias zones."""
         idx = zone.index
         pnl = Decimal("0.0")
