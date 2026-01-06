@@ -27,6 +27,10 @@ class StrategyState(Enum):
     Running = auto()
 
 class SpotGridStrategy(Strategy):
+    # =========================================================================
+    # INITIALIZATION
+    # =========================================================================
+    
     def __init__(self, config):
         self.config = config
         self.symbol = config.symbol
@@ -70,6 +74,131 @@ class SpotGridStrategy(Strategy):
         self.acquisition_target_size: Decimal = Decimal("0")
         
         self.current_price = Decimal("0")
+
+    # =========================================================================
+    # STRATEGY LIFECYCLE (Base Class Interface)
+    # =========================================================================
+
+    def on_tick(self, price: Decimal, ctx: StrategyContext):
+        self.current_price = price
+        if self.state == StrategyState.Initializing:
+             self.initialize_zones(price, ctx)
+        elif self.state == StrategyState.WaitingForTrigger:
+             if self.config.trigger_price and self.trigger_reference_price:
+                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
+                      logger.info(f"[SPOT_GRID] [Triggered] at {price}")
+                      self.initial_entry_price = price
+                      self.state = StrategyState.Running
+                      self.refresh_orders(ctx)
+        elif self.state == StrategyState.Running:
+             # Continuously ensure orders are active
+             self.refresh_orders(ctx)
+
+    def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
+        if fill.cloid:
+            # Acquisition Fill
+            if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
+                 self._handle_acquisition_fill(fill, ctx)
+                 return
+
+            # Grid Fill
+            if fill.cloid in self.active_order_map:
+                 zone = self.active_order_map.pop(fill.cloid)
+                 idx = zone.index
+                 zone.order_id = None
+                 self.total_fees += fill.fee
+                 
+                 market_info = ctx.market_info(self.symbol)
+                 p_decimals = market_info.price_decimals if market_info else 4
+                 
+                 if zone.pending_side.is_buy():
+                      # Buy Fill
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}")
+                      self.inventory_base += fill.size
+                      self.inventory_quote -= (fill.size * fill.price)
+                      # Update avg entry
+                      if self.inventory_base > 0:
+                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
+                      
+                      # Flip to SELL at upper price
+                      zone.pending_side = OrderSide.SELL
+                      zone.entry_price = fill.price
+                      zone.retry_count = 0 # Reset retries on fill
+                      self.place_zone_order(zone, ctx)
+                 else:
+                      # Sell Fill
+                      pnl = (fill.price - zone.entry_price) * fill.size
+                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
+                      self.realized_pnl += pnl
+                      self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
+                      self.inventory_quote += (fill.size * fill.price)
+                      zone.roundtrip_count += 1
+                      zone.retry_count = 0 # Reset retries on fill
+                      
+                      # Flip to BUY at lower price
+                      zone.pending_side = OrderSide.BUY
+                      zone.entry_price = Decimal("0.0")
+                      self.place_zone_order(zone, ctx)
+
+    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
+        cloid = failure.cloid
+        if cloid in self.active_order_map:
+             zone = self.active_order_map.pop(cloid)
+             idx = zone.index
+             zone.order_id = None
+             
+             logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
+                           f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
+             
+             zone.retry_count += 1
+
+    def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
+             
+        # Approx unrealized pnl
+        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0 and self.avg_entry_price > 0) else Decimal("0")
+             
+        return SpotGridSummary(
+            symbol=self.symbol,
+            state=self.state.name,
+            uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
+            position_size=self.inventory_base,
+            avg_entry_price=self.avg_entry_price,
+            realized_pnl=self.realized_pnl,
+            unrealized_pnl=unrealized,
+            total_fees=self.total_fees,
+            initial_entry_price=self.initial_entry_price,
+            grid_count=len(self.zones),
+            range_low=self.config.lower_price,
+            range_high=self.config.upper_price,
+            grid_spacing_pct=self.grid_spacing_pct,
+            roundtrips=sum(z.roundtrip_count for z in self.zones),
+            base_balance=self.inventory_base,
+            quote_balance=self.inventory_quote
+        )
+
+    def get_grid_state(self, ctx: StrategyContext) -> GridState:
+        return GridState(
+             symbol=self.symbol,
+             strategy_type="spot_grid",
+             grid_bias=None,
+             zones=[
+                 ZoneInfo(
+                    index=z.index,
+                    lower_price=z.lower_price,
+                    upper_price=z.upper_price,
+                    size=z.size,
+                    pending_side=str(z.pending_side),
+                    has_order=z.order_id is not None,
+                    is_reduce_only=False,
+                    entry_price=z.entry_price,
+                    roundtrip_count=z.roundtrip_count
+                 ) for z in self.zones
+             ]
+        )
+
+    # =========================================================================
+    # GRID SETUP & INITIALIZATION
+    # =========================================================================
 
     def calculate_grid_plan(self, market_info: MarketInfo, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
         """
@@ -133,29 +262,6 @@ class SpotGridStrategy(Strategy):
             
         return zones, required_base, required_quote
 
-    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal, market_info: MarketInfo) -> Decimal:
-        if self.config.trigger_price:
-            return market_info.round_price(self.config.trigger_price)
-            
-        if side == OrderSide.BUY:
-             # Find nearest level LOWER than market to buy at (Limit Buy below market)
-             candidates = [z.lower_price for z in self.zones if z.lower_price < current_price]
-             if candidates:
-                 return market_info.round_price(max(candidates))
-             elif self.zones:
-                  # Fallback: Price is below grid. Return markdown of current price for BUY.
-                  return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price))
-        else: # SELL
-             # Find nearest level ABOVE market to sell at (Limit Sell above market)
-             candidates = [z.upper_price for z in self.zones if z.upper_price > current_price]
-             if candidates:
-                 return market_info.round_price(min(candidates))
-             elif self.zones:
-                  # Fallback: Price is above grid. Return markup of current price for SELL.
-                  return market_info.round_price(ACQUISITION_SPREAD.markup(current_price))
-                  
-        return current_price
-
     def initialize_zones(self, initial_price: Decimal, ctx: StrategyContext):
         self.current_price = initial_price
         market_info = ctx.market_info(self.config.symbol)
@@ -188,8 +294,6 @@ class SpotGridStrategy(Strategy):
         
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, market_info, required_base, required_quote, avail_base, avail_quote)
-
-
 
     def check_initial_acquisition(
         self, 
@@ -301,6 +405,10 @@ class SpotGridStrategy(Strategy):
              self.state = StrategyState.Running
              self.refresh_orders(ctx)
 
+    # =========================================================================
+    # ORDER MANAGEMENT
+    # =========================================================================
+
     def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
         """Place an order for a zone based on its current state."""
         market_info = ctx.market_info(self.config.symbol)
@@ -343,143 +451,55 @@ class SpotGridStrategy(Strategy):
                      # Optional: Log zombie state occasionally?
                      pass
 
-    def on_tick(self, price: Decimal, ctx: StrategyContext):
-        self.current_price = price
-        if self.state == StrategyState.Initializing:
-             self.initialize_zones(price, ctx)
-        elif self.state == StrategyState.WaitingForTrigger:
-             if self.config.trigger_price and self.trigger_reference_price:
-                 if common.check_trigger(price, self.config.trigger_price, self.trigger_reference_price):
-                      logger.info(f"[SPOT_GRID] [Triggered] at {price}")
-                      self.initial_entry_price = price
-                      self.state = StrategyState.Running
-                      self.refresh_orders(ctx)
-        elif self.state == StrategyState.Running:
-             # Continuously ensure orders are active
-             self.refresh_orders(ctx)
+    # =========================================================================
+    # INTERNAL HELPERS
+    # =========================================================================
+
+    def _calculate_acquisition_price(self, side: OrderSide, current_price: Decimal, market_info: MarketInfo) -> Decimal:
+        """Calculate optimal price for acquiring assets during initial setup."""
+        if self.config.trigger_price:
+            return market_info.round_price(self.config.trigger_price)
+            
+        if side == OrderSide.BUY:
+             # Find nearest level LOWER than market to buy at (Limit Buy below market)
+             candidates = [z.lower_price for z in self.zones if z.lower_price < current_price]
+             if candidates:
+                 return market_info.round_price(max(candidates))
+             elif self.zones:
+                  # Fallback: Price is below grid. Return markdown of current price for BUY.
+                  return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price))
+        else: # SELL
+             # Find nearest level ABOVE market to sell at (Limit Sell above market)
+             candidates = [z.upper_price for z in self.zones if z.upper_price > current_price]
+             if candidates:
+                 return market_info.round_price(min(candidates))
+             elif self.zones:
+                  # Fallback: Price is above grid. Return markup of current price for SELL.
+                  return market_info.round_price(ACQUISITION_SPREAD.markup(current_price))
+                  
+        return current_price
 
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
-         self.total_fees += fill.fee
-         if fill.side.is_buy():
-               self.inventory_base += fill.size
-               self.inventory_quote -= (fill.size * fill.price)
-         else:
-               self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
-               self.inventory_quote += (fill.size * fill.price)
+        """Handle the fill of an acquisition order during initial setup."""
+        self.total_fees += fill.fee
+        if fill.side.is_buy():
+              self.inventory_base += fill.size
+              self.inventory_quote -= (fill.size * fill.price)
+        else:
+              self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
+              self.inventory_quote += (fill.size * fill.price)
          
-         if self.inventory_base > 0:
+        if self.inventory_base > 0:
              # Reset avg entry to rebalancing price for the entire position as requested
              self.avg_entry_price = fill.price
          
-         logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
+        logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
          
-         # Determine entry price for zones now that we have inventory
-         for zone in self.zones:
-              if zone.pending_side.is_sell():
-                   zone.entry_price = fill.price
+        # Determine entry price for zones now that we have inventory
+        for zone in self.zones:
+             if zone.pending_side.is_sell():
+                  zone.entry_price = fill.price
          
-         self.state = StrategyState.Running
-         self.initial_entry_price = fill.price
-         self.refresh_orders(ctx)
-
-    def on_order_filled(self, fill: OrderFill, ctx: StrategyContext):
-        if fill.cloid:
-            # Acquisition Fill
-            if self.state == StrategyState.AcquiringAssets and fill.cloid == self.acquisition_cloid:
-                 self._handle_acquisition_fill(fill, ctx)
-                 return
-
-            # Grid Fill
-            if fill.cloid in self.active_order_map:
-                 zone = self.active_order_map.pop(fill.cloid)
-                 idx = zone.index
-                 zone.order_id = None
-                 self.total_fees += fill.fee
-                 
-                 market_info = ctx.market_info(self.symbol)
-                 p_decimals = market_info.price_decimals if market_info else 4
-                 
-                 if zone.pending_side.is_buy():
-                      # Buy Fill
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}")
-                      self.inventory_base += fill.size
-                      self.inventory_quote -= (fill.size * fill.price)
-                      # Update avg entry
-                      if self.inventory_base > 0:
-                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
-                      
-                      # Flip to SELL at upper price
-                      zone.pending_side = OrderSide.SELL
-                      zone.entry_price = fill.price
-                      zone.retry_count = 0 # Reset retries on fill
-                      self.place_zone_order(zone, ctx)
-                 else:
-                      # Sell Fill
-                      pnl = (fill.price - zone.entry_price) * fill.size
-                      logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{p_decimals}f}. PnL: {pnl:.4f}")
-                      self.realized_pnl += pnl
-                      self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
-                      self.inventory_quote += (fill.size * fill.price)
-                      zone.roundtrip_count += 1
-                      zone.retry_count = 0 # Reset retries on fill
-                      
-                      # Flip to BUY at lower price
-                      zone.pending_side = OrderSide.BUY
-                      zone.entry_price = Decimal("0.0")
-                      self.place_zone_order(zone, ctx)
-
-    def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
-        cloid = failure.cloid
-        if cloid in self.active_order_map:
-             zone = self.active_order_map.pop(cloid)
-             idx = zone.index
-             zone.order_id = None
-             
-             logger.warning(f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
-                           f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}")
-             
-             zone.retry_count += 1
-
-    def get_summary(self, ctx: StrategyContext) -> SpotGridSummary:
-             
-        # Approx unrealized pnl
-        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0 and self.avg_entry_price > 0) else Decimal("0")
-             
-        return SpotGridSummary(
-            symbol=self.symbol,
-            state=self.state.name,
-            uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
-            position_size=self.inventory_base,
-            avg_entry_price=self.avg_entry_price,
-            realized_pnl=self.realized_pnl,
-            unrealized_pnl=unrealized,
-            total_fees=self.total_fees,
-            initial_entry_price=self.initial_entry_price,
-            grid_count=len(self.zones),
-            range_low=self.config.lower_price,
-            range_high=self.config.upper_price,
-            grid_spacing_pct=self.grid_spacing_pct,
-            roundtrips=sum(z.roundtrip_count for z in self.zones),
-            base_balance=self.inventory_base,
-            quote_balance=self.inventory_quote
-        )
-
-    def get_grid_state(self, ctx: StrategyContext) -> GridState:
-        return GridState(
-             symbol=self.symbol,
-             strategy_type="spot_grid",
-             grid_bias=None,
-             zones=[
-                 ZoneInfo(
-                    index=z.index,
-                    lower_price=z.lower_price,
-                    upper_price=z.upper_price,
-                    size=z.size,
-                    pending_side=str(z.pending_side),
-                    has_order=z.order_id is not None,
-                    is_reduce_only=False,
-                    entry_price=z.entry_price,
-                    roundtrip_count=z.roundtrip_count
-                 ) for z in self.zones
-             ]
-        )
+        self.state = StrategyState.Running
+        self.initial_entry_price = fill.price
+        self.refresh_orders(ctx)
