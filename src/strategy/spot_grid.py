@@ -69,6 +69,12 @@ class SpotGridStrategy(Strategy):
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: Decimal = Decimal("0")
         
+        # Acquisition State Tracking
+        self.initial_avail_base = Decimal("0")
+        self.initial_avail_quote = Decimal("0")
+        self.required_base = Decimal("0")
+        self.required_quote = Decimal("0")
+        
         self.current_price = Decimal("0")
         self.market: MarketInfo = None  # type: ignore
 
@@ -291,6 +297,11 @@ class SpotGridStrategy(Strategy):
              logger.error(f"[SPOT_GRID] {msg}")
              raise ValueError(msg)
 
+        self.required_base = required_base
+        self.required_quote = required_quote
+        self.initial_avail_base = avail_base
+        self.initial_avail_quote = avail_quote
+
         logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}")
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
@@ -478,23 +489,35 @@ class SpotGridStrategy(Strategy):
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle the fill of an acquisition order during initial setup."""
         self.total_fees += fill.fee
+        
+        # Re-calculate available balances based on the snapshot + fill
+        # This prevents double accounting if we sold surplus assets.
+        
         if fill.side.is_buy():
-              self.inventory_base += fill.size
-              self.inventory_quote -= (fill.size * fill.price)
+              new_real_base = self.initial_avail_base + fill.size
+              new_real_quote = self.initial_avail_quote - (fill.size * fill.price)
         else:
-              self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
-              self.inventory_quote += (fill.size * fill.price)
+              new_real_base = self.initial_avail_base - fill.size
+              new_real_quote = self.initial_avail_quote + (fill.size * fill.price)
+        
+        new_real_base = max(Decimal("0"), new_real_base)
+        new_real_quote = max(Decimal("0"), new_real_quote)
+
+        # Update Inventory: Clamp to requirements
+        # If we have surplus, we only track up to the requirement.
+        self.inventory_base = min(new_real_base, self.required_base)
+        self.inventory_quote = min(new_real_quote, self.required_quote)
          
         if self.inventory_base > 0:
              # Reset avg entry to rebalancing price for the entire position as requested
              self.avg_entry_price = fill.price
          
-        logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. New Position Size: {self.inventory_base} {self.base_asset}. Acquisition Price: {fill.price}. Avg Entry: {self.avg_entry_price}")
+        logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}. Avg Entry: {self.avg_entry_price}")
          
         # Determine entry price for zones now that we have inventory
         for zone in self.zones:
              if zone.order_side.is_sell():
-                  zone.entry_price = fill.price
+                   zone.entry_price = fill.price
          
         self.state = StrategyState.Running
         self.initial_entry_price = fill.price
