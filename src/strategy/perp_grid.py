@@ -26,7 +26,7 @@ class PerpGridStrategy(Strategy):
     """
     Perpetual Grid Trading Strategy.
     
-    Operates with a directional bias (LONG or SHORT) where it sells to open -> buy to close and vice versa.
+    Operates with a directional bias: Long Bias (Buy to Open, Sell to Close) or Short Bias (Sell to Open, Buy to Close).
         
     Uses 'USDC' as collateral.
     """
