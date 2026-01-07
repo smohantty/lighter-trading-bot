@@ -218,8 +218,6 @@ class PerpGridStrategy(Strategy):
         prices = [self.market.round_price(p) for p in prices]
 
         # 2. Calculate Size per Zone
-        # total_investment = Total Notional Value (not margin)
-        # Margin Required = total_investment / leverage (checked against available balance)
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
         notional_per_zone = adjusted_investment / Decimal(str(self.config.grid_count - 1))
         
@@ -385,9 +383,6 @@ class PerpGridStrategy(Strategy):
         
         if self.grid_bias == GridBias.LONG:
             mode = ZoneMode.LONG
-            # GRID LOGIC:
-            # If zone is ABOVE price (buy_price > initial): We already bought. Wait to SELL (Close).
-            # If zone is AT or BELOW price (buy_price <= initial): We haven't bought. Wait to BUY (Open).
             
             if zone_buy_price > initial_price:
                 # WE HOLD THIS ZONE - already opened long
@@ -401,10 +396,7 @@ class PerpGridStrategy(Strategy):
                 
         elif self.grid_bias == GridBias.SHORT:
             mode = ZoneMode.SHORT
-            # GRID LOGIC:
-            # If zone is BELOW price (sell_price < initial): We already sold. Wait to BUY (Close).
-            # If zone is AT or ABOVE price (sell_price >= initial): We haven't sold. Wait to SELL (Open).
-            
+             
             if zone_sell_price < initial_price:
                # WE HOLD THIS ZONE (SHORT) - already opened short
                order_side = OrderSide.BUY  # Target is to close at buy_price
