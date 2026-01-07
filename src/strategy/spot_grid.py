@@ -317,12 +317,8 @@ class SpotGridStrategy(Strategy):
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
 
-        # Use trigger_price if available, otherwise current_price
-        initial_price = self.config.trigger_price if self.config.trigger_price else self.current_price
-
         if base_deficit > 0:
             # Case 1: Not enough base asset. Need to BUY base asset.
-            acquisition_price = initial_price
             
             # Add 0.1% buffer for fees/rounding safety
             base_deficit = FEE_BUFFER.markup(base_deficit)
@@ -361,7 +357,6 @@ class SpotGridStrategy(Strategy):
 
         elif quote_deficit > 0:
             # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
-            acquisition_price = initial_price
 
             acquisition_price = self._calculate_acquisition_price(OrderSide.SELL, self.current_price)
 
@@ -423,7 +418,6 @@ class SpotGridStrategy(Strategy):
         if zone.cloid is not None:
             return  # Already has an order
         
-        idx = zone.index
         side = zone.order_side
         price = zone.buy_price if side.is_buy() else zone.sell_price
         size = zone.size
@@ -431,9 +425,7 @@ class SpotGridStrategy(Strategy):
         if side.is_sell():
             size = self.market.round_size(FEE_BUFFER.markdown(size))
         
-        # Order Request
-        # Let context manage cloid
-        cloid = ctx.place_order(LimitOrderRequest(
+        zone.cloid = ctx.place_order(LimitOrderRequest(
             symbol=self.config.symbol,
             side=side,
             price=price,
@@ -441,10 +433,9 @@ class SpotGridStrategy(Strategy):
             reduce_only=False
         ))
         
-        zone.cloid = cloid
-        self.active_order_map[cloid] = zone
+        self.active_order_map[zone.cloid] = zone
 
-        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
+        logger.info(f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{zone.index} cloid: {zone.cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}")
 
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
