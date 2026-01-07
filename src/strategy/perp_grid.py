@@ -26,13 +26,7 @@ class PerpGridStrategy(Strategy):
     """
     Perpetual Grid Trading Strategy.
     
-    Operates with a directional bias (LONG or SHORT).
-    - Long Bias: 
-        - Buys (Open) when price drops.
-        - Sells (Close) when price rises.
-    - Short Bias: 
-        - Sells (Open) when price rises.
-        - Buys (Close) when price drops.
+    Operates with a directional bias (LONG or SHORT) where it sells to open -> buy to close and vice versa.
         
     Uses 'USDC' as collateral.
     """
