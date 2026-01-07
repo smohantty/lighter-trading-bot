@@ -213,18 +213,12 @@ class SpotGridStrategy(Strategy):
     # =========================================================================
 
     def calculate_grid_plan(self, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
-        """
-        Calculates the grid structure and validates basic constraints.
-        Returns: (zones, required_base, required_quote)
-        """
-        # Generate Levels
         prices = common.calculate_grid_prices(
             self.config.grid_type,
             self.config.lower_price,
             self.config.upper_price,
             self.config.grid_count
         )
-        # Round prices
         prices = [self.market.round_price(p) for p in prices]
 
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
@@ -245,12 +239,7 @@ class SpotGridStrategy(Strategy):
         for i in range(self.config.grid_count - 1):
             zone_buy_price = prices[i]
             zone_sell_price = prices[i+1]
-            # Calculate size based on quote investment per zone using zone_buy_price
             size = self.market.round_size(investment_per_zone_quote / zone_buy_price)
-            
-            # Determine initial state based on zone position relative to current market price:
-            # 1. Zone is ABOVE price: We enter with Base asset -> Pending SELL at sell_price.
-            # 2. Zone is BELOW price: We enter with Quote asset -> Pending BUY at buy_price.
             
             if zone_buy_price > initial_price:
                  order_side = OrderSide.SELL
@@ -321,22 +310,16 @@ class SpotGridStrategy(Strategy):
         available_base: Decimal,
         available_quote: Decimal
     ) -> None:
-        """
-        Pure logic to determine if we need to acquire assets.
-        Balances are passed in to avoid side-effect fetching.
-        """
+
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
 
         if base_deficit > 0:
             # Case 1: Not enough base asset. Need to BUY base asset.
             
-            # Add 0.1% buffer for fees/rounding safety
             base_deficit = FEE_BUFFER.markup(base_deficit)
             
             base_deficit = max(base_deficit, self.market.min_base_amount)
-            # Use ceiling round for extra safety? market_info.round_size usually rounds half-up.
-            # But the buffer handles the slight edge case.
             base_deficit = self.market.round_size(base_deficit)
 
             acquisition_price = self._calculate_acquisition_price(OrderSide.BUY, self.current_price)
@@ -348,8 +331,6 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
-            # Place Order
-            # Cloid is generated and returned by context
             cloid = ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
                 side=OrderSide.BUY,
@@ -367,12 +348,9 @@ class SpotGridStrategy(Strategy):
             return
 
         elif quote_deficit > 0:
-            # Case 2: Enough base asset, but NOT enough quote asset. Need to SELL base.
-
             acquisition_price = self._calculate_acquisition_price(OrderSide.SELL, self.current_price)
 
             base_to_sell = quote_deficit / acquisition_price
-            # Ensure min base amount and min notional
             base_to_sell = max(base_to_sell, self.market.min_base_amount)
             base_to_sell = self.market.round_size(base_to_sell)
 
@@ -386,8 +364,6 @@ class SpotGridStrategy(Strategy):
 
             logger.info(f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}")
             
-            # Place Order
-            # Let context generated cloid
             cloid = ctx.place_order(LimitOrderRequest(
                 symbol=self.config.symbol,
                 side=OrderSide.SELL,
@@ -487,11 +463,7 @@ class SpotGridStrategy(Strategy):
         return current_price
 
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
-        """Handle the fill of an acquisition order during initial setup."""
         self.total_fees += fill.fee
-        
-        # Re-calculate available balances based on the snapshot + fill
-        # This prevents double accounting if we sold surplus assets.
         
         if fill.side.is_buy():
               new_real_base = self.initial_avail_base + fill.size
@@ -503,18 +475,14 @@ class SpotGridStrategy(Strategy):
         new_real_base = max(Decimal("0"), new_real_base)
         new_real_quote = max(Decimal("0"), new_real_quote)
 
-        # Update Inventory: Clamp to requirements
-        # If we have surplus, we only track up to the requirement.
         self.inventory_base = min(new_real_base, self.required_base)
         self.inventory_quote = min(new_real_quote, self.required_quote)
          
         if self.inventory_base > 0:
-             # Reset avg entry to rebalancing price for the entire position as requested
              self.avg_entry_price = fill.price
          
         logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}. Avg Entry: {self.avg_entry_price}")
          
-        # Determine entry price for zones now that we have inventory
         for zone in self.zones:
              if zone.order_side.is_sell():
                    zone.entry_price = fill.price
