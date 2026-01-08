@@ -84,18 +84,17 @@ class ConsoleRenderer:
         if isinstance(s, SpotGridSummary):
             print(f"Type:     SPOT GRID")
             print(f"Balance:  {s.base_balance:.3f} {s.symbol.split('/')[0]} | {s.quote_balance:.3f} USDC")
-            print(f"Matched:  {s.matched_profit:.4f}")
+            print(f"Matched Profit:  {s.matched_profit:.4f}")
             
             # Show Net Profit if available
             if hasattr(s, "total_profit"):
                  print(f"Net PnL:  {s.total_profit:.4f}")
                  
-            print(f"Inv Base: {s.position_size:.3f}")
         elif isinstance(s, PerpGridSummary):
             print(f"Type:     PERP GRID ({s.grid_bias})")
             print(f"Margin:   {s.margin_balance:.3f} USDC")
             print(f"Position: {s.position_size:.3f} ({s.position_side})")
-            print(f"Matched:  {s.matched_profit:.4f}")
+            print(f"Matched Profit:  {s.matched_profit:.4f}")
             print(f"Net PnL:  {s.total_profit:.4f}")
             print(f"Leverage: {s.leverage}x")
 
