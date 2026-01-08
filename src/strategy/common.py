@@ -52,6 +52,23 @@ def calculate_grid_prices(grid_type: GridType, lower_price: Decimal, upper_price
             
     return prices
 
+def calculate_grid_prices_by_spread(lower_price: Decimal, upper_price: Decimal, spread_bips: Decimal) -> List[Decimal]:
+    prices: List[Decimal] = []
+    if lower_price >= upper_price:
+        return prices
+        
+    # 1 bip = 0.01% = 0.0001
+    # 100 bips = 1% = 0.01
+    # ratio = 1 + (spread_bips / 10000)
+    ratio = Decimal("1") + (spread_bips / Decimal("10000"))
+    
+    current_price = lower_price
+    while current_price <= upper_price:
+        prices.append(current_price)
+        current_price = current_price * ratio
+        
+    return prices
+
 def calculate_grid_spacing_pct(grid_type: GridType, lower_price: Decimal, upper_price: Decimal, grid_count: int) -> Tuple[Decimal, Decimal]:
     n = Decimal(grid_count)
     
