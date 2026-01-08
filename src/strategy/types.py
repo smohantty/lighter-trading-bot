@@ -111,8 +111,8 @@ class SpotGridSummary:
     uptime: str
     position_size: Decimal
     avg_entry_price: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
+    matched_profit: Decimal
+    total_profit: Decimal
     total_fees: Decimal
     initial_entry_price: Optional[Decimal]
     grid_count: int

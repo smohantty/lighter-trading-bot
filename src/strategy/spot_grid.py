@@ -45,9 +45,10 @@ class SpotGridStrategy(Strategy):
         self.active_order_map: Dict[Cloid, GridZone] = {} # Cloid -> GridZone
         
         # Performance tracking
-        self.realized_pnl = Decimal("0")
+        self.matched_profit = Decimal("0")
         self.total_fees = Decimal("0")
-        self.unrealized_pnl = Decimal("0")
+        self.initial_equity = Decimal("0")
+        self.initial_equity = Decimal("0")
 
         if self.config.spread_bips:
             # Calculate grid count based on spread
@@ -150,7 +151,7 @@ class SpotGridStrategy(Strategy):
                       # Sell Fill
                       pnl = (fill.price - zone.entry_price) * fill.size
                       logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{self.market.price_decimals}f}. PnL: {pnl:.4f}")
-                      self.realized_pnl += pnl
+                      self.matched_profit += pnl
                       self.inventory_base = max(Decimal("0"), self.inventory_base - fill.size)
                       self.inventory_quote += (fill.size * fill.price)
                       zone.roundtrip_count += 1
@@ -180,8 +181,9 @@ class SpotGridStrategy(Strategy):
         if self.state == StrategyState.Initializing:
             raise ValueError("Strategy not initialized")
              
-        # Approx unrealized pnl
-        unrealized = (self.current_price - self.avg_entry_price) * self.inventory_base if (self.inventory_base > 0 and self.avg_entry_price > 0) else Decimal("0")
+        
+        current_equity = (self.inventory_base * self.current_price) + self.inventory_quote
+        total_profit = current_equity - self.initial_equity - self.total_fees
              
         return SpotGridSummary(
             symbol=self.symbol,
@@ -189,8 +191,8 @@ class SpotGridStrategy(Strategy):
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.inventory_base,
             avg_entry_price=self.avg_entry_price,
-            realized_pnl=self.realized_pnl,
-            unrealized_pnl=unrealized,
+            matched_profit=self.matched_profit,
+            total_profit=total_profit,
             total_fees=self.total_fees,
             initial_entry_price=self.initial_entry_price,
             grid_count=len(self.zones),
@@ -321,6 +323,9 @@ class SpotGridStrategy(Strategy):
         logger.info(f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}")
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
+        
+        # Capture Initial Equity (managed assets only)
+        self.initial_equity = (self.inventory_base * initial_price) + self.inventory_quote
         
         if self.inventory_base > 0:
             # Mark to Market existing inventory
@@ -507,6 +512,8 @@ class SpotGridStrategy(Strategy):
          
         if self.inventory_base > 0:
              self.avg_entry_price = fill.price
+
+        self.initial_equity = (self.inventory_base * fill.price) + self.inventory_quote
          
         logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}. Avg Entry: {self.avg_entry_price}")
          

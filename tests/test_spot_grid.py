@@ -186,5 +186,50 @@ class TestSpotGrid(unittest.TestCase):
         # 0.4995 -> 0.4995.
         self.assertAlmostEqual(args.price, Decimal("0.4995"))
 
+    def test_acquisition_updates_equity(self):
+        strategy = SpotGridStrategy(self.spot_config)
+        # 1. Initialize with deficit (mocked via context if possible, or just force state)
+        # Force state to AcquiringAssets
+        strategy.state = StrategyState.AcquiringAssets
+        strategy.initial_equity = Decimal("0") # Pre-acquisition value
+        
+        # 2. Simulate Acquisition Fill
+        fill = OrderFill(
+            side=OrderSide.BUY,
+            size=Decimal("10.0"),
+            price=Decimal("1.5"),
+            fee=Decimal("0.1"),
+            cloid=Cloid(999)
+        )
+        
+        # Mock requirements
+        strategy.required_base = Decimal("10.0")
+        strategy.required_quote = Decimal("100.0")
+        strategy.initial_avail_base = Decimal("0.0")
+        strategy.initial_avail_quote = Decimal("1000.0")
+        
+        strategy.acquisition_cloid = fill.cloid
+        strategy.current_price = fill.price # Ensure MTM is correct
+        
+        # 3. Handle Fill
+        strategy.on_order_filled(fill, self.context)
+        
+        # 4. Verify Initial Equity updated
+        # Inventory Base = 10.0, Price = 1.5. Value = 15.0.
+        # Inventory Quote = min(1000 - 15, 100) = 100.0. 
+        # Wait, handle_acquisition_fill logic:
+        # new_real_quote = 1000 - (10 * 1.5) = 1000 - 15 = 985.
+        # inventory_quote = min(985, 100) = 100.
+        # Initial Equity = (10 * 1.5) + 100 = 115.0.
+        
+        self.assertEqual(strategy.initial_equity, Decimal("115.0"))
+        
+        # Verify Profit is negligible (only fees)
+        # Current Equity = (10 * 1.5) + 100 = 115.
+        # Total Profit = 115 - 115 - 0.1 = -0.1.
+        
+        summary = strategy.get_summary(self.context)
+        self.assertEqual(summary.total_profit, Decimal("-0.1"))
+
 if __name__ == '__main__':
     unittest.main()
