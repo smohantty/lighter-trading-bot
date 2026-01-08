@@ -95,6 +95,8 @@ class ConsoleRenderer:
             print(f"Type:     PERP GRID ({s.grid_bias})")
             print(f"Margin:   {s.margin_balance:.3f} USDC")
             print(f"Position: {s.position_size:.3f} ({s.position_side})")
+            print(f"Matched:  {s.matched_profit:.4f}")
+            print(f"Net PnL:  {s.total_profit:.4f}")
             print(f"Leverage: {s.leverage}x")
 
     @staticmethod

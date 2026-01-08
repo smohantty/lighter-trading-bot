@@ -49,9 +49,9 @@ class PerpGridStrategy(Strategy):
         self.state = StrategyState.Initializing
         
         # Performance Metrics
-        self.realized_pnl = Decimal("0")
+        self.matched_profit = Decimal("0")
         self.total_fees = Decimal("0")
-        self.unrealized_pnl = Decimal("0")
+        self.initial_equity = Decimal("0")
         
         # Position Tracking
         self.position_size = Decimal("0") 
@@ -164,18 +164,22 @@ class PerpGridStrategy(Strategy):
         if self.position_size != 0:
             diff = self.current_price - self.avg_entry_price
             if self.position_size < 0:
-                diff = -diff
+                diff = -diff # Short: (Entry - Current) * Size = -(Current - Entry) * Size
             unrealized = diff * abs(self.position_size)
-
+        
+        # Total Profit = (MarginBalance + Unrealized) - InitialEquity
+        # Assumption: get_perp_available return Wallet Balance.
+        margin_balance = ctx.get_perp_available("USDC")
+        total_profit = (margin_balance + unrealized) - self.initial_equity
+        
         return PerpGridSummary(
             symbol=self.symbol,
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.position_size,
             position_side="Long" if self.position_size > 0 else "Short",
-            avg_entry_price=self.avg_entry_price,
-            realized_pnl=self.realized_pnl,
-            unrealized_pnl=unrealized,
+            matched_profit=self.matched_profit,
+            total_profit=total_profit,
             total_fees=self.total_fees,
             leverage=self.leverage,
             grid_bias=self.config.grid_bias.value,
@@ -184,7 +188,7 @@ class PerpGridStrategy(Strategy):
             range_high=self.config.upper_price,
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
-            margin_balance=ctx.get_perp_available("USDC"),
+            margin_balance=margin_balance,
             initial_entry_price=self.initial_entry_price
         )
 
@@ -300,6 +304,10 @@ class PerpGridStrategy(Strategy):
         self.zones, required_position_size = self.calculate_grid_plan(price)
             
         logger.info(f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}")
+        
+        # Capture Initial Equity
+        # Equity = Margin Balance + Unrealized PnL (starts at 0 if pos=0)
+        self.initial_equity = available_usdc 
         
         # Check Initial Acquisition
         self.check_initial_acquisition(ctx, required_position_size)
@@ -503,6 +511,7 @@ class PerpGridStrategy(Strategy):
                 zone.entry_price = fill.price
         
         logger.info(f"[PERP_GRID] Acquisition Complete. Pos: {self.position_size}. AvgEntry: {self.avg_entry_price}")
+        
         self.state = StrategyState.Running
         self.initial_entry_price = fill.price
         self.refresh_orders(ctx)
@@ -527,7 +536,8 @@ class PerpGridStrategy(Strategy):
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         
-        self.realized_pnl += pnl
+        
+        self.matched_profit += pnl
 
     def _handle_short_bias_fill(self, zone: GridZone, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle fill logic for SHORT bias zones."""
@@ -549,4 +559,4 @@ class PerpGridStrategy(Strategy):
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
         
-        self.realized_pnl += pnl
+        self.matched_profit += pnl

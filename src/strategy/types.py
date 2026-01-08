@@ -90,9 +90,8 @@ class PerpGridSummary:
     uptime: str
     position_size: Decimal
     position_side: str
-    avg_entry_price: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
+    matched_profit: Decimal
+    total_profit: Decimal
     total_fees: Decimal
     leverage: int
     grid_bias: str
