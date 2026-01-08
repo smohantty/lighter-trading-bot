@@ -11,29 +11,15 @@ class Precision:
         self.quantizer = Decimal("1." + "0" * decimals) # e.g., 0.0001 for decimals=4
         self.multiplier = Decimal("10") ** decimals
 
-    def round(self, value: Union[float, Decimal, int, str]) -> Decimal:
-        """
-        Rounds the value to the specified number of decimal places.
-        Returns a Decimal.
-        """
+    def round(self, value: Decimal) -> Decimal:
         if not isinstance(value, Decimal):
-            value = Decimal(str(value))
-        
-        # Changed to ROUND_DOWN (truncation) as per requirement:
-        # 1.23456 (4 dec) -> 1.2345
+             raise TypeError(f"Precision.round expected Decimal, got {type(value)}")
+               
         return value.quantize(Decimal("10") ** -self.decimals, rounding=ROUND_DOWN)
 
-    def to_int(self, value: Union[float, Decimal, int, str]) -> int:
-        """
-        Converts the value to its integer representation (atoms) based on precision.
-        e.g. value=1.23, decimals=2 -> 123
-        """
+    def to_int(self, value: Decimal) -> int:
         d_val = self.round(value)
         return int(d_val * self.multiplier)
 
     def from_int(self, value: int) -> Decimal:
-        """
-        Converts an integer (atoms) back to Decimal value.
-        e.g. value=123, decimals=2 -> 1.23
-        """
         return Decimal(value) / self.multiplier

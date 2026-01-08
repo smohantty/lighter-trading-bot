@@ -24,11 +24,10 @@ class TestDecimalPrecision(unittest.TestCase):
         self.assertEqual(rounded, Decimal("123.4567"))
         self.assertIsInstance(rounded, Decimal)
 
-        # Float input handling
+        # Float input handling - Should now raise TypeError
         price_f = 123.456789
-        rounded_f = self.market_info.round_price(price_f)
-        self.assertEqual(rounded_f, Decimal("123.4567"))
-        self.assertIsInstance(rounded_f, Decimal)
+        with self.assertRaises(TypeError):
+             self.market_info.round_price(price_f) # type: ignore
 
     def test_round_size(self):
         size = Decimal("1.23456")

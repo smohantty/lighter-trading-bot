@@ -25,18 +25,18 @@ class MarketInfo:
         self.price_precision = Precision(self.price_decimals)
         self.size_precision = Precision(self.sz_decimals)
 
-    def round_price(self, price: Union[float, Decimal]) -> Decimal:
+    def round_price(self, price: Decimal) -> Decimal:
         return self.price_precision.round(price)
 
-    def round_size(self, sz: Union[float, Decimal]) -> Decimal:
+    def round_size(self, sz: Decimal) -> Decimal:
         return self.size_precision.round(sz)
 
-    def to_sdk_price(self, price: Union[float, Decimal]) -> int:
-        """Convert float/decimal price to SDK integer format (atoms)."""
+    def to_sdk_price(self, price: Decimal) -> int:
+        """Convert decimal price to SDK integer format (atoms)."""
         return self.price_precision.to_int(price)
 
-    def to_sdk_size(self, sz: Union[float, Decimal]) -> int:
-        """Convert float/decimal size to SDK integer format (atoms)."""
+    def to_sdk_size(self, sz: Decimal) -> int:
+        """Convert decimal size to SDK integer format (atoms)."""
         return self.size_precision.to_int(sz)
 
 
