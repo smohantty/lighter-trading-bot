@@ -32,11 +32,9 @@ class MarketInfo:
         return self.size_precision.round(sz)
 
     def to_sdk_price(self, price: Decimal) -> int:
-        """Convert decimal price to SDK integer format (atoms)."""
         return self.price_precision.to_int(price)
 
     def to_sdk_size(self, sz: Decimal) -> int:
-        """Convert decimal size to SDK integer format (atoms)."""
         return self.size_precision.to_int(sz)
 
 
@@ -68,9 +66,6 @@ class StrategyContext:
         return cloid
 
     def cancel_order(self, cloid: Cloid):
-        # We assume symbol knowledge isn't strictly needed for the internal queue for now, 
-        # but the request needs it. For simple cancellation by Cloid, we might need a lookup later.
-        # But Rust implementation just pushes Cloid.
         self.cancellation_queue.append(cloid)
 
 
