@@ -39,7 +39,6 @@ class PerpGridStrategy(Strategy):
         self.config = config
         self.symbol = config.symbol
         self.leverage = config.leverage
-        self.grid_count = config.grid_count
         self.total_investment = config.total_investment  # Max notional exposure at grid extremes
         self.grid_bias = config.grid_bias
         
@@ -69,12 +68,25 @@ class PerpGridStrategy(Strategy):
         self.acquisition_target_size: Decimal = Decimal("0")
         self.market: MarketInfo = None  # type: ignore
         
-        self.grid_spacing_pct = common.calculate_grid_spacing_pct(
-            self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count
-        )
+        if self.config.spread_bips:
+            # Calculate grid count based on spread
+            prices = common.calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.spread_bips
+            )
+            self.grid_count = len(prices)
+            spacing = self.config.spread_bips / Decimal("100")
+            self.grid_spacing_pct = (spacing, spacing)
+        else:
+            assert self.config.grid_count is not None
+            self.grid_count = self.config.grid_count
+            self.grid_spacing_pct = common.calculate_grid_spacing_pct(
+                self.config.grid_type,
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.grid_count
+            )
 
     # =========================================================================
     # STRATEGY LIFECYCLE (Base Class Interface)
@@ -209,17 +221,27 @@ class PerpGridStrategy(Strategy):
         Returns: (zones, required_position_size)
         """
         # 1. Generate Levels
-        prices = common.calculate_grid_prices(
-            self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count
-        )
+        if self.config.spread_bips:
+            prices = common.calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.spread_bips
+            )
+            # Update grid_count
+            self.grid_count = len(prices)
+        else:
+            assert self.config.grid_count is not None
+            prices = common.calculate_grid_prices(
+                self.config.grid_type,
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.grid_count
+            )
         prices = [self.market.round_price(p) for p in prices]
 
         # 2. Calculate Size per Zone
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
-        notional_per_zone = adjusted_investment / Decimal(str(self.config.grid_count - 1))
+        notional_per_zone = adjusted_investment / Decimal(str(self.grid_count - 1))
         
         # Validation
         max_size_estimate = notional_per_zone / Decimal(str(self.config.lower_price))
@@ -233,7 +255,7 @@ class PerpGridStrategy(Strategy):
         zones = []
         required_position_size = Decimal("0.0")
         
-        for i in range(self.config.grid_count - 1):
+        for i in range(self.grid_count - 1):
             zone_buy_price = prices[i]
             zone_sell_price = prices[i+1]
             

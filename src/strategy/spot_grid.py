@@ -30,7 +30,6 @@ class SpotGridStrategy(Strategy):
     def __init__(self, config):
         self.config = config
         self.symbol = config.symbol
-        self.grid_count = config.grid_count
         self.total_investment = config.total_investment
         
         # Spot grid specific: base/quote splitting
@@ -49,13 +48,31 @@ class SpotGridStrategy(Strategy):
         self.realized_pnl = Decimal("0")
         self.total_fees = Decimal("0")
         self.unrealized_pnl = Decimal("0")
-        
-        self.grid_spacing_pct = common.calculate_grid_spacing_pct(
-            self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count
-        )
+
+        if self.config.spread_bips:
+            # Calculate grid count based on spread
+            prices = common.calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.spread_bips
+            )
+            # grid_count describes levels, so len(prices)
+            self.grid_count = len(prices)
+            
+            # grid_spacing_pct for Spread is basically spread_bips / 100
+            # but let's be consistent and store it as one value or just calculate
+            spacing = self.config.spread_bips / Decimal("100")
+            self.grid_spacing_pct = (spacing, spacing)
+            
+        else:
+            assert self.config.grid_count is not None
+            self.grid_count = self.config.grid_count
+            self.grid_spacing_pct = common.calculate_grid_spacing_pct(
+                self.config.grid_type,
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.grid_count
+            )
         
         # Position Tracking
         self.inventory_base = Decimal("0")
@@ -213,16 +230,26 @@ class SpotGridStrategy(Strategy):
     # =========================================================================
 
     def calculate_grid_plan(self, reference_price: Decimal) -> tuple[List[GridZone], Decimal, Decimal]:
-        prices = common.calculate_grid_prices(
-            self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count
-        )
+        if self.config.spread_bips:
+             prices = common.calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.spread_bips
+            )
+             # Update grid_count to match actual generated levels
+             self.grid_count = len(prices) 
+        else:
+            assert self.config.grid_count is not None
+            prices = common.calculate_grid_prices(
+                self.config.grid_type,
+                self.config.lower_price,
+                self.config.upper_price,
+                self.config.grid_count
+            )
         prices = [self.market.round_price(p) for p in prices]
 
         adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
-        investment_per_zone_quote = adjusted_investment / Decimal(self.config.grid_count - 1)
+        investment_per_zone_quote = adjusted_investment / Decimal(self.grid_count - 1)
 
         min_order_size = self.market.min_quote_amount
         if investment_per_zone_quote < min_order_size:
@@ -236,7 +263,7 @@ class SpotGridStrategy(Strategy):
 
         initial_price = self.config.trigger_price if self.config.trigger_price else reference_price
 
-        for i in range(self.config.grid_count - 1):
+        for i in range(self.grid_count - 1):
             zone_buy_price = prices[i]
             zone_sell_price = prices[i+1]
             size = self.market.round_size(investment_per_zone_quote / zone_buy_price)

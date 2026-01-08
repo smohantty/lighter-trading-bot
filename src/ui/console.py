@@ -56,7 +56,10 @@ class ConsoleRenderer:
         if hasattr(c, "leverage"):
             print(f"Leverage:    {c.leverage}x")
             
-        if hasattr(c, "grid_count"):
+        if hasattr(c, "spread_bips") and c.spread_bips:
+            print(f"Spread:      {c.spread_bips} bips")
+            
+        if hasattr(c, "grid_count") and c.grid_count is not None:
             print(f"Grid Count:  {c.grid_count}")
             
         if isinstance(c, (SpotGridConfig, PerpGridConfig)):

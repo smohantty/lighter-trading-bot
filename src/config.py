@@ -116,14 +116,27 @@ class SpotGridConfig:
     upper_price: Decimal
     lower_price: Decimal
     grid_type: GridType
-    grid_count: int
     total_investment: Decimal
+    grid_count: Optional[int] = None
+    spread_bips: Optional[Decimal] = None
     trigger_price: Optional[Decimal] = None
     type: Literal["spot_grid"] = "spot_grid"
 
     def validate(self):
-        if self.grid_count <= 2:
-            raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
+        # Validate grid_count vs spread_bips
+        if self.grid_count is None and self.spread_bips is None:
+             raise ValueError("Either grid_count or spread_bips must be provided.")
+        
+        if self.spread_bips is not None:
+             if self.grid_type != GridType.GEOMETRIC:
+                  raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
+             if self.spread_bips <= Decimal("0"):
+                  raise ValueError("spread_bips must be positive.")
+        
+        if self.grid_count is not None:
+             if self.grid_count <= 2:
+                  raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
+
         if self.upper_price <= self.lower_price:
             raise ValueError(f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}.")
         if self.trigger_price is not None:
@@ -143,16 +156,29 @@ class PerpGridConfig:
     upper_price: Decimal
     lower_price: Decimal
     grid_type: GridType
-    grid_count: int
     total_investment: Decimal
     grid_bias: GridBias
+    grid_count: Optional[int] = None
+    spread_bips: Optional[Decimal] = None
     is_isolated: bool = False
     trigger_price: Optional[Decimal] = None
     type: Literal["perp_grid"] = "perp_grid"
 
     def validate(self):
-        if self.grid_count <= 2:
-            raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
+        # Validate grid_count vs spread_bips
+        if self.grid_count is None and self.spread_bips is None:
+             raise ValueError("Either grid_count or spread_bips must be provided.")
+        
+        if self.spread_bips is not None:
+             if self.grid_type != GridType.GEOMETRIC:
+                  raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
+             if self.spread_bips <= Decimal("0"):
+                  raise ValueError("spread_bips must be positive.")
+        
+        if self.grid_count is not None:
+             if self.grid_count <= 2:
+                  raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
+
         if self.upper_price <= self.lower_price:
             raise ValueError(f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}.")
         if self.trigger_price is not None:
@@ -255,27 +281,22 @@ def load_config(path: str) -> Config:
     if "grid_type" in data:
         data["grid_type"] = GridType(data["grid_type"])
     
-    if strategy_type == "spot_grid":
-        # Convert floats to Decimal
-        if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
-        if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
-        if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
-        if "trigger_price" in data and data["trigger_price"] is not None: 
-            data["trigger_price"] = Decimal(str(data["trigger_price"]))
+    # Common parsing
+    if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
+    if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
+    if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
+    if "trigger_price" in data and data["trigger_price"] is not None: 
+        data["trigger_price"] = Decimal(str(data["trigger_price"]))
+    if "spread_bips" in data and data["spread_bips"] is not None:
+        data["spread_bips"] = Decimal(str(data["spread_bips"]))
 
+    if strategy_type == "spot_grid":
         spot_cfg = SpotGridConfig(**data)
         spot_cfg.validate()
         return spot_cfg
     elif strategy_type == "perp_grid":
         if "grid_bias" in data:
             data["grid_bias"] = GridBias(data["grid_bias"])
-            
-        # Convert floats to Decimal
-        if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
-        if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
-        if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
-        if "trigger_price" in data and data["trigger_price"] is not None:
-             data["trigger_price"] = Decimal(str(data["trigger_price"]))
 
         perp_cfg = PerpGridConfig(**data)
         perp_cfg.validate()
