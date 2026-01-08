@@ -110,7 +110,6 @@ class SpotGridSummary:
     state: str
     uptime: str
     position_size: Decimal
-    avg_entry_price: Decimal
     matched_profit: Decimal
     total_profit: Decimal
     total_fees: Decimal

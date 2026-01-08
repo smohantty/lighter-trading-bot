@@ -78,7 +78,6 @@ class SpotGridStrategy(Strategy):
         # Position Tracking
         self.inventory_base = Decimal("0")
         self.inventory_quote = Decimal("0")
-        self.avg_entry_price = Decimal("0")
         
         self.start_time = time.time()
         self.initial_entry_price: Optional[Decimal] = None
@@ -138,10 +137,6 @@ class SpotGridStrategy(Strategy):
                       logger.info(f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price}")
                       self.inventory_base += fill.size
                       self.inventory_quote -= (fill.size * fill.price)
-                      # Update avg entry
-                      if self.inventory_base > 0:
-                           self.avg_entry_price = (self.avg_entry_price * (self.inventory_base - fill.size) + fill.price * fill.size) / self.inventory_base
-                      
                       # Flip to SELL at upper price
                       zone.order_side = OrderSide.SELL
                       zone.entry_price = fill.price
@@ -190,7 +185,6 @@ class SpotGridStrategy(Strategy):
             state=self.state.name,
             uptime=common.format_uptime(timedelta(seconds=time.time() - self.start_time)),
             position_size=self.inventory_base,
-            avg_entry_price=self.avg_entry_price,
             matched_profit=self.matched_profit,
             total_profit=total_profit,
             total_fees=self.total_fees,
@@ -327,10 +321,6 @@ class SpotGridStrategy(Strategy):
         # Capture Initial Equity (managed assets only)
         self.initial_equity = (self.inventory_base * initial_price) + self.inventory_quote
         
-        if self.inventory_base > 0:
-            # Mark to Market existing inventory
-            self.avg_entry_price = initial_price
-        
         # Check Assets & Rebalance
         self.check_initial_acquisition(ctx, required_base, required_quote, avail_base, avail_quote)
 
@@ -411,7 +401,7 @@ class SpotGridStrategy(Strategy):
 
         # No Deficit (or negligible)
         if self.inventory_base > 0:
-             logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. Setting avg_entry to {self.avg_entry_price} (No Rebalancing Needed)")
+             logger.info(f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. (No Rebalancing Needed)")
 
         if self.config.trigger_price:
              # Passive Wait Mode
@@ -509,13 +499,10 @@ class SpotGridStrategy(Strategy):
 
         self.inventory_base = min(new_real_base, self.required_base)
         self.inventory_quote = min(new_real_quote, self.required_quote)
-         
-        if self.inventory_base > 0:
-             self.avg_entry_price = fill.price
 
         self.initial_equity = (self.inventory_base * fill.price) + self.inventory_quote
          
-        logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}. Avg Entry: {self.avg_entry_price}")
+        logger.info(f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}.")
          
         for zone in self.zones:
              if zone.order_side.is_sell():
