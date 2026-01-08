@@ -130,8 +130,8 @@ class SpotGridConfig:
         if self.spread_bips is not None:
              if self.grid_type != GridType.GEOMETRIC:
                   raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
-             if self.spread_bips <= Decimal("0"):
-                  raise ValueError("spread_bips must be positive.")
+             if self.spread_bips < Decimal("15"):
+                  raise ValueError("spread_bips must be at least 15 bips.")
         
         if self.grid_count is not None:
              if self.grid_count <= 2:
@@ -172,8 +172,8 @@ class PerpGridConfig:
         if self.spread_bips is not None:
              if self.grid_type != GridType.GEOMETRIC:
                   raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
-             if self.spread_bips <= Decimal("0"):
-                  raise ValueError("spread_bips must be positive.")
+             if self.spread_bips < Decimal("15"):
+                  raise ValueError("spread_bips must be at least 15 bips.")
         
         if self.grid_count is not None:
              if self.grid_count <= 2:
