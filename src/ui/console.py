@@ -39,7 +39,8 @@ class ConsoleRenderer:
 
         # Section 3: Configuration & Summary
         print(f"\n{'=' * 60}")
-        ConsoleRenderer._render_config(config)
+        grid_len = len(grid.zones) if grid else None
+        ConsoleRenderer._render_config(config, grid_len)
 
         if current_price:
             print(f"\nCurrent Price: {current_price}")
@@ -51,7 +52,7 @@ class ConsoleRenderer:
         print(f"\n{'=' * 60}\n")
 
     @staticmethod
-    def _render_config(c: StrategyConfig):
+    def _render_config(c: StrategyConfig, grid_len: Optional[int] = None):
         print("CONFIGURATION")
         print(f"Symbol:      {c.symbol}")
         print(f"Type:        {c.type}")
@@ -73,6 +74,8 @@ class ConsoleRenderer:
 
         if hasattr(c, "grid_count") and c.grid_count is not None:
             print(f"Grid Count:  {c.grid_count}")
+        elif grid_len is not None:
+            print(f"Grid Count:  {grid_len}")
 
         if isinstance(c, (SpotGridConfig, PerpGridConfig)):
             print(f"Range:       {c.lower_price:.3f} - {c.upper_price:.3f}")
