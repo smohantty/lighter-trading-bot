@@ -6,15 +6,12 @@ import lighter
 from lighter.nonce_manager import NonceManagerType
 
 from src.config import ExchangeConfig, StrategyConfig
+from src.constants import AUTH_TOKEN_EXPIRY_SECONDS, TOKEN_REFRESH_BUFFER_SECONDS
 from src.engine.context import MarketInfo, StrategyContext
 from src.model import Order, Trade, TradeDetails
 from src.strategy.base import Strategy
 
 logger = logging.getLogger(__name__)
-
-# Constants
-AUTH_TOKEN_EXPIRY = 8 * 60 * 60  # 8 hours
-TOKEN_REFRESH_BUFFER = 60 * 60  # 1 hours
 
 
 class BaseEngine:
@@ -95,7 +92,7 @@ class BaseEngine:
 
         # Use 8 hours (maximum allowed) or similar long duration
         auth_token, error = self.signer_client.create_auth_token_with_expiry(
-            deadline=AUTH_TOKEN_EXPIRY
+            deadline=AUTH_TOKEN_EXPIRY_SECONDS
         )
         if error:
             logger.error(f"Failed to refresh auth token: {error}")
@@ -107,7 +104,9 @@ class BaseEngine:
 
         now = time.time()
 
-        if self._api_token and now < (self._api_token_expiry - TOKEN_REFRESH_BUFFER):
+        if self._api_token and now < (
+            self._api_token_expiry - TOKEN_REFRESH_BUFFER_SECONDS
+        ):
             return self._api_token
 
         logger.info("Refreshing API auth token...")
@@ -117,7 +116,7 @@ class BaseEngine:
             return None
 
         self._api_token = auth_token
-        self._api_token_expiry = now + AUTH_TOKEN_EXPIRY
+        self._api_token_expiry = now + AUTH_TOKEN_EXPIRY_SECONDS
 
         return self._api_token
 

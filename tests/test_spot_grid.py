@@ -140,9 +140,9 @@ class TestSpotGrid(unittest.TestCase):
         self.assertIsNone(zone.cloid)
 
         # Simulate Max Retries
-        from src.strategy.spot_grid import MAX_RETRIES
+        from src.constants import MAX_ORDER_RETRIES
 
-        zone.retry_count = MAX_RETRIES
+        zone.retry_count = MAX_ORDER_RETRIES
 
         # Should NOT place order if max retries reached
         strategy.refresh_orders(self.context)

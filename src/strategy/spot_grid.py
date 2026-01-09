@@ -4,6 +4,12 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
+from src.constants import (
+    ACQUISITION_SPREAD,
+    FEE_BUFFER,
+    INVESTMENT_BUFFER_SPOT,
+    MAX_ORDER_RETRIES,
+)
 from src.engine.context import MarketInfo, StrategyContext
 from src.model import (
     Cloid,
@@ -18,17 +24,11 @@ from src.strategy.types import (
     GridState,
     GridZone,
     SpotGridSummary,
-    Spread,
     StrategyState,
     ZoneInfo,
 )
 
 logger = logging.getLogger("src.strategy.spot_grid")
-
-FEE_BUFFER = Spread("0.05")  # 0.05% buffer
-ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
-INVESTMENT_BUFFER = Spread("0.1")
-MAX_RETRIES = 5
 
 
 class SpotGridStrategy(Strategy):
@@ -190,7 +190,7 @@ class SpotGridStrategy(Strategy):
 
             logger.warning(
                 f"[ORDER_FAILED][SPOT_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
-                f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}"
+                f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_ORDER_RETRIES}"
             )
 
             zone.retry_count += 1
@@ -273,7 +273,7 @@ class SpotGridStrategy(Strategy):
             )
         prices = [self.market.round_price(p) for p in prices]
 
-        adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
+        adjusted_investment = INVESTMENT_BUFFER_SPOT.markdown(self.total_investment)
         investment_per_zone_quote = adjusted_investment / Decimal(self.grid_count - 1)
 
         min_order_size = self.market.min_quote_amount
@@ -514,7 +514,7 @@ class SpotGridStrategy(Strategy):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
         for zone in self.zones:
             if zone.cloid is None:
-                if zone.retry_count < MAX_RETRIES:
+                if zone.retry_count < MAX_ORDER_RETRIES:
                     self.place_zone_order(zone, ctx)
                 else:
                     # Optional: Log zombie state occasionally?

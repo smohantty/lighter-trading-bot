@@ -10,6 +10,12 @@ import lighter
 import src.broadcast.types as btypes
 from src.broadcast.server import StatusBroadcaster
 from src.config import ExchangeConfig, StrategyConfig
+from src.constants import (
+    MAX_BATCH_SIZE,
+    ORDER_LOST_TIMEOUT_SECONDS,
+    ORDER_PROPAGATION_GRACE_SECONDS,
+    RECONCILIATION_INTERVAL_SECONDS,
+)
 from src.engine.base import BaseEngine
 from src.engine.context import StrategyContext
 from src.model import (
@@ -26,9 +32,6 @@ from src.strategy.base import Strategy
 from src.strategy.types import PerpGridSummary, SpotGridSummary
 
 logger = logging.getLogger(__name__)
-
-# Constants (Move to Lighter Constants if available)
-RECONCILIATION_INTERVAL_SECONDS = 30.0
 
 
 class Engine(BaseEngine):
@@ -645,7 +648,7 @@ class Engine(BaseEngine):
 
         for cloid, pending in pending_snapshot:
             # Skip recently created orders (grace period for propagation)
-            if now - pending.created_at < 10:
+            if now - pending.created_at < ORDER_PROPAGATION_GRACE_SECONDS:
                 continue
 
             cloid_int = cloid.as_int()
@@ -769,7 +772,7 @@ class Engine(BaseEngine):
             else:
                 # Case C: Not active, Not in recent inactive.
                 # Could be "Lost" or "Expired"
-                if now - missing_pending.created_at > 120:
+                if now - missing_pending.created_at > ORDER_LOST_TIMEOUT_SECONDS:
                     logger.warning(
                         f"[RECONCILIATION] Order {cloid} lost (not found in active or recent history). Marking failed."
                     )
@@ -949,9 +952,6 @@ class Engine(BaseEngine):
             # SDK likely returns str.
             tx_infos.append(str(tx_info) if tx_info is not None else "")
             batch_context.append(order)
-
-        # Lighter supports up to 50 transactions per batch
-        MAX_BATCH_SIZE = 49
 
         # Process orders in chunks of MAX_BATCH_SIZE using REST API
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):

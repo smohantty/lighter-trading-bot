@@ -5,6 +5,11 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 
 from src.config import PerpGridConfig
+from src.constants import (
+    ACQUISITION_SPREAD,
+    INVESTMENT_BUFFER_PERP,
+    MAX_ORDER_RETRIES,
+)
 from src.engine.context import MarketInfo, StrategyContext
 from src.model import Cloid, LimitOrderRequest, OrderFailure, OrderFill, OrderSide
 from src.strategy import common
@@ -14,19 +19,12 @@ from src.strategy.types import (
     GridState,
     GridZone,
     PerpGridSummary,
-    Spread,
     StrategyState,
     ZoneInfo,
     ZoneMode,
 )
 
 logger = logging.getLogger(__name__)
-
-# Constants
-
-ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
-INVESTMENT_BUFFER = Spread("0.05")  # 0.05% buffer from total investment
-MAX_RETRIES = 5
 
 
 class PerpGridStrategy(Strategy):
@@ -166,7 +164,7 @@ class PerpGridStrategy(Strategy):
 
             logger.warning(
                 f"[ORDER_FAILED][PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} "
-                f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_RETRIES}"
+                f"reason: {failure.failure_reason}. Retry count: {zone.retry_count + 1}/{MAX_ORDER_RETRIES}"
             )
 
             zone.retry_count += 1
@@ -266,7 +264,7 @@ class PerpGridStrategy(Strategy):
         prices = [self.market.round_price(p) for p in prices]
 
         # 2. Calculate Size per Zone
-        adjusted_investment = INVESTMENT_BUFFER.markdown(self.total_investment)
+        adjusted_investment = INVESTMENT_BUFFER_PERP.markdown(self.total_investment)
         notional_per_zone = adjusted_investment / Decimal(str(self.grid_count - 1))
 
         # Validation
@@ -424,7 +422,7 @@ class PerpGridStrategy(Strategy):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
         for zone in self.zones:
             if zone.cloid is None:
-                if zone.retry_count < MAX_RETRIES:
+                if zone.retry_count < MAX_ORDER_RETRIES:
                     self.place_zone_order(zone, ctx)
 
     # =========================================================================
