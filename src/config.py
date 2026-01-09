@@ -230,14 +230,6 @@ def load_config(path: str) -> Config:
     
     strategy_type = data.get("type")
     
-    # Convert enums if they are strings. Pydantic might handle this automatically if the Enum is StrEnum or similar,
-    # but explicit conversion is safe. 
-    # Actually Pydantic v2 is good at string->Enum conversion.
-    # However, to be safe with existing GridType/GridBias which might be simple Enums:
-    
-    # We will let Pydantic handle type coercion where possible.
-    # But for 'grid_type' and 'grid_bias' Enums, if they are passed as value (string), Pydantic does it.
-    
     if strategy_type == "spot_grid":
         return SpotGridConfig(**data)
     elif strategy_type == "perp_grid":

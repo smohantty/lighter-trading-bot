@@ -21,6 +21,7 @@ from src.engine.base import BaseEngine
 logger = logging.getLogger(__name__)
 
 # Constants (Move to Lighter Constants if available)
+RECONCILIATION_INTERVAL_SECONDS = 30.0
 
 class Engine(BaseEngine):
     def __init__(self, config: StrategyConfig, exchange_config: ExchangeConfig, strategy: Strategy, broadcaster: Optional[StatusBroadcaster] = None):
@@ -28,8 +29,8 @@ class Engine(BaseEngine):
         self.broadcaster = broadcaster
         
         # Clients
+        # Clients
         self.api_client: Optional[lighter.ApiClient] = None
-        self.signer_client: Optional[lighter.SignerClient] = None
         self.ws_client: Optional[lighter.WsClient] = None
         
         self.account_index: Optional[int] = None
@@ -65,12 +66,7 @@ class Engine(BaseEngine):
 
         # 3. Setup Signer Client
         # Using configured API Key Index
-        self.signer_client = lighter.SignerClient(
-            url=self.exchange_config.base_url,
-            account_index=self.account_index,
-            api_private_keys={self.exchange_config.agent_key_index: self.exchange_config.agent_private_key},
-            nonce_management_type=NonceManagerType.API
-        )
+        self._init_signer()
         
         # 4. Load Metadata (Markets)
         await self._load_markets()
@@ -93,6 +89,10 @@ class Engine(BaseEngine):
         
         # Generate auth token for authenticated channels
         # Use 8 hours (maximum allowed) since this is only for reading data
+        if not self.signer_client:
+            logger.error("SignerClient not initialized in Engine. Cannot subscribe.")
+            return
+
         auth_token, error = self.signer_client.create_auth_token_with_expiry(
             deadline=8 * 60 * 60  # 8 hours in seconds
         )
@@ -168,23 +168,6 @@ class Engine(BaseEngine):
             except Exception as e:
                 logger.error(f"Failed to broadcast initial info: {e}", exc_info=True)
 
-
-
-    async def _get_fresh_token(self) -> Optional[str]:
-        """Token provider for QueueWsClient to refresh auth on reconnection."""
-        logger.info("Generating fresh auth token for WebSocket...")
-        if not self.signer_client:
-            logger.error("Signer client not initialized")
-            return None
-            
-        # Use 8 hours (maximum allowed) or similar long duration
-        auth_token, error = self.signer_client.create_auth_token_with_expiry(
-            deadline=8 * 60 * 60 
-        )
-        if error:
-            logger.error(f"Failed to refresh auth token: {error}")
-            return None
-        return str(auth_token) if auth_token else None
         
     async def _message_processor(self):
         logger.info("Message Processor Started...")
@@ -715,6 +698,195 @@ class Engine(BaseEngine):
 
 
     
+    
+    async def handle_reconciliation(self):
+        """
+        Reconcile local pending orders with exchange state.
+        Handles missed fills and cancellations.
+        """
+        if not self.pending_orders or not self.api_client or not self.account_index or not self.ctx:
+            return
+
+        # Snapshots to avoid modification during iteration if we remove items
+        pending_snapshot = list(self.pending_orders.items())
+        
+        # 1. Fetch Active Orders
+        try:
+            market_id = self.market_map.get(self.strategy_config.symbol)
+            if not market_id:
+                return
+            
+            # Token generation and account index are now handled inside BaseEngine
+            active_orders_list = await self.get_active_orders(
+                market_id=market_id
+            )
+            # Active orders from SDK are lighter objects.
+            # get_active_orders inherits from BaseEngine and returns List[lighter.models.Order] (or similar)
+            # Use client_order_index as key
+            active_orders_map = {o.client_order_index: o for o in active_orders_list}
+            
+        except Exception as e:
+            logger.error(f"Reconciliation failed to fetch active orders: {e}")
+            return
+
+        # 2. Iterate pending orders to identify missing ones vs active ones
+        now = time.time()
+        missing_cloids: List[Cloid] = []
+        
+        for cloid, pending in pending_snapshot:
+            # Skip recently created orders (grace period for propagation)
+            if now - pending.created_at < 10:
+                continue
+                
+            cloid_int = cloid.as_int()
+            
+            # Case A: Order is active on exchange
+            if cloid_int in active_orders_map:
+                active_order = active_orders_map[cloid_int]
+                
+                # Check for partial fills that might have been missed
+                # active_order.filled_base_amount is a string in Lighter model
+                filled_amount = Decimal(active_order.filled_base_amount)
+                
+                if filled_amount > pending.filled_size:
+                    logger.info(f"[RECONCILIATION] Found missed fill for {cloid}: {filled_amount} > {pending.filled_size}")
+                    
+                    diff = filled_amount - pending.filled_size
+                    pending.filled_size = filled_amount
+                    
+                    # Notify strategy of partial fill update?
+                    pass
+            
+            # Case B: Order is not in active list -> potentially inactive (filled/canceled) or lost
+            else:
+                missing_cloids.append(cloid)
+
+        # 3. Batch Fetch Inactive Orders if we have missing items
+        if not missing_cloids:
+            return
+
+        inactive_orders_map = {}
+        try:
+             # Fetch a reasonable batch size of history. 
+             # If we have many missing orders, we might need a larger limit or multiple pages, 
+             # but 50-100 is usually sufficient for "recent" changes.
+             inactive_orders_list = await self.get_inactive_orders(
+                limit=100, 
+                market_id=market_id
+            )
+             if inactive_orders_list:
+                 inactive_orders_map = {o.client_order_index: o for o in inactive_orders_list}
+        except Exception as e:
+            logger.error(f"Reconciliation error fetching inactive orders: {e}")
+            # If this fails, we can't safely judge missing orders this cycle.
+            return
+
+        # 4. Process Missing Orders
+        for cloid in missing_cloids:
+            cloid_int = cloid.as_int()
+            missing_pending = self.pending_orders.get(cloid)
+            
+            # Re-check existence in case it was modified concurrently (unlikely in single event loop but good practice)
+            if not missing_pending:
+                continue
+
+            if cloid_int in inactive_orders_map:
+                found_inactive = inactive_orders_map[cloid_int]
+                status = found_inactive.status
+                filled_amount = Decimal(found_inactive.filled_base_amount)
+                
+                if status == "filled" or (filled_amount >= missing_pending.target_size * Decimal("0.9999")):
+                     logger.info(f"[RECONCILIATION] Order {cloid} found FILLED in history.")
+                     
+                     diff_size = filled_amount - missing_pending.filled_size
+                     missing_pending.filled_size = filled_amount
+                     
+                     # Remove from pending
+                     if cloid in self.pending_orders:
+                         del self.pending_orders[cloid]
+                     
+                     # Fallback price if weighted avg not fully tracked
+                     try:
+                        fill_price = Decimal(found_inactive.price) 
+                     except:
+                        fill_price = missing_pending.price
+
+                     # Notify Strategy if we missed the fill event
+                     if diff_size > 0:
+                         self.strategy.on_order_filled(
+                             OrderFill(
+                                 side=missing_pending.side,
+                                 size=diff_size,
+                                 price=fill_price,
+                                 fee=Decimal("0"), # Unknown fee
+                                 role=TradeRole.TAKER, # Unknown role
+                                 cloid=cloid,
+                                 reduce_only=missing_pending.reduce_only,
+                                 raw_dir=None
+                             ),
+                             self.ctx
+                         )
+                     self.completed_cloids.add(cloid)
+
+                elif self._is_canceled_status(status):
+                    logger.info(f"[RECONCILIATION] Order {cloid} found CANCELED/FAILED ({status}).")
+                    if cloid in self.pending_orders:
+                         del self.pending_orders[cloid]
+                    
+                    self.strategy.on_order_failed(
+                        OrderFailure(
+                            cloid=cloid,
+                            side=missing_pending.side,
+                            target_size=missing_pending.target_size,
+                            filled_size=filled_amount,
+                            filled_price=missing_pending.weighted_avg_px,
+                            accumulated_fees=missing_pending.accumulated_fees,
+                            failure_reason=status,
+                            reduce_only=missing_pending.reduce_only
+                        ),
+                        self.ctx
+                    )
+                    self.completed_cloids.add(cloid)
+            else:
+                 # Case C: Not active, Not in recent inactive.
+                 # Could be "Lost" or "Expired"
+                 if now - missing_pending.created_at > 120:
+                      logger.warning(f"[RECONCILIATION] Order {cloid} lost (not found in active or recent history). Marking failed.")
+                      if cloid in self.pending_orders:
+                          del self.pending_orders[cloid]
+                      
+                      self.strategy.on_order_failed(
+                        OrderFailure(
+                            cloid=cloid,
+                            side=missing_pending.side,
+                            target_size=missing_pending.target_size,
+                            filled_size=missing_pending.filled_size,
+                            filled_price=missing_pending.weighted_avg_px,
+                            accumulated_fees=missing_pending.accumulated_fees,
+                            failure_reason="lost_in_reconciliation",
+                            reduce_only=missing_pending.reduce_only
+                        ),
+                        self.ctx
+                    )
+
+    async def _reconciliation_loop(self):
+        logger.info("Reconciliation Loop Started...")
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=RECONCILIATION_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                pass 
+            except asyncio.CancelledError:
+                break
+            
+            if self._shutdown_event.is_set():
+                break
+
+            try:
+                await self.handle_reconciliation()
+            except Exception as e:
+                logger.error(f"Error in reconciliation loop: {e}", exc_info=True)
+
     async def process_order_queue(self):
         if not self.ctx or not self.ctx.order_queue:
             return
@@ -899,7 +1071,8 @@ class Engine(BaseEngine):
                 asyncio.create_task(self.ws_client.run_async()),
                 asyncio.create_task(self._message_processor()),
 
-                asyncio.create_task(self._broadcast_summary_loop())
+                asyncio.create_task(self._broadcast_summary_loop()),
+                asyncio.create_task(self._reconciliation_loop())
             ]
             
             if self.broadcaster:

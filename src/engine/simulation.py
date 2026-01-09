@@ -4,11 +4,12 @@ from typing import Optional, Dict, List, Union
 from decimal import Decimal
 
 import lighter
+from lighter.nonce_manager import NonceManagerType
 from src.config import StrategyConfig, ExchangeConfig, SimulationConfig
 from src.strategy.base import Strategy
 from src.engine.context import StrategyContext, MarketInfo, Balance
 from src.strategy.types import StrategySummary, GridState
-from src.model import OrderRequest, LimitOrderRequest, OrderFill, OrderSide, Cloid, TradeRole
+from src.model import OrderRequest, LimitOrderRequest, OrderFill, OrderSide, Cloid, TradeRole, Order
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,10 @@ class SimulationEngine(BaseEngine):
         
         # Track current price for fill checks
         self._current_price: Decimal = Decimal("0")
+        
+
+        
+        self.signer_client: Optional[lighter.SignerClient] = None
 
     async def initialize(self):
         """
@@ -54,6 +59,16 @@ class SimulationEngine(BaseEngine):
         # 1. Setup API Client (Read Only)
         api_config = lighter.Configuration(host=self.exchange_config.base_url)
         self.api_client = lighter.ApiClient(configuration=api_config)
+
+        # Setup Account Index
+        if self.exchange_config.account_index > 0:
+            self.account_index = self.exchange_config.account_index
+        else:
+            # For pure simulation without wallet config
+            pass
+
+        # Setup Signer Client if possible (for authenticated reads)
+        self._init_signer()
         
         # 2. Load Markets
         await self._load_markets()
@@ -343,3 +358,5 @@ class SimulationEngine(BaseEngine):
         except Exception as e:
             logger.error(f"Price fetch failed: {e}")
             return 0.0
+
+

@@ -130,6 +130,11 @@ uv run python main.py --dry-run --config configs/my_strategy.yaml
 uv run pytest tests
 ```
 
+**Run Individual Test Script:**
+```bash
+uv run python tests/analyze_orders_api.py
+```
+
 ## SDK Management
 
 The bot uses the `lighter-python` SDK directly from GitHub via `uv`.
