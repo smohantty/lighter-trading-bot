@@ -426,10 +426,6 @@ class Engine(BaseEngine):
 
                         self.completed_cloids.add(cloid)
 
-                    # Note: We intentionally DO NOT handle "filled" or "closed" status here.
-                    # We rely on _handle_user_fills_msg to parse the trade/fill event
-                    # and trigger on_order_filled. This avoids race conditions and duplicate events.
-
                 except Exception as e:
                     logger.error(
                         f"Error processing order: {e}, order data: {order_dict}"
@@ -632,11 +628,7 @@ class Engine(BaseEngine):
             if not market_id:
                 return
 
-            # Token generation and account index are now handled inside BaseEngine
             active_orders_list = await self.get_active_orders(market_id=market_id)
-            # Active orders from SDK are lighter objects.
-            # get_active_orders inherits from BaseEngine and returns List[lighter.models.Order] (or similar)
-            # Use client_order_index as key
             active_orders_map = {o.client_order_index: o for o in active_orders_list}
 
         except Exception as e:
@@ -654,40 +646,17 @@ class Engine(BaseEngine):
 
             cloid_int = cloid.as_int()
 
-            # Case A: Order is active on exchange
-            if cloid_int in active_orders_map:
-                active_order = active_orders_map[cloid_int]
-
-                # Check for partial fills that might have been missed
-                # active_order.filled_base_amount is a string in Lighter model
-                filled_amount = Decimal(active_order.filled_base_amount)
-
-                if filled_amount > pending.filled_size:
-                    logger.info(
-                        f"[RECONCILIATION] Found missed fill for {cloid}: {filled_amount} > {pending.filled_size}"
-                    )
-
-                    _diff = filled_amount - pending.filled_size
-                    pending.filled_size = filled_amount
-
-                    # Notify strategy of partial fill update?
-                    pass
-
-            # Case B: Order is not in active list -> potentially inactive (filled/canceled) or lost
-            else:
+            if cloid_int not in active_orders_map:
                 missing_cloids.append(cloid)
 
-        # 3. Batch Fetch Inactive Orders if we have missing items
         if not missing_cloids:
+            logger.info("[RECONCILIATION] No missing orders found.")
             return
 
         inactive_orders_map = {}
         try:
-            # Fetch a reasonable batch size of history.
-            # If we have many missing orders, we might need a larger limit or multiple pages,
-            # but 50-100 is usually sufficient for "recent" changes.
             inactive_orders_list = await self.get_inactive_orders(
-                limit=100, market_id=market_id
+                limit=50, market_id=market_id
             )
             if inactive_orders_list:
                 inactive_orders_map = {
@@ -695,15 +664,12 @@ class Engine(BaseEngine):
                 }
         except Exception as e:
             logger.error(f"Reconciliation error fetching inactive orders: {e}")
-            # If this fails, we can't safely judge missing orders this cycle.
             return
 
-        # 4. Process Missing Orders
         for cloid in missing_cloids:
             cloid_int = cloid.as_int()
             missing_pending = self.pending_orders.get(cloid)
 
-            # Re-check existence in case it was modified concurrently (unlikely in single event loop but good practice)
             if not missing_pending:
                 continue
 
@@ -712,41 +678,27 @@ class Engine(BaseEngine):
                 status = found_inactive.status
                 filled_amount = Decimal(found_inactive.filled_base_amount)
 
-                if status == "filled" or (
-                    filled_amount >= missing_pending.target_size * Decimal("0.9999")
-                ):
+                if status == "filled":
                     logger.info(
                         f"[RECONCILIATION] Order {cloid} found FILLED in history."
                     )
 
-                    diff_size = filled_amount - missing_pending.filled_size
-                    missing_pending.filled_size = filled_amount
-
-                    # Remove from pending
                     if cloid in self.pending_orders:
                         del self.pending_orders[cloid]
 
-                    # Fallback price if weighted avg not fully tracked
-                    try:
-                        fill_price = Decimal(found_inactive.price)
-                    except Exception:
-                        fill_price = missing_pending.price
-
-                    # Notify Strategy if we missed the fill event
-                    if diff_size > 0:
-                        self.strategy.on_order_filled(
-                            OrderFill(
-                                side=missing_pending.side,
-                                size=diff_size,
-                                price=fill_price,
-                                fee=Decimal("0"),  # Unknown fee
-                                role=TradeRole.TAKER,  # Unknown role
-                                cloid=cloid,
-                                reduce_only=missing_pending.reduce_only,
-                                raw_dir=None,
-                            ),
-                            self.ctx,
-                        )
+                    self.strategy.on_order_filled(
+                        OrderFill(
+                            side=missing_pending.side,
+                            size=missing_pending.filled_size,
+                            price=missing_pending.price,
+                            fee=Decimal("0"),
+                            role=TradeRole.TAKER,
+                            cloid=cloid,
+                            reduce_only=missing_pending.reduce_only,
+                            raw_dir=None,
+                        ),
+                        self.ctx,
+                    )
                     self.completed_cloids.add(cloid)
 
                 elif self._is_canceled_status(status):
@@ -771,8 +723,6 @@ class Engine(BaseEngine):
                     )
                     self.completed_cloids.add(cloid)
             else:
-                # Case C: Not active, Not in recent inactive.
-                # Could be "Lost" or "Expired"
                 if now - missing_pending.created_at > ORDER_LOST_TIMEOUT_SECONDS:
                     logger.warning(
                         f"[RECONCILIATION] Order {cloid} lost (not found in active or recent history). Marking failed."
