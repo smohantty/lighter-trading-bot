@@ -14,6 +14,7 @@ from src.constants import (
     MAX_BATCH_SIZE,
     ORDER_LOST_TIMEOUT_SECONDS,
     ORDER_PROPAGATION_GRACE_SECONDS,
+    RECONCILIATION_ENABLED,
     RECONCILIATION_INTERVAL_SECONDS,
 )
 from src.engine.base import BaseEngine
@@ -794,6 +795,10 @@ class Engine(BaseEngine):
                     )
 
     async def _reconciliation_loop(self):
+        if not RECONCILIATION_ENABLED:
+            logger.info("Reconciliation Loop disabled via RECONCILIATION_ENABLED flag")
+            return
+
         logger.info("Reconciliation Loop Started...")
         while not self._shutdown_event.is_set():
             try:

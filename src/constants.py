@@ -17,7 +17,8 @@ AUTH_TOKEN_EXPIRY_SECONDS = 8 * 60 * 60  # 8 hours
 TOKEN_REFRESH_BUFFER_SECONDS = 60 * 60  # Refresh 1 hour before expiry
 
 # Reconciliation Loop
-RECONCILIATION_INTERVAL_SECONDS = 30.0
+RECONCILIATION_ENABLED = True  # Set to False to disable reconciliation loop
+RECONCILIATION_INTERVAL_SECONDS =  5 * 60 # 5 mins
 
 # API Batch Processing (Lighter supports up to 50 tx per batch)
 MAX_BATCH_SIZE = 49
