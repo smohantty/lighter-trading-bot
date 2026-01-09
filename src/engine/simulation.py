@@ -54,22 +54,12 @@ class SimulationEngine(BaseEngine):
         # Track current price for fill checks
         self._current_price: Decimal = Decimal("0")
 
-        self.signer_client: Optional[lighter.SignerClient] = None
-
     async def initialize(self):
         """
         Setup cache, fetch market info and balances based on mode.
         """
-        # 1. Setup API Client (Read Only)
-        api_config = lighter.Configuration(host=self.exchange_config.base_url)
-        self.api_client = lighter.ApiClient(configuration=api_config)
-
-        # Setup Account Index
-        if self.exchange_config.account_index > 0:
-            self.account_index = self.exchange_config.account_index
-        else:
-            # For pure simulation without wallet config
-            pass
+        # 1. Setup API Client (from BaseEngine)
+        self._init_api_client()
 
         # Setup Signer Client if possible (for authenticated reads)
         self._init_signer()
@@ -352,9 +342,9 @@ class SimulationEngine(BaseEngine):
         return self._current_price
 
     async def cleanup(self):
+        """Clean up simulation resources."""
         self._running = False
-        if self.api_client:
-            await self.api_client.close()
+        await super().cleanup()
 
     async def _fetch_current_price(self) -> float:
         """Fetch price from orderbook midprice."""

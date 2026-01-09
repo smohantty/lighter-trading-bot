@@ -54,6 +54,11 @@ class BaseEngine:
         # Cache for symbol parsing (symbol -> (base_asset, quote_asset))
         self._symbol_cache: Dict[str, Tuple[str, str]] = {}
 
+    def _init_api_client(self):
+        """Initialize the API client for REST calls."""
+        api_config = lighter.Configuration(host=self.exchange_config.base_url)
+        self.api_client = lighter.ApiClient(configuration=api_config)
+
     def _init_signer(self):
         """Initialize SignerClient if credentials are available."""
         if self.account_index and self.exchange_config.agent_private_key:
@@ -65,6 +70,21 @@ class BaseEngine:
                 },
                 nonce_management_type=NonceManagerType.API,
             )
+
+    async def cleanup(self):
+        """
+        Clean up resources. Closes API and Signer clients.
+        Subclasses should call super().cleanup() if overriding.
+        """
+        if self.signer_client:
+            logger.debug("Closing signer_client...")
+            await self.signer_client.close()
+            self.signer_client = None
+
+        if self.api_client:
+            logger.debug("Closing api_client...")
+            await self.api_client.close()
+            self.api_client = None
 
     async def _get_fresh_token(self) -> Optional[str]:
         """Token provider for QueueWsClient to refresh auth on reconnection."""

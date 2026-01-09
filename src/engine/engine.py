@@ -42,12 +42,8 @@ class Engine(BaseEngine):
         super().__init__(config, exchange_config, strategy)
         self.broadcaster = broadcaster
 
-        # Clients
-
-        self.api_client: Optional[lighter.ApiClient] = None
+        # Clients (api_client and signer_client inherited from BaseEngine)
         self.ws_client: Optional[lighter.WsClient] = None
-
-        self.account_index: Optional[int] = None
         self.running = False
 
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -63,23 +59,15 @@ class Engine(BaseEngine):
     async def initialize(self):
         logger.info("Initializing Engine...")
 
-        # 1. Setup API Client
-        logger.info(
-            f"Initializing API Client with URL: {self.exchange_config.base_url}"
-        )
+        # 1. Setup API Client (from BaseEngine)
+        self._init_api_client()
 
-        api_config = lighter.Configuration(host=self.exchange_config.base_url)
-        self.api_client = lighter.ApiClient(configuration=api_config)
-
-        # 2. Fetch Account Index (Already in Config)
-        if self.exchange_config.account_index > 0:
-            self.account_index = self.exchange_config.account_index
-            logger.info(f"Using Account Index from Config: {self.account_index}")
-        else:
+        # 2. Validate Account Index (already set in BaseEngine.__init__)
+        if not self.account_index:
             raise ValueError("Account Index must be provided in the configuration.")
+        logger.info(f"Using Account Index: {self.account_index}")
 
         # 3. Setup Signer Client
-        # Using configured API Key Index
         self._init_signer()
 
         # 4. Load Metadata (Markets)
@@ -1022,12 +1010,8 @@ class Engine(BaseEngine):
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Close sessions
-                logger.info("Closing API client sessions...")
-                if self.signer_client and self.signer_client.api_client:
-                    await self.signer_client.api_client.close()
-                if self.api_client:
-                    await self.api_client.close()
+                # Clean up API clients
+                await self.cleanup()
 
                 logger.info("Engine Stopped.")
 
@@ -1040,3 +1024,5 @@ class Engine(BaseEngine):
             pass
         if self.broadcaster:
             await self.broadcaster.stop()
+        # Clean up API clients from BaseEngine
+        await self.cleanup()

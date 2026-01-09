@@ -136,6 +136,7 @@ async def _run_simulation(config, exchange_config, strategy):
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, sim_engine.stop)
 
+    exit_code = 0
     try:
         await sim_engine.initialize()
 
@@ -166,12 +167,15 @@ async def _run_simulation(config, exchange_config, strategy):
     except ValueError as e:
         # Clean exit for expected validation errors (e.g., price out of grid range)
         logger.error(f"Simulation Failed: {e}")
-        sys.exit(1)
+        exit_code = 1
     except Exception as e:
         logger.error(f"Simulation Failed: {e}", exc_info=True)
-        sys.exit(1)
+        exit_code = 1
     finally:
         await sim_engine.cleanup()
+
+    if exit_code:
+        sys.exit(exit_code)
 
 
 async def _run_live(config, exchange_config, strategy):
