@@ -14,8 +14,5 @@ We are currently focusing on **solidifying the Core Engine and Grid Strategy**. 
 
 ## 3. Known Technical Debt / TODOs
 
-- [ ] **Metrics**: Currently logging is the only output. Consider adding a simple metrics server or dashboard hook in `status_broadcaster`.
-
 ## 4. Work in Progress
-- **Refactoring Spot Grid**: Completed `spot_grid.py` refactor.
-- **Refactoring Perp Grid**: Completed `perp_grid.py` refactor to align with Spot Grid structure and enforce strict Bias logic.
+None.
