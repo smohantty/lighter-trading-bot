@@ -259,79 +259,10 @@ class Engine(BaseEngine):
 
 
 
-    def _get_base_asset(self, market_index: int) -> str:
-        """
-        Get base asset from market index.
-        Returns 'UNKNOWN' if not found.
-        """
-        symbol = self.reverse_market_map.get(market_index)
-        if not symbol:
-             return "UNKNOWN"
-             
-        if "_" in symbol:
-            return symbol.split("_")[0]
-        elif "/" in symbol:
-             return symbol.split("/")[0]
-        
-        # Perps or simple symbols (e.g. HYPE)
-        return symbol
 
 
-    def _parse_order(self, order_data: dict) -> Order:
-        """
-        Parses a raw order dictionary into a typed Order dataclass.
-        """
-        return Order(
-            order_id=order_data["order_index"],
-            cloid_id=order_data["client_order_index"],
-            market_index=order_data["market_index"],
-            owner_account_index=order_data["owner_account_index"],
-            initial_base_amount=order_data["initial_base_amount"],
-            price=order_data["price"],
-            remaining_base_amount=order_data["remaining_base_amount"],
-            is_ask=order_data["is_ask"],
-            base_size=order_data["base_size"],
-            base_price=order_data["base_price"],
-            filled_base_amount=order_data["filled_base_amount"],
-            filled_quote_amount=order_data["filled_quote_amount"],
-            side=order_data["side"],
-            type=order_data["type"],
-            time_in_force=order_data["time_in_force"],
-            reduce_only=order_data["reduce_only"],
-            status=order_data["status"]
-        )
 
-    def _is_canceled_status(self, status: str) -> bool:
-        """
-        Determines if an order status represents a cancellation or failure terminal state.
-        """
-        canceled_statuses = {
-            "canceled", "canceled-post-only", "canceled-reduce-only",
-            "canceled-position-not-allowed", "canceled-margin-not-allowed",
-            "canceled-too-much-slippage", "canceled-not-enough-liquidity",
-            "canceled-self-trade", "canceled-expired", "canceled-oco",
-            "canceled-child", "canceled-liquidation", "canceled-invalid-balance"
-        }
-        return status in canceled_statuses
 
-    def _parse_trade(self, trade_data: dict) -> Trade:
-        """
-        Parses a raw trade dictionary into a typed Trade dataclass.
-        """
-        return Trade(
-            type=trade_data["type"],
-            market_id=trade_data["market_id"],
-            size=Decimal(str(trade_data["size"])),
-            price=Decimal(str(trade_data["price"])),
-            usd_amount=Decimal(str(trade_data["usd_amount"])),
-            ask_id=trade_data["ask_id"],
-            bid_id=trade_data["bid_id"],
-            ask_account_id=trade_data["ask_account_id"],
-            bid_account_id=trade_data["bid_account_id"],
-            is_maker_ask=trade_data["is_maker_ask"],
-            taker_fee=trade_data.get("taker_fee", 0),
-            maker_fee=trade_data.get("maker_fee", 0)
-        )
 
     def _find_cloid_by_oid(self, oid: int) -> Optional[Cloid]:
         """
@@ -343,42 +274,7 @@ class Engine(BaseEngine):
         return None
 
 
-    def _calculate_fee_usd(self, details: TradeDetails) -> Decimal:
-        """
-        Calculates the fee in USD (Decimal) based on the fee rate and trade volume.
-        
-        Logic:
-        - `details.fee` is the Fee Rate in integer format, scaled by 1,000,000.
-          (Example: 20 = 0.00002 = 0.002%, 200 = 0.0002 = 0.02%)
-        - `details.size` * `details.price` = Trade Volume in USD (Quote).
-        
-        Formula:
-             FeeUSD = (details.fee / 1_000_000) * (details.size * details.price)
-        """
-        if details.fee == 0:
-            return Decimal("0.0")
-
-        symbol = self.reverse_market_map.get(details.market_id)
-        if not symbol or not self.ctx:
-             return Decimal("0.0")
-             
-        market = self.ctx.market_info(symbol)
-        if not market:
-            # Fallback to simple calculation if market info is missing (should not happen)
-            return round((Decimal(str(details.fee)) / Decimal("1000000.0")) * (details.size * details.price), 6)
-
-        # Calculate Fee Amount in USD
-        # 1. Get Fee Rate
-        fee_rate = Decimal(str(details.fee)) / Decimal("1000000.0")
-        
-        # 2. Get Trade Volume (USD)
-        trade_volume_usd = details.size * details.price
-        
-        # 3. Calculate Fee
-        fee_usd = fee_rate * trade_volume_usd
-        
-        # 4. Round to 4 decimals (standard for USD/USDC on this exchange)
-        return round(fee_usd, 4) 
+ 
 
 
 

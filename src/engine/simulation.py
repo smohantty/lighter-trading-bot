@@ -104,11 +104,7 @@ class SimulationEngine(BaseEngine):
             
         # Parse base/quote from symbol
         symbol = self.strategy_config.symbol
-        if "/" in symbol:
-            base_asset, quote_asset = symbol.split("/")
-        else:
-            base_asset = symbol
-            quote_asset = "USDC"
+        base_asset, quote_asset = self._get_assets_from_symbol(symbol)
         
         amount = Decimal(str(self.sim_config.unlimited_amount))
         
@@ -283,11 +279,7 @@ class SimulationEngine(BaseEngine):
             
         # Parse base/quote from symbol
         symbol = order.symbol
-        if "/" in symbol:
-            base_asset, quote_asset = symbol.split("/")
-        else:
-            base_asset = symbol
-            quote_asset = "USDC"
+        base_asset, quote_asset = self._get_assets_from_symbol(symbol)
         
         quote_amount = fill.size * fill.price
         
