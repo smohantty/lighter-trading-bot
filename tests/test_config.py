@@ -1,8 +1,11 @@
-import pytest
 from decimal import Decimal
+
+import pytest
 from pydantic import ValidationError
-from src.config import SpotGridConfig, PerpGridConfig
-from src.strategy.types import GridType, GridBias
+
+from src.config import PerpGridConfig, SpotGridConfig
+from src.strategy.types import GridBias, GridType
+
 
 def test_validation_upper_less_than_lower():
     with pytest.raises(ValidationError) as exc:
@@ -12,9 +15,12 @@ def test_validation_upper_less_than_lower():
             lower_price=Decimal("2000.0"),
             grid_type=GridType.ARITHMETIC,
             grid_count=10,
-            total_investment=Decimal("1000.0")
+            total_investment=Decimal("1000.0"),
         )
-    assert "Upper price 1000.0 must be greater than lower price 2000.0" in str(exc.value)
+    assert "Upper price 1000.0 must be greater than lower price 2000.0" in str(
+        exc.value
+    )
+
 
 def test_validation_trigger_out_of_bounds():
     with pytest.raises(ValidationError) as exc:
@@ -25,9 +31,10 @@ def test_validation_trigger_out_of_bounds():
             grid_type=GridType.ARITHMETIC,
             grid_count=10,
             total_investment=Decimal("1000.0"),
-            trigger_price=Decimal("3000.0")
+            trigger_price=Decimal("3000.0"),
         )
     assert "Trigger price 3000.0 is outside the grid range" in str(exc.value)
+
 
 def test_validation_grid_count_too_low():
     with pytest.raises(ValidationError) as exc:
@@ -37,9 +44,10 @@ def test_validation_grid_count_too_low():
             lower_price=Decimal("1000.0"),
             grid_type=GridType.ARITHMETIC,
             grid_count=2,
-            total_investment=Decimal("1000.0")
+            total_investment=Decimal("1000.0"),
         )
     assert "Grid count 2 must be greater than 2" in str(exc.value)
+
 
 def test_validation_invalid_symbol_format():
     with pytest.raises(ValidationError):
@@ -49,8 +57,9 @@ def test_validation_invalid_symbol_format():
             lower_price=Decimal("1000.0"),
             grid_type=GridType.ARITHMETIC,
             grid_count=5,
-            total_investment=Decimal("1000.0")
+            total_investment=Decimal("1000.0"),
         )
+
 
 def test_validation_negative_investment():
     with pytest.raises(ValidationError):
@@ -60,8 +69,9 @@ def test_validation_negative_investment():
             lower_price=Decimal("1000.0"),
             grid_type=GridType.ARITHMETIC,
             grid_count=5,
-            total_investment=Decimal("-100.0")
+            total_investment=Decimal("-100.0"),
         )
+
 
 def test_validation_invalid_leverage():
     # Zero leverage
@@ -74,7 +84,7 @@ def test_validation_invalid_leverage():
             grid_type=GridType.ARITHMETIC,
             grid_count=5,
             total_investment=Decimal("1000.0"),
-            grid_bias=GridBias.LONG
+            grid_bias=GridBias.LONG,
         )
 
     # Too high leverage
@@ -87,8 +97,9 @@ def test_validation_invalid_leverage():
             grid_type=GridType.ARITHMETIC,
             grid_count=5,
             total_investment=Decimal("1000.0"),
-            grid_bias=GridBias.LONG
+            grid_bias=GridBias.LONG,
         )
+
 
 def test_validation_valid_configs():
     # Spot
@@ -98,9 +109,9 @@ def test_validation_valid_configs():
         lower_price=Decimal("1000.0"),
         grid_type=GridType.ARITHMETIC,
         grid_count=10,
-        total_investment=Decimal("1000.0")
+        total_investment=Decimal("1000.0"),
     )
-    # spot.validate() # Automatic with Pydantic initialization
+    assert spot.symbol == "BTC/USDC"
 
     # Perp
     perp = PerpGridConfig(
@@ -112,6 +123,6 @@ def test_validation_valid_configs():
         grid_type=GridType.ARITHMETIC,
         grid_count=10,
         total_investment=Decimal("1000.0"),
-        grid_bias=GridBias.LONG
+        grid_bias=GridBias.LONG,
     )
-    # perp.validate() # Automatic with Pydantic initialization
+    assert perp.symbol == "BTC"

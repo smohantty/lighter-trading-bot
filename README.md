@@ -135,6 +135,37 @@ uv run pytest tests
 uv run python tests/analyze_orders_api.py
 ```
 
+## Code Quality
+
+This project uses **Ruff** for linting and formatting, and **Mypy** for type checking.
+
+**Run All Checks (Format, Lint, Type Check):**
+```bash
+./check_code.sh
+```
+
+**Run Ruff Format Only:**
+```bash
+uv run ruff format .
+```
+
+**Run Ruff Lint Only:**
+```bash
+uv run ruff check .
+```
+
+**Run Ruff Lint with Auto-fix:**
+```bash
+uv run ruff check --fix .
+```
+
+**Run Mypy Only:**
+```bash
+./run_mypy.sh
+```
+
+> **Note:** Always run `./check_code.sh` before committing changes to ensure code quality.
+
 ## SDK Management
 
 The bot uses the `lighter-python` SDK directly from GitHub via `uv`.

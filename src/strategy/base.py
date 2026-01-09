@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from src.engine.context import StrategyContext
-from src.model import OrderFill, Cloid, OrderFailure
-from src.strategy.types import StrategySummary, GridState
-from typing import Union
 from decimal import Decimal
+
+from src.engine.context import StrategyContext
+from src.model import OrderFailure, OrderFill
+from src.strategy.types import GridState, StrategySummary
+
 
 class Strategy(ABC):
     @abstractmethod

@@ -1,6 +1,8 @@
 import unittest
 from decimal import Decimal
+
 from src.strategy.types import Spread
+
 
 class TestSpread(unittest.TestCase):
     def test_spread_initialization(self):
@@ -23,16 +25,16 @@ class TestSpread(unittest.TestCase):
         # 0.1% markup on 1000
         # 1000 * (1 + 0.001) = 1001
         spread = Spread(0.1)
-        
+
         # Test with int
         self.assertEqual(spread.markup(1000), Decimal("1001"))
-        
+
         # Test with float
         self.assertEqual(spread.markup(1000.0), Decimal("1001"))
-        
+
         # Test with Decimal
         self.assertEqual(spread.markup(Decimal("1000")), Decimal("1001"))
-        
+
         # Test with complex float
         # 45.672 * 1.001 = 45.717672
         self.assertEqual(spread.markup(45.672), Decimal("45.717672"))
@@ -46,16 +48,16 @@ class TestSpread(unittest.TestCase):
         # 0.1% markdown on 1000
         # 1000 * (1 - 0.001) = 999
         spread = Spread(0.1)
-        
+
         # Test with int
         self.assertEqual(spread.markdown(1000), Decimal("999"))
-        
+
         # Test with float
         self.assertEqual(spread.markdown(1000.0), Decimal("999"))
-        
+
         # Test with Decimal
         self.assertEqual(spread.markdown(Decimal("1000")), Decimal("999"))
-        
+
         # Test with complex float
         # 45.672 * 0.999 = 45.626328
         self.assertEqual(spread.markdown(45.672), Decimal("45.626328"))
@@ -69,12 +71,13 @@ class TestSpread(unittest.TestCase):
         # Test with high precision values
         spread = Spread("0.12345")
         val = Decimal("10000")
-        
+
         # Markup: 10000 * (1 + 0.0012345) = 10012.345
         self.assertEqual(spread.markup(val), Decimal("10012.345"))
-        
+
         # Markdown: 10000 * (1 - 0.0012345) = 9987.655
         self.assertEqual(spread.markdown(val), Decimal("9987.655"))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,12 @@
 import unittest
-from unittest.mock import MagicMock, AsyncMock, patch
 from decimal import Decimal
-from src.engine.engine import Engine
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from src.config import ExchangeConfig, SpotGridConfig
+from src.engine.engine import Engine
 from src.strategy.spot_grid import SpotGridStrategy
 from src.strategy.types import GridType
+
 
 class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
     async def test_market_map_parsing(self):
@@ -13,46 +15,50 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
         exch_conf.base_url = "https://test.com"
         exch_conf.account_index = 10
         exch_conf.agent_key_index = 1
-        exch_conf.agent_private_key = "00"*32 # Valid hex
+        exch_conf.agent_private_key = "00" * 32  # Valid hex
         exch_conf.symbol = "DOT"
-        
+
         strat_conf = SpotGridConfig(
-             symbol="ETH/USDC",
-             lower_price=Decimal("1.0"),
-             upper_price=Decimal("2.0"),
-             grid_type=GridType.ARITHMETIC,
-             grid_count=10,
-             total_investment=Decimal("100.0")
+            symbol="ETH/USDC",
+            lower_price=Decimal("1.0"),
+            upper_price=Decimal("2.0"),
+            grid_type=GridType.ARITHMETIC,
+            grid_count=10,
+            total_investment=Decimal("100.0"),
         )
         strategy = SpotGridStrategy(strat_conf)
-        
+
         # Mock Engine clients
-        with patch('src.engine.engine.lighter') as mock_lighter_engine, \
-             patch('src.engine.base.lighter') as mock_lighter_base:
-            
+        with (
+            patch("src.engine.engine.lighter") as mock_lighter_engine,
+            patch("src.engine.base.lighter") as mock_lighter_base,
+        ):
             # Setup Mocks to default to the same mock for simplicity or handle separately
             # We want them to share behavior usually
-            
+
             # Mock ApiClient on Engine side
             mock_api_client = MagicMock()
             mock_lighter_engine.ApiClient.return_value = mock_api_client
-            
+
             # Mock SignerClient on Engine side
             mock_signer = MagicMock()
             mock_lighter_engine.SignerClient.return_value = mock_signer
-            mock_signer.create_auth_token_with_expiry.return_value = ("fake_token", None)
+            mock_signer.create_auth_token_with_expiry.return_value = (
+                "fake_token",
+                None,
+            )
 
             # Mock OrderApi on Base side (used in _load_markets)
             mock_order_api = MagicMock()
             mock_lighter_base.OrderApi.return_value = mock_order_api
-            
+
             # Mock OrderApi and order_book_details response
-            
+
             # Mock OrderApi and order_book_details response inside Base
             # But wait, BaseEngine uses lighter.OrderApi.
             # configures mock_order_api above.
             mock_lighter_base.OrderApi.return_value = mock_order_api
-            
+
             # Realistic structure provided by user
             fake_response_dict = {
                 "code": 200,
@@ -94,8 +100,8 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
                             "insurance_fund_account_index": 281474976710655,
                             "liquidation_mode": 0,
                             "force_reduce_only": False,
-                            "trading_hours": ""
-                        }
+                            "trading_hours": "",
+                        },
                     },
                     {
                         "symbol": "WLD",
@@ -104,36 +110,38 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
                         "price_decimals": 5,
                         "size_decimals": 1,
                         "min_base_amount": "5.0",
-                        "min_quote_amount": "10.0"
-                    }
+                        "min_quote_amount": "10.0",
+                    },
                 ],
                 "spot_order_book_details": [
                     {
                         "symbol": "ETH/USDC",
                         "market_id": 100,
-                        "price_decimals": 4, 
+                        "price_decimals": 4,
                         "size_decimals": 6,
                         "market_type": "spot",
                         "base_asset_id": 1,
                         "quote_asset_id": 2,
                         "min_base_amount": "1.0",
-                        "min_quote_amount": "5.0"
+                        "min_quote_amount": "5.0",
                     }
-                ]
+                ],
             }
-            
+
             # Setup async return
-            mock_order_api.order_book_details = AsyncMock(return_value=fake_response_dict)
-            
+            mock_order_api.order_book_details = AsyncMock(
+                return_value=fake_response_dict
+            )
+
             # Init Engine: config, exchange_config, strategy
             engine = Engine(strat_conf, exch_conf, strategy)
             await engine.initialize()
-            
+
             # Assertions
             # DOT (Perp) -> 11
             self.assertIn("DOT", engine.market_map)
             self.assertEqual(engine.market_map["DOT"], 11)
-            
+
             # Check MarketInfo for DOT
             self.assertIn("DOT", engine.markets)
             dot_info = engine.markets["DOT"]
@@ -142,15 +150,16 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(dot_info.price_decimals, 5)
             self.assertEqual(dot_info.sz_decimals, 1)
             self.assertEqual(dot_info.min_base_amount, Decimal("2.0"))
-            
+
             # WLD (Perp) -> 6
             self.assertIn("WLD", engine.market_map)
             self.assertEqual(engine.market_map["WLD"], 6)
-            
+
             # ETH/USDC (Spot) -> 100
             self.assertIn("ETH/USDC", engine.market_map)
             self.assertEqual(engine.market_map["ETH/USDC"], 100)
             self.assertEqual(engine.markets["ETH/USDC"].price_decimals, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

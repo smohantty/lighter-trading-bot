@@ -1,11 +1,10 @@
-from typing import Dict, Optional, List, Union
-from decimal import Decimal
-from dataclasses import dataclass, field
-import math
 import time
-from src.model import Cloid, OrderRequest, CancelOrderRequest
-from src.engine.precision import Precision
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Dict, List, Optional, Union
 
+from src.engine.precision import Precision
+from src.model import Cloid, OrderRequest
 
 
 @dataclass
@@ -43,6 +42,7 @@ class Balance:
     total: Decimal
     available: Decimal
 
+
 class StrategyContext:
     def __init__(self, markets: Dict[str, MarketInfo]):
         self.markets = markets
@@ -50,7 +50,7 @@ class StrategyContext:
         self.perp_balances: Dict[str, Balance] = {}
         self.order_queue: List[OrderRequest] = []
         self.cancellation_queue: List[Cloid] = []
-        
+
         # Counter for generating unique client order IDs
         self._cloid_counter = int(time.time() * 1000) % 10000000
 
@@ -60,7 +60,7 @@ class StrategyContext:
     def place_order(self, order: OrderRequest) -> Cloid:
         self._cloid_counter += 1
         cloid = Cloid(self._cloid_counter)
-        
+
         order.cloid = cloid
         self.order_queue.append(order)
         return cloid
@@ -68,12 +68,19 @@ class StrategyContext:
     def cancel_order(self, cloid: Cloid):
         self.cancellation_queue.append(cloid)
 
+    def update_spot_balance(
+        self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]
+    ):
+        self.spot_balances[asset] = Balance(
+            total=Decimal(str(total)), available=Decimal(str(available))
+        )
 
-    def update_spot_balance(self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]):
-        self.spot_balances[asset] = Balance(total=Decimal(str(total)), available=Decimal(str(available)))
-
-    def update_perp_balance(self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]):
-        self.perp_balances[asset] = Balance(total=Decimal(str(total)), available=Decimal(str(available)))
+    def update_perp_balance(
+        self, asset: str, total: Union[float, Decimal], available: Union[float, Decimal]
+    ):
+        self.perp_balances[asset] = Balance(
+            total=Decimal(str(total)), available=Decimal(str(available))
+        )
 
     def get_spot_total(self, asset: str) -> Decimal:
         b = self.spot_balances.get(asset)

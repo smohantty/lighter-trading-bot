@@ -1,18 +1,23 @@
 import asyncio
 import logging
-import sys
 import os
+import sys
+
 from dotenv import load_dotenv
 
 # Add root to python path
 sys.path.append(os.getcwd())
 
-from src.config import ExchangeConfig
 import lighter
 
+from src.config import ExchangeConfig
+
 # Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("test_app")
+
 
 async def main():
     logger.info("Starting Test Application...")
@@ -21,7 +26,7 @@ async def main():
     # 1. Load Configuration
     try:
         config = ExchangeConfig.from_env()
-        logger.info(f"Loaded Configuration:")
+        logger.info("Loaded Configuration:")
         logger.info(f"  Network: {config.network}")
         logger.info(f"  Base URL: {config.base_url}")
         logger.info(f"  Account Index: {config.account_index}")
@@ -34,7 +39,7 @@ async def main():
     # 2. Initialize Clients
     api_client = None
     signer_client = None
-    
+
     try:
         # ApiClient
         # Configure host
@@ -46,14 +51,16 @@ async def main():
         signer_client = lighter.SignerClient(
             url=config.base_url,
             account_index=config.account_index,
-            api_private_keys={config.agent_key_index: config.agent_private_key}
+            api_private_keys={config.agent_key_index: config.agent_private_key},
         )
         logger.info("Initialized SignerClient.")
 
     except Exception as e:
         logger.error(f"Failed to initialize clients: {e}")
-        if api_client: await api_client.close()
-        if signer_client: await signer_client.close()
+        if api_client:
+            await api_client.close()
+        if signer_client:
+            await signer_client.close()
         return
 
     # 3. Verify Signer
@@ -61,9 +68,9 @@ async def main():
     try:
         err = signer_client.check_client()
         if err:
-             logger.error(f"Signer verification failed: {err}")
+            logger.error(f"Signer verification failed: {err}")
         else:
-             logger.info("Signer verification PASSED.")
+            logger.info("Signer verification PASSED.")
     except Exception as e:
         logger.error(f"Signer verification exception: {e}")
 
@@ -72,11 +79,13 @@ async def main():
     try:
         account_api = lighter.AccountApi(api_client)
         # Query by Index
-        account_info = await account_api.account(by="index", value=str(config.account_index))
-        
+        account_info = await account_api.account(
+            by="index", value=str(config.account_index)
+        )
+
         # Dump info
         # Check if it's a model or dict. Assuming model with __dict__ or just printing str()
-        logger.info(f"Account Data Received.")
+        logger.info("Account Data Received.")
         logger.info(f"Details: {account_info}")
 
     except Exception as e:
@@ -87,8 +96,9 @@ async def main():
         await signer_client.close()
     if api_client:
         await api_client.close()
-    
+
     logger.info("Test Application Finished.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

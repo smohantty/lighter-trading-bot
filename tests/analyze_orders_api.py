@@ -1,7 +1,7 @@
 import asyncio
-import os
 import json
 import logging
+import os
 import sys
 from typing import cast
 
@@ -9,13 +9,15 @@ from typing import cast
 sys.path.append(os.getcwd())
 
 from dotenv import load_dotenv
-from src.config import load_config, ExchangeConfig, SpotGridConfig
+
+from src.config import ExchangeConfig, SpotGridConfig, load_config
 from src.engine.simulation import SimulationEngine
 from src.strategy.spot_grid import SpotGridStrategy
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 async def main():
     # Load .env
@@ -30,7 +32,7 @@ async def main():
     try:
         config = load_config(config_path)
         exchange_config = ExchangeConfig.from_env()
-        
+
         logger.info(f"Target Symbol: {config.symbol}")
         logger.info(f"Account Index: {exchange_config.account_index}")
 
@@ -42,10 +44,10 @@ async def main():
             return
 
         engine = SimulationEngine(config, exchange_config, strategy)
-        
+
         logger.info("Initializing Engine...")
         await engine.initialize()
-        
+
         results = {}
 
         # 1. Active Orders
@@ -53,12 +55,11 @@ async def main():
         try:
             market_id = engine.market_map[config.symbol]
             account_index = exchange_config.account_index
-            
+
             # Auth Token is now handled internally by BaseEngine
-            
+
             active_orders = await engine.get_active_orders(
-                market_id=market_id,
-                owner_account_index=account_index
+                market_id=market_id, owner_account_index=account_index
             )
             results["active_orders"] = _serialize(active_orders)
             logger.info(f"Found {len(active_orders)} active orders")
@@ -70,16 +71,14 @@ async def main():
         logger.info("Fetching Inactive Orders...")
         try:
             inactive_orders = await engine.get_inactive_orders(
-                limit=10,
-                market_id=market_id,
-                owner_account_index=account_index
+                limit=10, market_id=market_id, owner_account_index=account_index
             )
             results["inactive_orders"] = _serialize(inactive_orders)
             logger.info(f"Found {len(inactive_orders)} inactive orders")
         except Exception as e:
             logger.error(f"Error fetching inactive orders: {e}")
             results["inactive_error"] = str(e)
-            
+
         # Clean up
         await engine.cleanup()
 
@@ -91,6 +90,7 @@ async def main():
     except Exception as e:
         logger.error(f"Analysis failed: {e}", exc_info=True)
 
+
 def _serialize(obj):
     if hasattr(obj, "to_dict"):
         return obj.to_dict()
@@ -99,6 +99,7 @@ def _serialize(obj):
     if isinstance(obj, (str, int, float, bool, type(None))):
         return obj
     return str(obj)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

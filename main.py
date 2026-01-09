@@ -1,19 +1,19 @@
+import argparse
 import asyncio
 import logging
 import os
-import sys
-import argparse
 import signal
-from dotenv import load_dotenv
-from typing import cast, Optional
+import sys
+from logging.handlers import TimedRotatingFileHandler
+from typing import cast
 
-from src.config import load_config, ExchangeConfig, SpotGridConfig, PerpGridConfig
+from dotenv import load_dotenv
+
+from src.config import ExchangeConfig, PerpGridConfig, SpotGridConfig, load_config
+from src.engine.engine import Engine
 from src.strategy.base import Strategy
 from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
-from src.engine.engine import Engine
-
-from logging.handlers import TimedRotatingFileHandler
 
 # Ensure logs directory exists
 os.makedirs("logs", exist_ok=True)
@@ -21,39 +21,54 @@ os.makedirs("logs", exist_ok=True)
 # Module-level logger (handlers configured dynamically in main)
 logger = logging.getLogger("main")
 
+
 def setup_logging(is_simulation: bool = False):
     """Configure logging with separate log files for simulation vs production."""
-    log_file = "logs/simulation.log" if is_simulation else "logs/lighter-trading-bot.log"
-    
+    log_file = (
+        "logs/simulation.log" if is_simulation else "logs/lighter-trading-bot.log"
+    )
+
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            TimedRotatingFileHandler(log_file, when="midnight", interval=1, backupCount=30)
+            TimedRotatingFileHandler(
+                log_file, when="midnight", interval=1, backupCount=30
+            ),
         ],
-        force=True
+        force=True,
     )
+
 
 async def main():
     load_dotenv()
-    
+
     # Parse Args first to determine logging mode
     parser = argparse.ArgumentParser(description="Lighter Trading Bot")
-    parser.add_argument("strategy_config_file", nargs='?', help="Path to the strategy configuration file (YAML)")
-    parser.add_argument("--config", help="Path to the strategy configuration file (YAML)")
-    
+    parser.add_argument(
+        "strategy_config_file",
+        nargs="?",
+        help="Path to the strategy configuration file (YAML)",
+    )
+    parser.add_argument(
+        "--config", help="Path to the strategy configuration file (YAML)"
+    )
+
     # Simulation mode
-    parser.add_argument("--dry-run", action="store_true", 
-                        help="Run in simulation mode (configure via LIGHTER_SIMULATION_CONFIG_FILE)")
-    
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in simulation mode (configure via LIGHTER_SIMULATION_CONFIG_FILE)",
+    )
+
     args = parser.parse_args()
-    
+
     # Setup logging based on mode (simulation uses separate log file)
     setup_logging(is_simulation=args.dry_run)
 
     strategy_config_file = args.config or args.strategy_config_file
-    
+
     if not strategy_config_file:
         parser.print_help()
         return
@@ -100,51 +115,54 @@ async def main():
 
 
 async def _run_simulation(config, exchange_config, strategy):
+    from src.config import load_simulation_config
     from src.engine.simulation import SimulationEngine
     from src.ui.console import ConsoleRenderer
-    from src.config import load_simulation_config
-    
+
     # Load simulation config from LIGHTER_SIMULATION_CONFIG_FILE (or defaults)
     sim_config = load_simulation_config()
-    
-    logger.info(f"[SIMULATION] Mode: balance={sim_config.balance_mode}, execution={sim_config.execution_mode}")
+
+    logger.info(
+        f"[SIMULATION] Mode: balance={sim_config.balance_mode}, execution={sim_config.execution_mode}"
+    )
     if sim_config.balance_overrides:
         logger.info(f"[SIMULATION] Balance overrides: {sim_config.balance_overrides}")
-    
+
     sim_engine = SimulationEngine(config, exchange_config, strategy, sim_config)
 
-    
     # Setup signal handler for continuous mode
     if sim_config.execution_mode == "continuous":
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, sim_engine.stop)
-    
+
     try:
         await sim_engine.initialize()
-        
+
         if sim_config.execution_mode == "single_step":
             await sim_engine.run_single_step()
-            ConsoleRenderer.render(config, sim_engine.get_summary(), sim_engine.get_grid_state(), sim_engine.get_orders())
+            ConsoleRenderer.render(
+                config,
+                sim_engine.get_summary(),
+                sim_engine.get_grid_state(),
+                sim_engine.get_orders(),
+            )
         else:
             # Continuous mode - run with periodic console updates
             async def render_loop():
                 while sim_engine._running:
                     await asyncio.sleep(5)  # Render every 5 seconds
                     ConsoleRenderer.render(
-                        config, 
-                        sim_engine.get_summary(), 
-                        sim_engine.get_grid_state(), 
+                        config,
+                        sim_engine.get_summary(),
+                        sim_engine.get_grid_state(),
                         sim_engine.get_orders(),
-                        current_price=sim_engine.get_current_price()
+                        current_price=sim_engine.get_current_price(),
                     )
-            
+
             # Run both engine and renderer
-            await asyncio.gather(
-                sim_engine.run(),
-                render_loop()
-            )
-            
+            await asyncio.gather(sim_engine.run(), render_loop())
+
     except ValueError as e:
         # Clean exit for expected validation errors (e.g., price out of grid range)
         logger.error(f"Simulation Failed: {e}")
@@ -155,15 +173,16 @@ async def _run_simulation(config, exchange_config, strategy):
     finally:
         await sim_engine.cleanup()
 
+
 async def _run_live(config, exchange_config, strategy):
     from src.broadcast.server import StatusBroadcaster
-    
+
     # Init Broadcast
     broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
-    
+
     # Init Engine
     engine = Engine(config, exchange_config, strategy, broadcaster)
-    
+
     # Setup Signal Handlers
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -173,6 +192,7 @@ async def _run_live(config, exchange_config, strategy):
         await engine.run()
     finally:
         await engine.stop()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

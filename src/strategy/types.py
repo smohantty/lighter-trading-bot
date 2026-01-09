@@ -1,19 +1,30 @@
 from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum, auto
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from src.model import Cloid, OrderSide
+
 
 class GridBias(str, Enum):
     LONG = "Long"
     SHORT = "Short"
     # NEUTRAL = "Neutral" # Removed as per recent changes in Rust bot history
 
+
 class GridType(str, Enum):
     ARITHMETIC = "Arithmetic"
     GEOMETRIC = "Geometric"
+
 
 class ZoneMode(Enum):
     LONG = "Long"
     SHORT = "Short"
     # NEUTRAL = "Neutral"
+
 
 class StrategyState(Enum):
     Initializing = auto()
@@ -21,23 +32,18 @@ class StrategyState(Enum):
     AcquiringAssets = auto()
     Running = auto()
 
-from dataclasses import dataclass
-from typing import List, Optional, Union, Tuple, TYPE_CHECKING
-from decimal import Decimal
-
-if TYPE_CHECKING:
-    from src.model import Cloid, OrderSide
 
 class Spread:
     """
     Represents a percentage spread for markup/markdown calculations.
-    
+
     0.1 means 0.1% (pips).
     stored as Decimal('0.1')
     """
+
     def __init__(self, percentage: Union[float, str, Decimal]):
         self.value = Decimal(str(percentage))
-        
+
     def markup(self, value: Union[Decimal, float, int]) -> Decimal:
         """Returns value * (1 + spread/100)"""
         d_val = Decimal(str(value))
@@ -51,6 +57,7 @@ class Spread:
     def __repr__(self) -> str:
         return f"Spread({self.value}%)"
 
+
 @dataclass
 class ZoneInfo:
     index: int
@@ -62,6 +69,7 @@ class ZoneInfo:
     is_reduce_only: bool
     entry_price: Decimal
     roundtrip_count: int
+
 
 @dataclass
 class GridZone:
@@ -76,12 +84,14 @@ class GridZone:
     roundtrip_count: int = 0
     retry_count: int = 0
 
+
 @dataclass
 class GridState:
     symbol: str
     strategy_type: str
     grid_bias: Optional[str]
     zones: List[ZoneInfo]
+
 
 @dataclass
 class PerpGridSummary:
@@ -103,6 +113,7 @@ class PerpGridSummary:
     margin_balance: Decimal
     initial_entry_price: Optional[Decimal]
 
+
 @dataclass
 class SpotGridSummary:
     symbol: str
@@ -120,5 +131,6 @@ class SpotGridSummary:
     roundtrips: int
     base_balance: Decimal
     quote_balance: Decimal
+
 
 StrategySummary = Union[PerpGridSummary, SpotGridSummary, None]

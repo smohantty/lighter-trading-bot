@@ -1,12 +1,14 @@
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Optional, Union
 from decimal import Decimal
+from enum import Enum
+from typing import Optional, Union
+
 
 class Cloid:
     """
     Client Order ID - matches Lighter SDK's client_order_index (integer).
     """
+
     def __init__(self, order_id: int):
         if not isinstance(order_id, int):
             raise TypeError(f"Cloid must be initialized with int, got {type(order_id)}")
@@ -17,7 +19,7 @@ class Cloid:
 
     def __str__(self) -> str:
         return str(self._id)
-    
+
     def __repr__(self) -> str:
         return f"Cloid({self._id})"
 
@@ -43,6 +45,7 @@ class OrderSide(Enum):
     def __str__(self):
         return self.value
 
+
 class TradeRole(Enum):
     MAKER = "Maker"
     TAKER = "Taker"
@@ -56,6 +59,7 @@ class TradeRole(Enum):
     def __str__(self):
         return self.value
 
+
 @dataclass
 class OrderFill:
     side: OrderSide
@@ -67,9 +71,11 @@ class OrderFill:
     reduce_only: Optional[bool] = None
     raw_dir: Optional[str] = None
 
+
 @dataclass
 class PendingOrder:
     """Tracks an order that may fill in multiple parts."""
+
     target_size: Decimal
     side: OrderSide
     filled_size: Decimal = Decimal("0")
@@ -84,7 +90,8 @@ class PendingOrder:
 @dataclass
 class OrderFailure:
     """Information about a failed order, including any partial fills."""
-    cloid: 'Cloid'
+
+    cloid: "Cloid"
     side: OrderSide
     target_size: Decimal
     filled_size: Decimal
@@ -103,21 +110,25 @@ class LimitOrderRequest:
     reduce_only: bool
     cloid: Optional[Cloid] = None
 
+
 @dataclass
 class MarketOrderRequest:
     symbol: str
     side: OrderSide
     sz: Decimal
     reduce_only: bool = False
-    price: Decimal = Decimal("0") # Worst price / slippage limit
+    price: Decimal = Decimal("0")  # Worst price / slippage limit
     cloid: Optional[Cloid] = None
+
 
 @dataclass
 class CancelOrderRequest:
     cloid: Cloid
-    symbol: str # Added symbol as it's often needed for context, though often implicit in Cloid lookup
+    symbol: str  # Added symbol as it's often needed for context, though often implicit in Cloid lookup
+
 
 OrderRequest = Union[LimitOrderRequest, MarketOrderRequest, CancelOrderRequest]
+
 
 @dataclass
 class Order:
@@ -151,9 +162,12 @@ class TradeDetails:
     size: Decimal
 
     def __repr__(self):
-        return (f"TradeDetails(side={self.side.value}, oid={self.oid}, "
-                f"role={self.role.value}, fee={self.fee}, "
-                f"market_id={self.market_id}, price={self.price}, size={self.size})")
+        return (
+            f"TradeDetails(side={self.side.value}, oid={self.oid}, "
+            f"role={self.role.value}, fee={self.fee}, "
+            f"market_id={self.market_id}, price={self.price}, size={self.size})"
+        )
+
 
 @dataclass
 class Trade:
@@ -180,26 +194,25 @@ class Trade:
             role = TradeRole.TAKER if self.is_maker_ask else TradeRole.MAKER
             fee = self.taker_fee if role.is_taker() else self.maker_fee
             return TradeDetails(
-                side=OrderSide.BUY, 
-                oid=self.bid_id, 
-                role=role, 
+                side=OrderSide.BUY,
+                oid=self.bid_id,
+                role=role,
                 fee=fee,
                 market_id=self.market_id,
                 price=self.price,
-                size=self.size
+                size=self.size,
             )
         elif self.ask_account_id == account_id:
             # We are SELLER (ASK)
             role = TradeRole.MAKER if self.is_maker_ask else TradeRole.TAKER
             fee = self.taker_fee if role.is_taker() else self.maker_fee
             return TradeDetails(
-                side=OrderSide.SELL, 
-                oid=self.ask_id, 
-                role=role, 
+                side=OrderSide.SELL,
+                oid=self.ask_id,
+                role=role,
                 fee=fee,
                 market_id=self.market_id,
                 price=self.price,
-                size=self.size
+                size=self.size,
             )
         return None
-

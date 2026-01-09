@@ -39,16 +39,20 @@ graph TD
 - **Initialization**: `uv sync`
 - **Starting the Bot**: `uv run python main.py <config_file>`
 - **Running Tests**: `uv run pytest tests/`
-- **Linting**: `uv run mypy src tests`
+- **Code Quality Check**: `./check_code.sh` (runs ruff format, ruff check, and mypy)
+- **Linting Only**: `uv run ruff check .`
+- **Formatting Only**: `uv run ruff format .`
+- **Type Checking Only**: `./run_mypy.sh`
 
 ## Rules for Coding Agents
 1.  **Tool Usage**: Always use `uv run python` or `uv run <command>`.
-2. **Code Style**:
+2.  **Pre-Commit Checks**: **ALWAYS** run `./check_code.sh` before committing any changes. Do not commit code that fails linting, formatting, or type checks.
+3.  **Code Style**:
     - Use type hints consistently.
     - Follow the existing pattern of using `StrategyContext` to queue orders rather than calling API methods directly from strategies.
-3. **Market Metadata**: Use the `MarketInfo` object within the context for all precision-related calculations.
-4. **Safety**:
+4.  **Market Metadata**: Use the `MarketInfo` object within the context for all precision-related calculations.
+5.  **Safety**:
     - Do not modify `.env` or `wallet_config.json` with real keys in a way that could be committed.
     - Ensure all order sizes and prices are rounded according to market rules using `MarketInfo.round_size()` and `MarketInfo.round_price()`.
-5. **Documentation**:
+6.  **Documentation**:
     - **Do NOT** generate documentation describing what the code does or how it works. Code should be self-explanatory. Focus on *why* changes are made if explanation is needed in PRs/commits, but avoid successful/summary output that just narrates the code.

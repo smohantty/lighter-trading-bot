@@ -17,8 +17,18 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "mypy>=1.0.0", 
     "types-pyyaml",
+    "ruff>=0.1.0",
 ]
 
 
 [tool.uv]
 package = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable specific rule sets (E=Error, F=Pyflakes, I=isort, B=Bugbear)
+select = ["E", "F", "I", "B"]
+ignore = ["E501"] # Ignore line-length violations

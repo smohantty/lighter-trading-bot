@@ -61,7 +61,18 @@ This is a high-performance, asynchronous trading bot built for the Lighter Excha
 1.  **Install/Sync**: `uv sync`
 2.  **Run Bot**: `uv run python main.py <config_path>`
 3.  **Run Tests**: `uv run pytest`
-4.  **Lint**: `uv run mypy src`
+4.  **Code Quality Check**: `./check_code.sh` (runs ruff format, ruff check, and mypy)
+
+### Pre-Commit Requirements
+> [!IMPORTANT]
+> **ALWAYS** run `./check_code.sh` before committing any changes.
+> Do not commit code that fails linting, formatting, or type checks.
+
+**Individual Commands:**
+- **Format**: `uv run ruff format .`
+- **Lint**: `uv run ruff check .`
+- **Lint + Fix**: `uv run ruff check --fix .`
+- **Type Check**: `./run_mypy.sh`
 
 ### Output Standards
 - **Conciseness**: Do not include "summary" or "explanation" sections that merely describe what the code does.
