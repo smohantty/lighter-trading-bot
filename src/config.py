@@ -2,37 +2,21 @@ import yaml
 import os
 import json
 import logging
-from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional, Literal, Union, Dict
+from typing import Optional, Literal, Union, Dict, Any
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationError
 from src.strategy.types import GridBias, GridType
 
 
-@dataclass
-class SimulationConfig:
+class SimulationConfig(BaseModel):
     """
     Configuration for simulation engine modes.
-    
-    balance_mode:
-        - "real": Fetch actual balances from backend
-        - "unlimited": Use unlimited balances (1M each asset)
-        - "override": Use balance_overrides for specified assets, real for others
-    
-    execution_mode:
-        - "single_step": One price tick (dry run preview)
-        - "continuous": Loop with live price feed and fill simulation
-    
-    balance_overrides:
-        Dictionary mapping asset symbols to their simulated balance.
-        Only used when balance_mode is "override".
-        Assets not in this dict will use real balance from backend.
-        Example: {"LIT": 1000.0, "USDC": 50000.0}
     """
     balance_mode: Literal["real", "unlimited", "override"] = "unlimited"
     execution_mode: Literal["single_step", "continuous"] = "single_step"
     
     # For override balance mode - map asset symbol to balance
-    balance_overrides: Dict[str, Decimal] = field(default_factory=dict)
+    balance_overrides: Dict[str, Decimal] = Field(default_factory=dict)
     
     # For unlimited balance mode (default fallback)
     unlimited_amount: Decimal = Decimal("1000000.0")
@@ -48,28 +32,6 @@ class SimulationConfig:
 def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
     """
     Load simulation configuration from a JSON file.
-    
-    Resolution order:
-    1. Explicit path argument
-    2. LIGHTER_SIMULATION_CONFIG_FILE environment variable
-    3. Default: 'simulation_config.json' in current directory
-    
-    If file doesn't exist, returns default SimulationConfig (unlimited balance, single_step).
-    
-    Expected JSON format:
-    ```json
-    {
-      "balance_mode": "unlimited",  // "real", "unlimited", or "override"
-      "execution_mode": "single_step",  // "single_step" or "continuous"
-      "balances": {  // Only used when balance_mode is "override"
-        "LIT": 500.0,
-        "USDC": 10000.0
-      },
-      "tick_interval_ms": 1000,
-      "simulate_fills": true,
-      "fee_rate": 0.0005
-    }
-    ```
     """
     
     # Resolution order: arg > env > default
@@ -87,31 +49,18 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
         # Filter out comment keys (those starting with //)
         data = {k: v for k, v in data.items() if not k.startswith("//")}
         
-        # Extract balance_overrides from "balances" key
-        balance_overrides = {}
+        # Extract balance_overrides from "balances" key if present (legacy support/custom format)
         if "balances" in data:
-            balance_overrides = {str(k): Decimal(str(v)) for k, v in data["balances"].items()}
-            del data["balances"]
+            data["balance_overrides"] = data.pop("balances")
         
-        # Map known fields
-        config = SimulationConfig(
-            balance_mode=data.get("balance_mode", "unlimited"),
-            execution_mode=data.get("execution_mode", "single_step"),
-            balance_overrides=balance_overrides,
-            unlimited_amount=Decimal(str(data.get("unlimited_amount", 1_000_000.0))),
-            tick_interval_ms=data.get("tick_interval_ms", 1000),
-            simulate_fills=data.get("simulate_fills", True),
-            fee_rate=Decimal(str(data.get("fee_rate", 0.0005))),
-        )
-        
-        return config
+        return SimulationConfig(**data)
         
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to load simulation config from {path}: {e}. Using defaults.")
         return SimulationConfig()
 
-@dataclass
-class SpotGridConfig:
+
+class BaseGridConfig(BaseModel):
     symbol: str
     upper_price: Decimal
     lower_price: Decimal
@@ -120,92 +69,95 @@ class SpotGridConfig:
     grid_count: Optional[int] = None
     spread_bips: Optional[Decimal] = None
     trigger_price: Optional[Decimal] = None
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, v: str) -> str:
+        # Basic check, mainly for Spot but good generally to have structure
+        if "/" not in v and "PERP" not in v and len(v) < 3:
+             # Just a heuristic warning or check? Keeping strict for spot mostly.
+             pass
+        return v
+
+    @field_validator("total_investment")
+    @classmethod
+    def validate_investment(cls, v: Decimal) -> Decimal:
+        if v <= Decimal("0.0"):
+            raise ValueError("Total investment must be positive.")
+        return v
+    
+    @field_validator("trigger_price")
+    @classmethod
+    def validate_trigger_price_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v <= Decimal("0.0"):
+             raise ValueError("Trigger price must be positive.")
+        return v
+
+    @model_validator(mode='after')
+    def validate_grid_params(self) -> 'BaseGridConfig':
+        if self.grid_count is None and self.spread_bips is None:
+             raise ValueError("Either grid_count or spread_bips must be provided.")
+        
+        if self.spread_bips is not None:
+             if self.grid_type != GridType.GEOMETRIC:
+                  raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
+             if self.spread_bips < Decimal("15"):
+                  raise ValueError("spread_bips must be at least 15 bips.")
+        
+        if self.grid_count is not None:
+             if self.grid_count <= 2:
+                  raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
+
+        if self.upper_price <= self.lower_price:
+            raise ValueError(f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}.")
+        
+        if self.trigger_price is not None:
+            if self.trigger_price < self.lower_price or self.trigger_price > self.upper_price:
+                raise ValueError(f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}].")
+        
+        return self
+
+
+class SpotGridConfig(BaseGridConfig):
     type: Literal["spot_grid"] = "spot_grid"
 
-    def validate(self):
-        # Validate grid_count vs spread_bips
-        if self.grid_count is None and self.spread_bips is None:
-             raise ValueError("Either grid_count or spread_bips must be provided.")
-        
-        if self.spread_bips is not None:
-             if self.grid_type != GridType.GEOMETRIC:
-                  raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
-             if self.spread_bips < Decimal("15"):
-                  raise ValueError("spread_bips must be at least 15 bips.")
-        
-        if self.grid_count is not None:
-             if self.grid_count <= 2:
-                  raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
-
-        if self.upper_price <= self.lower_price:
-            raise ValueError(f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}.")
-        if self.trigger_price is not None:
-            if self.trigger_price < self.lower_price or self.trigger_price > self.upper_price:
-                raise ValueError(f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}].")
-            if self.trigger_price <= Decimal("0.0"):
-                raise ValueError("Trigger price must be positive.")
-        if "/" not in self.symbol or len(self.symbol) < 3:
+    @field_validator("symbol")
+    @classmethod
+    def validate_spot_symbol(cls, v: str) -> str:
+        if "/" not in v or len(v) < 3:
             raise ValueError("Spot symbol must be in 'Base/Quote' format")
-        if self.total_investment <= Decimal("0.0"):
-            raise ValueError("Total investment must be positive.")
+        return v
 
-@dataclass
-class PerpGridConfig:
-    symbol: str
+
+class PerpGridConfig(BaseGridConfig):
     leverage: int
-    upper_price: Decimal
-    lower_price: Decimal
-    grid_type: GridType
-    total_investment: Decimal
     grid_bias: GridBias
-    grid_count: Optional[int] = None
-    spread_bips: Optional[Decimal] = None
     is_isolated: bool = False
-    trigger_price: Optional[Decimal] = None
     type: Literal["perp_grid"] = "perp_grid"
 
-    def validate(self):
-        # Validate grid_count vs spread_bips
-        if self.grid_count is None and self.spread_bips is None:
-             raise ValueError("Either grid_count or spread_bips must be provided.")
-        
-        if self.spread_bips is not None:
-             if self.grid_type != GridType.GEOMETRIC:
-                  raise ValueError("spread_bips can only be used with GEOMETRIC grid type.")
-             if self.spread_bips < Decimal("15"):
-                  raise ValueError("spread_bips must be at least 15 bips.")
-        
-        if self.grid_count is not None:
-             if self.grid_count <= 2:
-                  raise ValueError(f"Grid count {self.grid_count} must be greater than 2.")
-
-        if self.upper_price <= self.lower_price:
-            raise ValueError(f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}.")
-        if self.trigger_price is not None:
-            if self.trigger_price < self.lower_price or self.trigger_price > self.upper_price:
-                raise ValueError(f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}].")
-            if self.trigger_price <= Decimal("0.0"):
-                raise ValueError("Trigger price must be positive.")
-        if self.leverage <= 0 or self.leverage > 50:
+    @field_validator("leverage")
+    @classmethod
+    def validate_leverage(cls, v: int) -> int:
+        if v <= 0 or v > 50:
             raise ValueError("Leverage must be between 1 and 50")
-        if self.total_investment <= Decimal("0.0"):
-            raise ValueError("Total investment must be positive.")
+        return v
 
 
-@dataclass
-class WalletConfig:
+class WalletConfig(BaseModel):
     baseUrl: str
     accountIndex: int
     privateKeys: dict
+    # We can rely on Pydantic to validate types, 
+    # but the explicit dict structure for keys might need a custom validator or type if we want to be strict.
 
-@dataclass
-class ExchangeConfig:
+
+class ExchangeConfig(BaseModel):
     # Account Identity
     master_account_address: str # L1 Address
     account_index: int          # Account Index (Integer)
 
     # Agent Credentials
-    agent_private_key: str = field(repr=False)
+    agent_private_key: str = Field(repr=False)
     agent_key_index: int
 
     # Network Config
@@ -214,7 +166,7 @@ class ExchangeConfig:
     
 
     @staticmethod
-    def from_env():
+    def from_env() -> 'ExchangeConfig':
         config_path = os.getenv("LIGHTER_WALLET_CONFIG_FILE")
         if not config_path:
             raise ValueError("LIGHTER_WALLET_CONFIG_FILE environment variable must be set")
@@ -268,6 +220,7 @@ class ExchangeConfig:
         except Exception as e:
             raise ValueError(f"Failed to load wallet config from {config_path}: {e}")
 
+
 Config = Union[SpotGridConfig, PerpGridConfig]
 StrategyConfig = Config
 
@@ -277,29 +230,17 @@ def load_config(path: str) -> Config:
     
     strategy_type = data.get("type")
     
-    # Convert enums
-    if "grid_type" in data:
-        data["grid_type"] = GridType(data["grid_type"])
+    # Convert enums if they are strings. Pydantic might handle this automatically if the Enum is StrEnum or similar,
+    # but explicit conversion is safe. 
+    # Actually Pydantic v2 is good at string->Enum conversion.
+    # However, to be safe with existing GridType/GridBias which might be simple Enums:
     
-    # Common parsing
-    if "upper_price" in data: data["upper_price"] = Decimal(str(data["upper_price"]))
-    if "lower_price" in data: data["lower_price"] = Decimal(str(data["lower_price"]))
-    if "total_investment" in data: data["total_investment"] = Decimal(str(data["total_investment"]))
-    if "trigger_price" in data and data["trigger_price"] is not None: 
-        data["trigger_price"] = Decimal(str(data["trigger_price"]))
-    if "spread_bips" in data and data["spread_bips"] is not None:
-        data["spread_bips"] = Decimal(str(data["spread_bips"]))
-
+    # We will let Pydantic handle type coercion where possible.
+    # But for 'grid_type' and 'grid_bias' Enums, if they are passed as value (string), Pydantic does it.
+    
     if strategy_type == "spot_grid":
-        spot_cfg = SpotGridConfig(**data)
-        spot_cfg.validate()
-        return spot_cfg
+        return SpotGridConfig(**data)
     elif strategy_type == "perp_grid":
-        if "grid_bias" in data:
-            data["grid_bias"] = GridBias(data["grid_bias"])
-
-        perp_cfg = PerpGridConfig(**data)
-        perp_cfg.validate()
-        return perp_cfg
+        return PerpGridConfig(**data)
     else:
         raise ValueError(f"Unknown strategy type: {strategy_type}")

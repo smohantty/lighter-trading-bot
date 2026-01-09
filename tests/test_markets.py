@@ -17,31 +17,41 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
         exch_conf.symbol = "DOT"
         
         strat_conf = SpotGridConfig(
-             symbol="DOT", 
-             lower_price=Decimal("1.0"), 
-             upper_price=Decimal("2.0"), 
-             grid_type=GridType.ARITHMETIC, 
-             grid_count=10, 
+             symbol="ETH/USDC",
+             lower_price=Decimal("1.0"),
+             upper_price=Decimal("2.0"),
+             grid_type=GridType.ARITHMETIC,
+             grid_count=10,
              total_investment=Decimal("100.0")
         )
         strategy = SpotGridStrategy(strat_conf)
         
         # Mock Engine clients
-        with patch('src.engine.engine.lighter') as mock_lighter:
-            # Mock ApiClient
-            mock_api_client = MagicMock()
-            mock_lighter.ApiClient.return_value = mock_api_client
+        with patch('src.engine.engine.lighter') as mock_lighter_engine, \
+             patch('src.engine.base.lighter') as mock_lighter_base:
             
-            # Mock SignerClient (avoid real init)
+            # Setup Mocks to default to the same mock for simplicity or handle separately
+            # We want them to share behavior usually
+            
+            # Mock ApiClient on Engine side
+            mock_api_client = MagicMock()
+            mock_lighter_engine.ApiClient.return_value = mock_api_client
+            
+            # Mock SignerClient on Engine side
             mock_signer = MagicMock()
-            mock_lighter.SignerClient.return_value = mock_signer
+            mock_lighter_engine.SignerClient.return_value = mock_signer
+            mock_signer.create_auth_token_with_expiry.return_value = ("fake_token", None)
+
+            # Mock OrderApi on Base side (used in _load_markets)
+            mock_order_api = MagicMock()
+            mock_lighter_base.OrderApi.return_value = mock_order_api
             
             # Mock OrderApi and order_book_details response
-            mock_order_api = MagicMock()
-            mock_lighter.OrderApi.return_value = mock_order_api
-
-            # Mock create_auth_token_with_expiry
-            mock_signer.create_auth_token_with_expiry.return_value = ("fake_token", None)
+            
+            # Mock OrderApi and order_book_details response inside Base
+            # But wait, BaseEngine uses lighter.OrderApi.
+            # configures mock_order_api above.
+            mock_lighter_base.OrderApi.return_value = mock_order_api
             
             # Realistic structure provided by user
             fake_response_dict = {

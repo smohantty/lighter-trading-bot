@@ -8,6 +8,7 @@ dependencies = [
     "pyyaml>=6.0",
     "lighter-sdk @ git+https://github.com/smohantty/lighter-python.git",
     "websockets>=15.0.1",
+    "pydantic>=2.12.5",
 ]
 
 [dependency-groups]
