@@ -85,7 +85,7 @@ class BaseEngine:
 
     async def _get_fresh_token(self) -> Optional[str]:
         """Token provider for QueueWsClient to refresh auth on reconnection."""
-        logger.info("Generating fresh auth token for WebSocket...")
+        logger.info("Generating fresh auth token ...")
         if not self.signer_client:
             logger.error("Signer client not initialized")
             return None
