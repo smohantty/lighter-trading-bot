@@ -13,7 +13,6 @@ We are currently focusing on **solidifying the Core Engine and Grid Strategy**. 
 - **Documentation Policy**: Decided to disable generation of code descriptions/summaries to keep output concise.
 
 ## 3. Known Technical Debt / TODOs
-- [ ] **Testing**: Need to expand unit test coverage for `SpotGridStrategy` and `PerpGridStrategy`.
 - [ ] **Config**: While flexible, the YAML config parsing could be more strictly typed with `pydantic`.
 - [ ] **Metrics**: Currently logging is the only output. Consider adding a simple metrics server or dashboard hook in `status_broadcaster`.
 
