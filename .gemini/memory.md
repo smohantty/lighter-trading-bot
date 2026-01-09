@@ -10,6 +10,7 @@ We are currently focusing on **solidifying the Core Engine and Grid Strategy**. 
 - **Unified Context**: We enforce `StrategyContext` as the *only* way for strategies to interact with the exchange. No direct API calls.
 - **Project Structure**: Adopted `uv` for package management and strictly separated `src/engine` from `src/strategy`.
 - **AI Rules**: Created `.cursorrules` to persist these constraints.
+- **Documentation Policy**: Decided to disable generation of code descriptions/summaries to keep output concise.
 
 ## 3. Known Technical Debt / TODOs
 - [ ] **Testing**: Need to expand unit test coverage for `SpotGridStrategy` and `PerpGridStrategy`.

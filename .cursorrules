@@ -63,6 +63,10 @@ This is a high-performance, asynchronous trading bot built for the Lighter Excha
 3.  **Run Tests**: `uv run pytest`
 4.  **Lint**: `uv run mypy src`
 
+### Output Standards
+- **Conciseness**: Do not include "summary" or "explanation" sections that merely describe what the code does.
+- **No Code Narrations**: The user can read the code. Do not write documentation explaining the logic unless it is complex and non-obvious.
+
 ## 7. Configuration
 - **Secrets**: Handled via `.env` (loaded by `python-dotenv`).
 - **Strategy Config**: Defined in YAML, validated against `StrategyConfig` dataclass.

@@ -50,3 +50,5 @@ graph TD
 4. **Safety**:
     - Do not modify `.env` or `wallet_config.json` with real keys in a way that could be committed.
     - Ensure all order sizes and prices are rounded according to market rules using `MarketInfo.round_size()` and `MarketInfo.round_price()`.
+5. **Documentation**:
+    - **Do NOT** generate documentation describing what the code does or how it works. Code should be self-explanatory. Focus on *why* changes are made if explanation is needed in PRs/commits, but avoid successful/summary output that just narrates the code.
