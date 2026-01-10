@@ -10,20 +10,18 @@ if TYPE_CHECKING:
 
 
 class GridBias(str, Enum):
-    LONG = "Long"
-    SHORT = "Short"
-    # NEUTRAL = "Neutral" # Removed as per recent changes in Rust bot history
+    LONG = "long"
+    SHORT = "short"
 
 
 class GridType(str, Enum):
-    ARITHMETIC = "Arithmetic"
-    GEOMETRIC = "Geometric"
+    ARITHMETIC = "arithmetic"
+    GEOMETRIC = "geometric"
 
 
 class ZoneMode(Enum):
-    LONG = "Long"
-    SHORT = "Short"
-    # NEUTRAL = "Neutral"
+    LONG = "long"
+    SHORT = "short"
 
 
 class StrategyState(Enum):

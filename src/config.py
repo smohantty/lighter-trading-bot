@@ -2,12 +2,19 @@ import json
 import logging
 import os
 from decimal import Decimal
-from typing import Dict, Literal, Optional, Union
+from typing import Dict, Literal, Optional, Union, Annotated
+from enum import Enum
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, BeforeValidator
 
 from src.strategy.types import GridBias, GridType
+
+
+def case_insensitive_enum_validator(v: Union[str, Enum]) -> str:
+    if isinstance(v, str):
+        return v.lower()
+    return v
 
 
 class SimulationConfig(BaseModel):
@@ -69,7 +76,7 @@ class BaseGridConfig(BaseModel):
     symbol: str
     upper_price: Decimal
     lower_price: Decimal
-    grid_type: GridType
+    grid_type: Annotated[GridType, BeforeValidator(case_insensitive_enum_validator)]
     total_investment: Decimal
     grid_count: Optional[int] = None
     spread_bips: Optional[Decimal] = None
@@ -147,7 +154,7 @@ class SpotGridConfig(BaseGridConfig):
 
 class PerpGridConfig(BaseGridConfig):
     leverage: int
-    grid_bias: GridBias
+    grid_bias: Annotated[GridBias, BeforeValidator(case_insensitive_enum_validator)]
     is_isolated: bool = False
     type: Literal["perp_grid"] = "perp_grid"
 

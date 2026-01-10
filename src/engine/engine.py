@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-from dataclasses import asdict, is_dataclass
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, cast
 
@@ -119,47 +118,12 @@ class Engine(BaseEngine):
         )  # type: ignore
 
         if self.broadcaster:
-            # Broadcast Config and Info
-            # Convert config to dict via json dump/load to handle custom types if any
-            # Or assume to_dict/dict() works
-            # We use json default serializer if needed, but config object should be standard
             # Broadcast Config
             try:
-                # Custom serialization for Enums to match frontend schema (lowercase)
+                config_dict = self.strategy_config.model_dump(
+                    mode="json", warnings=False
+                )
 
-                # Check if it's a dataclass or object with __dict__
-                if hasattr(self.strategy_config, "__dict__"):
-                    config_dict = self.strategy_config.__dict__.copy()
-                else:
-                    # Fallback if somehow it's a dict or other
-                    logger.warning(
-                        f"Config object {type(self.strategy_config)} lacks __dict__, using vars() or dict(self.strategy_config)"
-                    )
-                    if is_dataclass(self.strategy_config):
-                        config_dict = asdict(self.strategy_config)
-                    else:
-                        try:
-                            config_dict = dict(self.strategy_config)
-                        except Exception:
-                            config_dict = vars(self.strategy_config)
-
-                # Convert Enums to lowercase strings explicitly
-                if "grid_type" in config_dict:
-                    val = config_dict["grid_type"]
-                    if hasattr(val, "value"):
-                        config_dict["grid_type"] = str(val.value).lower()
-                    else:
-                        # Already a string or simple type
-                        config_dict["grid_type"] = str(val).lower()
-
-                if "grid_bias" in config_dict:
-                    val = config_dict["grid_bias"]
-                    if hasattr(val, "value"):
-                        config_dict["grid_bias"] = str(val.value).lower()
-                    elif val:
-                        config_dict["grid_bias"] = str(val).lower()
-
-                # Add decimals from market info
                 if self.strategy_config.symbol in self.market_map:
                     market_id = self.market_map[self.strategy_config.symbol]
                     m = self.markets[self.strategy_config.symbol]
@@ -171,7 +135,6 @@ class Engine(BaseEngine):
 
             except Exception as e:
                 logger.error(f"Failed to broadcast initial config: {e}", exc_info=True)
-                # print(f"DEBUG: Config Broadcast Failed: {e}") # Fallback output
 
             # Broadcast Info
             try:
