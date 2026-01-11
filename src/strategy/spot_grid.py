@@ -143,6 +143,7 @@ class SpotGridStrategy(Strategy):
                 idx = zone.index
                 zone.cloid = None
                 self.total_fees += fill.fee
+                zone.retry_count = 0
 
                 if zone.order_side.is_buy():
                     # Buy Fill
@@ -154,7 +155,6 @@ class SpotGridStrategy(Strategy):
                     # Flip to SELL at upper price
                     zone.order_side = OrderSide.SELL
                     zone.entry_price = fill.price
-                    zone.retry_count = 0  # Reset retries on fill
                     self.place_zone_order(zone, ctx)
                 else:
                     # Sell Fill
@@ -168,7 +168,6 @@ class SpotGridStrategy(Strategy):
                     )
                     self.inventory_quote += fill.size * fill.price
                     zone.roundtrip_count += 1
-                    zone.retry_count = 0  # Reset retries on fill
 
                     # Flip to BUY at lower price
                     zone.order_side = OrderSide.BUY
@@ -298,7 +297,7 @@ class SpotGridStrategy(Strategy):
             if zone_buy_price > initial_price:
                 order_side = OrderSide.SELL
                 required_base += size
-                entry_price = initial_price
+                entry_price = zone_buy_price
             else:
                 order_side = OrderSide.BUY
                 required_quote += size * zone_buy_price
@@ -311,7 +310,7 @@ class SpotGridStrategy(Strategy):
                     sell_price=zone_sell_price,
                     size=size,
                     order_side=order_side,
-                    mode=None,  # No ZoneMode for Spot
+                    mode=None,
                     entry_price=entry_price,
                     roundtrip_count=0,
                 )
@@ -579,9 +578,5 @@ class SpotGridStrategy(Strategy):
         logger.info(
             f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}."
         )
-
-        for zone in self.zones:
-            if zone.order_side.is_sell():
-                zone.entry_price = fill.price
 
         self._transition_to_running(ctx, fill.price)
