@@ -2,16 +2,16 @@ import json
 import logging
 import os
 from decimal import Decimal
-from typing import Dict, Literal, Optional, Union, Annotated
 from enum import Enum
+from typing import Annotated, Dict, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from src.strategy.types import GridBias, GridType
 
 
-def case_insensitive_enum_validator(v: Union[str, Enum]) -> str:
+def case_insensitive_enum_validator(v: Union[str, Enum]) -> Union[str, Enum]:
     if isinstance(v, str):
         return v.lower()
     return v

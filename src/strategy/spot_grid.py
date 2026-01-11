@@ -59,7 +59,6 @@ class SpotGridStrategy(Strategy):
         self.matched_profit = Decimal("0")
         self.total_fees = Decimal("0")
         self.initial_equity = Decimal("0")
-        self.initial_equity = Decimal("0")
 
         if self.config.spread_bips:
             # Calculate grid count based on spread
@@ -120,9 +119,7 @@ class SpotGridStrategy(Strategy):
                     price, self.config.trigger_price, self.trigger_reference_price
                 ):
                     logger.info(f"[SPOT_GRID] [Triggered] at {price}")
-                    self.initial_entry_price = price
-                    self.state = StrategyState.Running
-                    self.refresh_orders(ctx)
+                    self._transition_to_running(ctx, price)
         elif self.state == StrategyState.Running:
             # Continuously ensure orders are active
             self.refresh_orders(ctx)
@@ -199,10 +196,13 @@ class SpotGridStrategy(Strategy):
         if self.state == StrategyState.Initializing:
             raise ValueError("Strategy not initialized")
 
-        current_equity = (
-            self.inventory_base * self.current_price
-        ) + self.inventory_quote
-        total_profit = current_equity - self.initial_equity - self.total_fees
+        if self.state == StrategyState.Running:
+            current_equity = (
+                self.inventory_base * self.current_price
+            ) + self.inventory_quote
+            total_profit = current_equity - self.initial_equity - self.total_fees
+        else:
+            total_profit = Decimal("0")
 
         return SpotGridSummary(
             symbol=self.symbol,
@@ -471,9 +471,7 @@ class SpotGridStrategy(Strategy):
         else:
             # No Trigger, Assets OK -> Running
             logger.info("[SPOT_GRID] Assets verified. Starting Grid.")
-            self.initial_entry_price = self.current_price
-            self.state = StrategyState.Running
-            self.refresh_orders(ctx)
+            self._transition_to_running(ctx, self.current_price)
 
     # =========================================================================
     # ORDER MANAGEMENT
@@ -524,6 +522,12 @@ class SpotGridStrategy(Strategy):
     # INTERNAL HELPERS
     # =========================================================================
 
+    def _transition_to_running(self, ctx: StrategyContext, price: Decimal):
+        self.initial_entry_price = price
+        self.initial_equity = (self.inventory_base * price) + self.inventory_quote
+        self.state = StrategyState.Running
+        self.refresh_orders(ctx)
+
     def _calculate_acquisition_price(
         self, side: OrderSide, current_price: Decimal
     ) -> Decimal:
@@ -572,8 +576,6 @@ class SpotGridStrategy(Strategy):
         self.inventory_base = min(new_real_base, self.required_base)
         self.inventory_quote = min(new_real_quote, self.required_quote)
 
-        self.initial_equity = (self.inventory_base * fill.price) + self.inventory_quote
-
         logger.info(
             f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}."
         )
@@ -582,6 +584,4 @@ class SpotGridStrategy(Strategy):
             if zone.order_side.is_sell():
                 zone.entry_price = fill.price
 
-        self.state = StrategyState.Running
-        self.initial_entry_price = fill.price
-        self.refresh_orders(ctx)
+        self._transition_to_running(ctx, fill.price)
