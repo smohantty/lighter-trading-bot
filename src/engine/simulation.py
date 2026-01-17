@@ -19,7 +19,7 @@ from src.model import (
 from src.strategy.base import Strategy
 from src.strategy.types import GridState, StrategySummary
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SimulationEngine")
 
 
 class SimulationEngine(BaseEngine):

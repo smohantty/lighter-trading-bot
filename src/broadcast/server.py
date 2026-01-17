@@ -9,7 +9,7 @@ import websockets
 
 from src.broadcast.types import WSEvent
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("BroadcastServer")
 
 
 class DecimalEncoder(json.JSONEncoder):

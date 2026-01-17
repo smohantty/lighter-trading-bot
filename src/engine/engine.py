@@ -31,7 +31,7 @@ from src.model import (
 from src.strategy.base import Strategy
 from src.strategy.types import PerpGridSummary, SpotGridSummary
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("LiveEngine")
 
 
 class Engine(BaseEngine):

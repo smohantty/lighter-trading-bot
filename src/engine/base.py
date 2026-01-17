@@ -11,7 +11,7 @@ from src.engine.context import MarketInfo, StrategyContext
 from src.model import Order, Trade, TradeDetails
 from src.strategy.base import Strategy
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("BaseEngine")
 
 
 class BaseEngine:

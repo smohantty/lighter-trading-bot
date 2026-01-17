@@ -28,7 +28,7 @@ from src.strategy.types import (
     ZoneInfo,
 )
 
-logger = logging.getLogger("src.strategy.spot_grid")
+logger = logging.getLogger("SpotGrid")
 
 
 class SpotGridStrategy(Strategy):
