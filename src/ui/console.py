@@ -124,12 +124,7 @@ class ConsoleRenderer:
         )
         print("-" * 100)
 
-        # Limit to first few, last few if too many
-        display_zones = g.zones
-        if len(display_zones) > 100:
-            display_zones = display_zones[:50] + display_zones[-50:]
-
-        for z in display_zones:
+        for z in g.zones:
             rng = f"{z.buy_price}-{z.sell_price}"
             status = "ACTIVE" if z.has_order else "WAITING"
             if z.has_order:
@@ -145,8 +140,7 @@ class ConsoleRenderer:
                 f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10.2f} | {z.size:<12.3f} | {exp_pnl:<12.2f} | {z.order_side:<6} | {status}"
             )
 
-        if len(g.zones) > 100:
-            print(f"... (Hiding {len(g.zones) - 100} zones) ...")
+
 
     @staticmethod
     def _render_action_plan(orders: List[OrderRequest]):
