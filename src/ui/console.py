@@ -140,8 +140,6 @@ class ConsoleRenderer:
                 f"{caret}{z.index:<3} | {rng:<25} | {spread_pct:<10.2f} | {z.size:<12.3f} | {exp_pnl:<12.2f} | {z.order_side:<6} | {status}"
             )
 
-
-
     @staticmethod
     def _render_action_plan(orders: List[OrderRequest]):
         print("PROPOSED ACTIONS (What would happen next):")
@@ -149,7 +147,28 @@ class ConsoleRenderer:
             print("  [WAIT] No immediate orders generated.")
             return
 
+        # Separate orders by type for statistics
+        buy_orders = []
+        sell_orders = []
+        cancel_orders = []
+
         for o in orders:
+            if isinstance(o, (LimitOrderRequest, MarketOrderRequest)):
+                if o.side.is_buy():
+                    buy_orders.append(o)
+                else:
+                    sell_orders.append(o)
+            elif isinstance(o, CancelOrderRequest):
+                cancel_orders.append(o)
+
+        # Render orders (first 5 and last 5 if more than 10)
+        for i, o in enumerate(orders):
+            # Check if this order should be displayed
+            if len(orders) > 10 and i >= 5 and i < len(orders) - 5:
+                if i == 5:  # Only print truncation message once
+                    print(f"  ... ({len(orders) - 10} more orders) ...")
+                continue
+
             ro_tag = ""
             if isinstance(o, (LimitOrderRequest)):
                 if o.reduce_only:
@@ -159,3 +178,28 @@ class ConsoleRenderer:
                 print(f"  [ORDER] {o.side} {o.sz:.3f} @ {o.price:.3f} {ro_tag}")
             elif isinstance(o, CancelOrderRequest):
                 print(f"  [CANCEL] CLOID {o.cloid}")
+
+        # Print summary statistics
+        print()
+        print("  ORDER SUMMARY:")
+        print(f"    Total BUY orders:  {len(buy_orders)}")
+        print(f"    Total SELL orders: {len(sell_orders)}")
+        if cancel_orders:
+            print(f"    Total CANCEL:      {len(cancel_orders)}")
+
+        # Calculate average prices if all orders execute
+        if buy_orders:
+            total_buy_value = sum(o.price * o.sz for o in buy_orders)
+            total_buy_size = sum(o.sz for o in buy_orders)
+            avg_buy_price = (
+                total_buy_value / total_buy_size if total_buy_size > 0 else 0
+            )
+            print(f"    Avg BUY price (if all execute):  {avg_buy_price:.4f}")
+
+        if sell_orders:
+            total_sell_value = sum(o.price * o.sz for o in sell_orders)
+            total_sell_size = sum(o.sz for o in sell_orders)
+            avg_sell_price = (
+                total_sell_value / total_sell_size if total_sell_size > 0 else 0
+            )
+            print(f"    Avg SELL price (if all execute): {avg_sell_price:.4f}")
