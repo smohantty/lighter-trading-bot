@@ -62,7 +62,7 @@ tmux new-session -d -s "$SESSION_NAME"
 
 # Run the bot in the session
 # We use 'exec' or just run it. Using uv run.
-tmux send-keys -t "$SESSION_NAME" "uv run python main.py --config $CONFIG_PATH" C-m
+tmux send-keys -t "$SESSION_NAME" "uv run python main.py --config \"$CONFIG_PATH\"" C-m
 
 echo "Bot started in background."
 echo "View logs/process with: tmux attach -t $SESSION_NAME"
