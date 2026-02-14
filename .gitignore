@@ -15,6 +15,9 @@ configs/*.yaml
 # Keep existing examples if they are already tracked/committed, or user explicitly renames them.
 
 
+# Claude Code (local settings are personal, not shared)
+.claude/settings.local.json
+
 # IDE
 .vscode/
 .idea/
