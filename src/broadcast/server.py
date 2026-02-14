@@ -44,7 +44,11 @@ class StatusBroadcaster:
         self.server: Optional[Any] = None
 
     async def start(self):
-        logger.info(f"Starting WebSocket Status Server on ws://{self.host}:{self.port}")
+        logger.info(
+            "Starting WebSocket status server ws://%s:%s",
+            self.host,
+            self.port,
+        )
         self.server = await websockets.serve(self._handler, self.host, self.port)
 
     async def stop(self):
@@ -57,7 +61,11 @@ class StatusBroadcaster:
     async def _handler(self, websocket: Any):
         # Register Client
         self.clients.add(websocket)
-        logger.info(f"New WebSocket client connected: {websocket.remote_address}")
+        logger.info(
+            "WebSocket client connected remote=%s client_count=%d",
+            websocket.remote_address,
+            len(self.clients),
+        )
 
         try:
             # Send Initial State
@@ -88,15 +96,25 @@ class StatusBroadcaster:
         except websockets.ConnectionClosed:
             pass
         finally:
-            self.clients.remove(websocket)
-            logger.info(f"WebSocket client disconnected: {websocket.remote_address}")
+            self.clients.discard(websocket)
+            logger.info(
+                "WebSocket client disconnected remote=%s client_count=%d",
+                websocket.remote_address,
+                len(self.clients),
+            )
 
     async def _send_to_client(self, websocket: Any, event: WSEvent):
         try:
             msg = json.dumps(event.to_dict(), cls=DecimalEncoder)
             await websocket.send(msg)
         except Exception as e:
-            logger.error(f"Failed to send to client: {e}")
+            self.clients.discard(websocket)
+            logger.warning(
+                "Failed to send event=%s to client=%s removed_client=true err=%s",
+                event.event_type,
+                getattr(websocket, "remote_address", "unknown"),
+                e,
+            )
 
     def send(self, event: WSEvent):
         # Update Cache based on event type
@@ -126,4 +144,17 @@ class StatusBroadcaster:
         # Actually StatusBroadcaster.send in Rust is sync but spawns tasks or uses channel.
         # Javascript/Python `websockets.broadcast` is sync if we have the loop.
 
-        websockets.broadcast(self.clients, message)
+        clients_snapshot = tuple(self.clients)
+        if not clients_snapshot:
+            return
+
+        try:
+            websockets.broadcast(clients_snapshot, message)
+        except Exception as e:
+            logger.error(
+                "Failed to broadcast event=%s clients=%d err=%s",
+                event.event_type,
+                len(clients_snapshot),
+                e,
+                exc_info=True,
+            )

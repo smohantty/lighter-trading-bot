@@ -74,6 +74,7 @@ class PerpGridStrategy(Strategy):
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: Decimal = Decimal("0")
         self.market: MarketInfo = None  # type: ignore
+        self._last_dead_zone_warning_ts = 0.0
 
         if self.config.spread_bips:
             # Calculate grid count based on spread
@@ -391,10 +392,10 @@ class PerpGridStrategy(Strategy):
     # ORDER MANAGEMENT
     # =========================================================================
 
-    def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
+    def place_zone_order(self, zone: GridZone, ctx: StrategyContext) -> bool:
         """Place an order for a zone based on its current state."""
         if zone.cloid is not None:
-            return
+            return False
 
         idx = zone.index
         side = zone.order_side
@@ -414,16 +415,42 @@ class PerpGridStrategy(Strategy):
         zone.cloid = cloid
         self.active_order_map[cloid] = zone
 
-        logger.info(
-            f"[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{idx} cloid: {cloid.as_int()} LIMIT {side} {zone.size} @ {price}"
+        logger.debug(
+            "[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_%s cloid=%s LIMIT %s %s @ %s reduce_only=%s",
+            idx,
+            cloid.as_int(),
+            side,
+            zone.size,
+            price,
+            reduce_only,
         )
+        return True
 
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
+        placed = 0
+        dead_zones = 0
         for zone in self.zones:
             if zone.cloid is None:
                 if zone.retry_count < MAX_ORDER_RETRIES:
-                    self.place_zone_order(zone, ctx)
+                    if self.place_zone_order(zone, ctx):
+                        placed += 1
+                else:
+                    dead_zones += 1
+
+        if placed:
+            logger.info(
+                "[PERP_GRID] Activated zone orders count=%d active_orders=%d",
+                placed,
+                len(self.active_order_map),
+            )
+        if dead_zones and (time.time() - self._last_dead_zone_warning_ts) >= 60:
+            logger.warning(
+                "[PERP_GRID] Zones stuck at retry limit count=%d max_retries=%d",
+                dead_zones,
+                MAX_ORDER_RETRIES,
+            )
+            self._last_dead_zone_warning_ts = time.time()
 
     # =========================================================================
     # INTERNAL HELPERS

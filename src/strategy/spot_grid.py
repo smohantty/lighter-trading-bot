@@ -104,6 +104,7 @@ class SpotGridStrategy(Strategy):
 
         self.current_price = Decimal("0")
         self.market: MarketInfo = None  # type: ignore
+        self._last_dead_zone_warning_ts = 0.0
 
     # =========================================================================
     # STRATEGY LIFECYCLE (Base Class Interface)
@@ -476,13 +477,13 @@ class SpotGridStrategy(Strategy):
     # ORDER MANAGEMENT
     # =========================================================================
 
-    def place_zone_order(self, zone: GridZone, ctx: StrategyContext):
+    def place_zone_order(self, zone: GridZone, ctx: StrategyContext) -> bool:
         """Place an order for a zone based on its current state."""
         if not self.market:
-            return
+            return False
 
         if zone.cloid is not None:
-            return  # Already has an order
+            return False  # Already has an order
 
         side = zone.order_side
         price = zone.buy_price if side.is_buy() else zone.sell_price
@@ -503,19 +504,42 @@ class SpotGridStrategy(Strategy):
 
         self.active_order_map[zone.cloid] = zone
 
-        logger.info(
-            f"[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{zone.index} cloid: {zone.cloid.as_int()} LIMIT {side} {size} {self.base_asset} @ {price}"
+        logger.debug(
+            "[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_%s cloid=%s LIMIT %s %s %s @ %s",
+            zone.index,
+            zone.cloid.as_int(),
+            side,
+            size,
+            self.base_asset,
+            price,
         )
+        return True
 
     def refresh_orders(self, ctx: StrategyContext):
         """Place orders for all zones that don't have one and haven't exceeded max retries."""
+        placed = 0
+        dead_zones = 0
         for zone in self.zones:
             if zone.cloid is None:
                 if zone.retry_count < MAX_ORDER_RETRIES:
-                    self.place_zone_order(zone, ctx)
+                    if self.place_zone_order(zone, ctx):
+                        placed += 1
                 else:
-                    # Optional: Log zombie state occasionally?
-                    pass
+                    dead_zones += 1
+
+        if placed:
+            logger.info(
+                "[SPOT_GRID] Activated zone orders count=%d active_orders=%d",
+                placed,
+                len(self.active_order_map),
+            )
+        if dead_zones and (time.time() - self._last_dead_zone_warning_ts) >= 60:
+            logger.warning(
+                "[SPOT_GRID] Zones stuck at retry limit count=%d max_retries=%d",
+                dead_zones,
+                MAX_ORDER_RETRIES,
+            )
+            self._last_dead_zone_warning_ts = time.time()
 
     # =========================================================================
     # INTERNAL HELPERS

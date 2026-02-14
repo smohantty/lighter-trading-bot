@@ -26,6 +26,7 @@ from src.constants import (
 )
 from src.engine.base import BaseEngine
 from src.engine.context import StrategyContext
+from src.logging_utils import env_bool
 from src.model import (
     CancelOrderRequest,
     Cloid,
@@ -41,6 +42,11 @@ from src.strategy.base import Strategy
 from src.strategy.types import PerpGridSummary, SpotGridSummary
 
 logger = logging.getLogger("LiveEngine")
+
+LOG_VERBOSE_ORDER_STREAM = env_bool("LIGHTER_LOG_VERBOSE_ORDER_STREAM", default=False)
+LOG_RECONCILIATION_HEALTHY = env_bool(
+    "LIGHTER_LOG_RECONCILIATION_HEALTHY", default=False
+)
 
 
 class Engine(BaseEngine):
@@ -88,7 +94,7 @@ class Engine(BaseEngine):
         # 2. Validate Account Index (already set in BaseEngine.__init__)
         if not self.account_index:
             raise ValueError("Account Index must be provided in the configuration.")
-        logger.info(f"Using Account Index: {self.account_index}")
+        logger.info("Using account index=%s", self.account_index)
 
         # 3. Setup Signer Client
         self._init_signer()
@@ -108,12 +114,16 @@ class Engine(BaseEngine):
         await self._fetch_account_balances()
 
         market_info = self.ctx.market_info(target_symbol)
-        logger.info(f"Market Info: {market_info}")
+        logger.info(
+            "Loaded market info symbol=%s market=%s", target_symbol, market_info
+        )
 
         # 6. Connect WS
         market_id = self.market_map[target_symbol]
         logger.info(
-            f"Subscribing to OrderBook for {self.strategy_config.symbol} (ID: {market_id})..."
+            "Subscribing to order book symbol=%s market_id=%s",
+            self.strategy_config.symbol,
+            market_id,
         )
 
         # Generate auth token for authenticated channels
@@ -490,10 +500,10 @@ class Engine(BaseEngine):
             except ValueError as e:
                 # ValueError during initialization indicates a fatal configuration error
                 # Let it propagate to the upper layer (main.py) which will handle shutdown
-                logger.error(f"Strategy Initialization Error: {e}")
+                logger.error("Strategy initialization error: %s", e, exc_info=True)
                 raise
             except Exception as e:
-                logger.error(f"Strategy Error on_tick (mid_price): {e}")
+                logger.error("Strategy on_tick error: %s", e, exc_info=True)
 
     async def _handle_open_orders_msg(self, account_id: str, orders_data: dict):
         """Process open orders update."""
@@ -504,21 +514,33 @@ class Engine(BaseEngine):
         # Format: {"channel": "...", "orders": {"{MARKET_INDEX}": [Order]}, "type": "..."}
         orders_by_market = orders_data.get("orders", {})
 
+        processed_orders = 0
+        tracked_orders = 0
+        new_oid_mappings = 0
+        canceled_orders = 0
+        untracked_orders = 0
+
         # Process all orders in the message
         for market_index, orders_list in orders_by_market.items():
             for order_dict in orders_list:
                 try:
+                    processed_orders += 1
                     order = self._parse_order(order_dict)
-                    logger.info(f"[Order] {order}")
+                    if LOG_VERBOSE_ORDER_STREAM:
+                        logger.info("open_order_event order=%s", order)
 
                     if order.cloid_id == 0:
-                        logger.debug(
-                            f"Ignoring non-bot order in lifecycle tracking (cloid=0): {order}"
-                        )
+                        if LOG_VERBOSE_ORDER_STREAM:
+                            logger.debug(
+                                "Ignoring non-bot order in lifecycle tracking order_id=%s",
+                                order.order_id,
+                            )
                         continue
 
                     if not order.cloid_id:
-                        logger.warning(f"Order missing cloid_id: {order}")
+                        logger.warning(
+                            "Order missing cloid_id order_id=%s", order.order_id
+                        )
                         continue
 
                     cloid = Cloid(order.cloid_id)
@@ -526,19 +548,33 @@ class Engine(BaseEngine):
 
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
-                        logger.warning(f"[Order] not tracked: {order}")
+                        untracked_orders += 1
+                        if LOG_VERBOSE_ORDER_STREAM:
+                            logger.warning(
+                                "Open order not tracked cloid=%s oid=%s status=%s",
+                                cloid.as_int(),
+                                order.order_id,
+                                order.status,
+                            )
                         continue
 
+                    tracked_orders += 1
                     pending = self.pending_orders[cloid]
 
                     # 1. Update OID if missing (Crucial for later cancellation/audit)
                     if order.order_id and not pending.oid:
                         pending.oid = order.order_id
                         self.reconciliation_miss_counts.pop(cloid, None)
+                        new_oid_mappings += 1
 
-                        # Resolve Symbol to get Base Asset
-                        logger.info(
-                            f"[ORDER_TRACKING] cloid = {cloid.as_int()}, LIMIT {pending.side} {pending.target_size} {self._get_base_asset(int(market_index))} @ {pending.price}"
+                        logger.debug(
+                            "Order tracking linked cloid=%s oid=%s side=%s size=%s symbol=%s price=%s",
+                            cloid.as_int(),
+                            order.order_id,
+                            pending.side,
+                            pending.target_size,
+                            self._get_base_asset(int(market_index)),
+                            pending.price,
                         )
 
                         if self.broadcaster:
@@ -559,8 +595,13 @@ class Engine(BaseEngine):
 
                     # 3. Check order status
                     if self._is_canceled_status(order.status):
+                        canceled_orders += 1
                         logger.info(
-                            f"[ORDER_CANCELED] {cloid} - status: {order.status}"
+                            "[ORDER_CANCELED] cloid=%s oid=%s status=%s filled=%s",
+                            cloid.as_int(),
+                            pending.oid or order.order_id,
+                            order.status,
+                            pending.filled_size,
                         )
 
                         if self.broadcaster:
@@ -595,14 +636,35 @@ class Engine(BaseEngine):
                             )
                             self.strategy.on_order_failed(failure, self.ctx)
                         except Exception as e:
-                            logger.error(f"Strategy on_order_failed error: {e}")
+                            logger.error(
+                                "Strategy on_order_failed callback error cloid=%s: %s",
+                                cloid.as_int(),
+                                e,
+                                exc_info=True,
+                            )
 
                         self._mark_cloid_completed(cloid)
 
                 except Exception as e:
                     logger.error(
-                        f"Error processing order: {e}, order data: {order_dict}"
+                        "Error processing open order event: %s order_data=%s",
+                        e,
+                        order_dict,
+                        exc_info=True,
                     )
+
+        if processed_orders and (
+            LOG_VERBOSE_ORDER_STREAM or new_oid_mappings or canceled_orders
+        ):
+            logger.info(
+                "open_orders_update processed=%d tracked=%d mapped=%d canceled=%d untracked=%d pending_total=%d",
+                processed_orders,
+                tracked_orders,
+                new_oid_mappings,
+                canceled_orders,
+                untracked_orders,
+                len(self.pending_orders),
+            )
 
     async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
         """Process user fills update."""
@@ -622,9 +684,12 @@ class Engine(BaseEngine):
                     assert self.account_index is not None
                     details = trade.get_trade_details(self.account_index)
                     if not details:
-                        logger.warning(
-                            f"Ignored trade (not involving account {self.account_index}): {trade}"
-                        )
+                        if LOG_VERBOSE_ORDER_STREAM:
+                            logger.debug(
+                                "Ignored trade not involving account=%s trade=%s",
+                                self.account_index,
+                                trade,
+                            )
                         continue
 
                     side = details.side
@@ -641,7 +706,11 @@ class Engine(BaseEngine):
                         cloid = self._infer_cloid_for_unresolved_fill(side, trade.size)
                         if cloid:
                             logger.warning(
-                                f"[OID_RECOVERY] Inferred cloid={cloid.as_int()} for unresolved oid={oid}."
+                                "[OID_RECOVERY] inferred_cloid=%s oid=%s side=%s size=%s",
+                                cloid.as_int(),
+                                oid,
+                                side,
+                                trade.size,
                             )
                             pending = self.pending_orders.get(cloid)
                             if pending and pending.oid is None:
@@ -658,12 +727,20 @@ class Engine(BaseEngine):
                             )
                             continue
 
-                    logger.info(f"[Trade] cloid = {cloid.as_int()}, {details}")
+                    logger.debug(
+                        "Trade event cloid=%s side=%s role=%s size=%s price=%s oid=%s",
+                        cloid.as_int(),
+                        side,
+                        role,
+                        trade.size,
+                        trade.price,
+                        oid,
+                    )
 
                     # Idempotency check
                     if cloid and self._is_cloid_completed(cloid):
-                        logger.info(
-                            f"Ignored duplicate fill for completed cloid: {cloid}"
+                        logger.debug(
+                            "Ignored duplicate fill for completed cloid=%s", cloid
                         )
                         continue
 
@@ -673,6 +750,14 @@ class Engine(BaseEngine):
                         pending = self.pending_orders[cloid]
 
                         new_total_size = pending.filled_size + trade.size
+                        if new_total_size <= 0:
+                            logger.warning(
+                                "Ignoring fill with non-positive cumulative size cloid=%s trade_size=%s existing_filled=%s",
+                                cloid.as_int(),
+                                trade.size,
+                                pending.filled_size,
+                            )
+                            continue
 
                         # Calculate weighted average price
                         # pending.weighted_avg_px is Decimal, trade.price is Decimal
@@ -736,7 +821,12 @@ class Engine(BaseEngine):
                                     self.ctx,
                                 )
                             except Exception as e:
-                                logger.error(f"Strategy on_order_filled error: {e}")
+                                logger.error(
+                                    "Strategy on_order_filled callback error cloid=%s: %s",
+                                    cloid.as_int(),
+                                    e,
+                                    exc_info=True,
+                                )
 
                             # Mark as completed for idempotency
                             self._mark_cloid_completed(cloid)
@@ -765,7 +855,12 @@ class Engine(BaseEngine):
                                 self.ctx,
                             )
                         except Exception as e:
-                            logger.error(f"Strategy on_order_filled error: {e}")
+                            logger.error(
+                                "Strategy on_order_filled callback error for untracked fill cloid=%s: %s",
+                                cloid.as_int(),
+                                e,
+                                exc_info=True,
+                            )
 
                     else:
                         # No cloid - log and notify immediately
@@ -788,11 +883,18 @@ class Engine(BaseEngine):
                                 self.ctx,
                             )
                         except Exception as e:
-                            logger.error(f"Strategy on_order_filled error: {e}")
+                            logger.error(
+                                "Strategy on_order_filled callback error for no-cloid fill: %s",
+                                e,
+                                exc_info=True,
+                            )
 
                 except Exception as e:
                     logger.error(
-                        f"Error processing trade: {e}, trade data: {trade_dict}"
+                        "Error processing trade event: %s trade_data=%s",
+                        e,
+                        trade_dict,
+                        exc_info=True,
                     )
 
     async def handle_reconciliation(self):
@@ -849,7 +951,11 @@ class Engine(BaseEngine):
             active_orders_map = {o.client_order_index: o for o in active_orders_list}
 
         except Exception as e:
-            logger.error(f"Reconciliation failed to fetch active orders: {e}")
+            logger.error(
+                "Reconciliation failed to fetch active orders: %s",
+                e,
+                exc_info=True,
+            )
             self._enter_degraded_mode("reconciliation_active_orders_exception")
             return
 
@@ -870,7 +976,18 @@ class Engine(BaseEngine):
                 self.reconciliation_miss_counts.pop(cloid, None)
 
         if not missing_cloids:
-            logger.info("[RECONCILIATION] No missing orders found.")
+            if LOG_RECONCILIATION_HEALTHY:
+                logger.info(
+                    "[RECONCILIATION] healthy pending=%d active_snapshot=%d",
+                    len(pending_snapshot),
+                    len(active_orders_map),
+                )
+            else:
+                logger.debug(
+                    "[RECONCILIATION] healthy pending=%d active_snapshot=%d",
+                    len(pending_snapshot),
+                    len(active_orders_map),
+                )
             if not self.degraded_mode:
                 return
 
@@ -891,7 +1008,9 @@ class Engine(BaseEngine):
                     o.client_order_index: o for o in inactive_orders_list
                 }
         except Exception as e:
-            logger.error(f"Reconciliation error fetching inactive orders: {e}")
+            logger.error(
+                "Reconciliation error fetching inactive orders: %s", e, exc_info=True
+            )
             self._enter_degraded_mode("reconciliation_inactive_orders_exception")
             return
 
@@ -1113,7 +1232,12 @@ class Engine(BaseEngine):
                     self.ctx,
                 )
             except Exception as e:
-                logger.error(f"Strategy on_order_failed error: {e}")
+                logger.error(
+                    "Strategy on_order_failed callback error cloid=%s: %s",
+                    cloid.as_int(),
+                    e,
+                    exc_info=True,
+                )
         elif isinstance(order, MarketOrderRequest):
             try:
                 self.strategy.on_order_failed(
@@ -1130,7 +1254,12 @@ class Engine(BaseEngine):
                     self.ctx,
                 )
             except Exception as e:
-                logger.error(f"Strategy on_order_failed error: {e}")
+                logger.error(
+                    "Strategy on_order_failed callback error cloid=%s: %s",
+                    cloid.as_int(),
+                    e,
+                    exc_info=True,
+                )
 
     async def process_order_queue(self):
         if not self.ctx or not self.ctx.order_queue:
@@ -1151,6 +1280,18 @@ class Engine(BaseEngine):
         # Drain queue
         orders_to_process = list(self.ctx.order_queue)
         self.ctx.order_queue.clear()
+        if len(orders_to_process) >= 5:
+            logger.info(
+                "Submitting queued orders count=%d pending_tracked=%d",
+                len(orders_to_process),
+                len(self.pending_orders),
+            )
+        else:
+            logger.debug(
+                "Submitting queued orders count=%d pending_tracked=%d",
+                len(orders_to_process),
+                len(self.pending_orders),
+            )
 
         tx_types: List[int] = []
         tx_infos: List[str] = []
@@ -1163,7 +1304,7 @@ class Engine(BaseEngine):
         for order in orders_to_process:
             market_id = self.market_map.get(order.symbol)
             if market_id is None:
-                logger.error(f"Market ID not found for {order.symbol}")
+                logger.error("Market ID not found for symbol=%s", order.symbol)
                 continue
 
             if not self.signer_client:
@@ -1173,7 +1314,7 @@ class Engine(BaseEngine):
             # Use Cloid directly as client_order_index
             # The strategy generates Cloid which is already an integer identifier
             if not order.cloid:
-                logger.error(f"Order missing cloid: {order}")
+                logger.error("Order missing cloid order=%s", order)
                 continue
 
             client_order_index = order.cloid.as_int()
@@ -1208,7 +1349,7 @@ class Engine(BaseEngine):
 
                 info = self.ctx.market_info(order.symbol)
                 if not info:
-                    logger.error(f"Market info not found for {order.symbol}")
+                    logger.error("Market info not found for symbol=%s", order.symbol)
                     continue
 
                 tx_type, tx_info, _, error = self.signer_client.sign_create_order(
@@ -1228,7 +1369,7 @@ class Engine(BaseEngine):
             elif isinstance(order, MarketOrderRequest):
                 info = self.ctx.market_info(order.symbol)
                 if not info:
-                    logger.error(f"Market info not found for {order.symbol}")
+                    logger.error("Market info not found for symbol=%s", order.symbol)
                     continue
 
                 # For Market orders, 'price' is the worst acceptable price (slippage limit)
@@ -1258,7 +1399,12 @@ class Engine(BaseEngine):
                 )
 
             if error:
-                logger.error(f"Signing Error: {error}")
+                logger.error(
+                    "Order signing error cloid=%s symbol=%s err=%s",
+                    order.cloid.as_int() if order.cloid else None,
+                    order.symbol,
+                    error,
+                )
                 if not isinstance(order, CancelOrderRequest):
                     self._notify_order_submit_failed(order, "signing_error")
                 continue

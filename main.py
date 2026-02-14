@@ -4,41 +4,24 @@ import logging
 import os
 import signal
 import sys
-from logging.handlers import TimedRotatingFileHandler
 from typing import cast
 
 from dotenv import load_dotenv
 
 from src.config import ExchangeConfig, PerpGridConfig, SpotGridConfig, load_config
 from src.engine.engine import Engine
+from src.logging_utils import configure_logging
 from src.strategy.base import Strategy
 from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
-
-# Ensure logs directory exists
-os.makedirs("logs", exist_ok=True)
 
 # Module-level logger (handlers configured dynamically in main)
 logger = logging.getLogger("main")
 
 
-def setup_logging(is_simulation: bool = False):
-    """Configure logging with separate log files for simulation vs production."""
-    log_file = (
-        "logs/simulation.log" if is_simulation else "logs/lighter-trading-bot.log"
-    )
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            TimedRotatingFileHandler(
-                log_file, when="midnight", interval=1, backupCount=30
-            ),
-        ],
-        force=True,
-    )
+def setup_logging(is_simulation: bool = False) -> str:
+    """Configure process-wide logging and return run identifier."""
+    return configure_logging(is_simulation=is_simulation)
 
 
 async def main():
@@ -65,7 +48,12 @@ async def main():
     args = parser.parse_args()
 
     # Setup logging based on mode (simulation uses separate log file)
-    setup_logging(is_simulation=args.dry_run)
+    run_id = setup_logging(is_simulation=args.dry_run)
+    logger.info(
+        "Logging initialized run_id=%s mode=%s",
+        run_id,
+        "simulation" if args.dry_run else "live",
+    )
 
     strategy_config_file = args.config or args.strategy_config_file
 
@@ -79,16 +67,21 @@ async def main():
 
     try:
         config = load_config(strategy_config_file)
-        logger.info(f"Loaded config for {config.symbol} ({config.type})")
+        logger.info(
+            "Loaded strategy config symbol=%s type=%s config_path=%s",
+            config.symbol,
+            config.type,
+            strategy_config_file,
+        )
     except Exception as e:
-        logger.error(f"Failed to load config: {e}")
+        logger.error("Failed to load strategy config: %s", e, exc_info=True)
         return
 
     # Load Exchange Config
     try:
         exchange_config = ExchangeConfig.from_env()
     except Exception as e:
-        logger.error(f"Failed to load exchange config: {e}")
+        logger.error("Failed to load exchange config: %s", e, exc_info=True)
         return
 
     # Init Strategy
@@ -100,6 +93,14 @@ async def main():
         logger.error(f"Strategy type {config.type} not supported yet in main.")
         return
 
+    logger.info(
+        "Starting bot symbol=%s strategy=%s network=%s dry_run=%s",
+        config.symbol,
+        config.type,
+        exchange_config.network,
+        args.dry_run,
+    )
+
     # Start
     try:
         if args.dry_run:
@@ -110,7 +111,7 @@ async def main():
     except asyncio.CancelledError:
         logger.info("Main task cancelled.")
     except Exception as e:
-        logger.error(f"Bot execution failed: {e}")
+        logger.error("Bot execution failed: %s", e, exc_info=True)
         raise
 
 
@@ -123,10 +124,17 @@ async def _run_simulation(config, exchange_config, strategy):
     sim_config = load_simulation_config()
 
     logger.info(
-        f"[SIMULATION] Mode: balance={sim_config.balance_mode}, execution={sim_config.execution_mode}"
+        "[SIMULATION] Mode balance=%s execution=%s tick_ms=%s simulate_fills=%s",
+        sim_config.balance_mode,
+        sim_config.execution_mode,
+        sim_config.tick_interval_ms,
+        sim_config.simulate_fills,
     )
     if sim_config.balance_overrides:
-        logger.info(f"[SIMULATION] Balance overrides: {sim_config.balance_overrides}")
+        logger.info(
+            "[SIMULATION] Balance overrides configured assets=%s",
+            sorted(sim_config.balance_overrides.keys()),
+        )
 
     sim_engine = SimulationEngine(config, exchange_config, strategy, sim_config)
 
@@ -166,10 +174,10 @@ async def _run_simulation(config, exchange_config, strategy):
 
     except ValueError as e:
         # Clean exit for expected validation errors (e.g., price out of grid range)
-        logger.error(f"Simulation Failed: {e}")
+        logger.error("Simulation failed: %s", e)
         exit_code = 1
     except Exception as e:
-        logger.error(f"Simulation Failed: {e}", exc_info=True)
+        logger.error("Simulation failed unexpectedly: %s", e, exc_info=True)
         exit_code = 1
     finally:
         await sim_engine.cleanup()
@@ -182,7 +190,14 @@ async def _run_live(config, exchange_config, strategy):
     from src.broadcast.server import StatusBroadcaster
 
     # Init Broadcast
-    broadcaster = StatusBroadcaster(host="0.0.0.0", port=9001)
+    broadcast_host = os.getenv("LIGHTER_BROADCAST_HOST", "0.0.0.0")
+    broadcast_port = int(os.getenv("LIGHTER_BROADCAST_PORT", "9001"))
+    logger.info(
+        "Live mode broadcaster configured host=%s port=%d",
+        broadcast_host,
+        broadcast_port,
+    )
+    broadcaster = StatusBroadcaster(host=broadcast_host, port=broadcast_port)
 
     # Init Engine
     engine = Engine(config, exchange_config, strategy, broadcaster)

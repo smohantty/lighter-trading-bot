@@ -85,7 +85,7 @@ class BaseEngine:
 
     async def _get_fresh_token(self) -> Optional[str]:
         """Token provider for QueueWsClient to refresh auth on reconnection."""
-        logger.info("Generating fresh auth token ...")
+        logger.debug("Generating fresh auth token")
         if not self.signer_client:
             logger.error("Signer client not initialized")
             return None
@@ -109,7 +109,7 @@ class BaseEngine:
         ):
             return self._api_token
 
-        logger.info("Refreshing API auth token...")
+        logger.debug("Refreshing cached API auth token")
         auth_token = await self._get_fresh_token()
 
         if not auth_token:
@@ -206,10 +206,21 @@ class BaseEngine:
                     )
                     self.markets[symbol] = info
 
-            # logger.info(f"Loaded {len(self.market_map)} symbols into market map.")
+            perp_count = sum(
+                1 for m in self.markets.values() if m.market_type == "perp"
+            )
+            spot_count = sum(
+                1 for m in self.markets.values() if m.market_type == "spot"
+            )
+            logger.info(
+                "Loaded market metadata total=%d perp=%d spot=%d",
+                len(self.markets),
+                perp_count,
+                spot_count,
+            )
 
         except Exception as e:
-            logger.error(f"Failed to populate market map: {e}")
+            logger.error("Failed to populate market map: %s", e, exc_info=True)
             raise
 
     async def _fetch_account_balances(self):
@@ -231,22 +242,29 @@ class BaseEngine:
             account = account_data.accounts[0]
 
             # Update spot balances from assets
+            spot_asset_count = 0
             if account.assets:
                 for asset in account.assets:
                     total_balance = float(asset.balance)
                     locked_balance = float(asset.locked_balance)
                     available_balance = total_balance - locked_balance
+                    spot_asset_count += 1
 
                     self.ctx.update_spot_balance(
                         asset=asset.symbol,
                         total=total_balance,
                         available=available_balance,
                     )
-                    logger.info(
-                        f"Spot Balance: {asset.symbol} - Total: {total_balance}, Available: {available_balance}"
+                    logger.debug(
+                        "Spot balance asset=%s total=%s available=%s",
+                        asset.symbol,
+                        total_balance,
+                        available_balance,
                     )
 
             # Update perp balances (collateral)
+            perp_collateral = Decimal("0")
+            perp_available = Decimal("0")
             if account.collateral:
                 collateral = float(account.collateral)
                 # Ensure we handle different possible attribute names or missing fields gracefully
@@ -261,12 +279,18 @@ class BaseEngine:
                 self.ctx.update_perp_balance(
                     asset="USDC", total=collateral, available=available
                 )
-                logger.info(
-                    f"Perp Collateral: USDC - Total: {collateral}, Available: {available}"
-                )
+                perp_collateral = Decimal(str(collateral))
+                perp_available = Decimal(str(available))
+
+            logger.info(
+                "Account balances loaded spot_assets=%d perp_collateral=%s perp_available=%s",
+                spot_asset_count,
+                perp_collateral,
+                perp_available,
+            )
 
         except Exception as e:
-            logger.error(f"Failed to fetch account balances: {e}")
+            logger.error("Failed to fetch account balances: %s", e, exc_info=True)
 
     async def get_active_orders(
         self, market_id: int, owner_account_index: Optional[int] = None

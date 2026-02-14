@@ -8,6 +8,7 @@ import lighter
 from src.config import ExchangeConfig, SimulationConfig, StrategyConfig
 from src.engine.base import BaseEngine
 from src.engine.context import StrategyContext
+from src.logging_utils import env_bool
 from src.model import (
     Cloid,
     LimitOrderRequest,
@@ -20,6 +21,8 @@ from src.strategy.base import Strategy
 from src.strategy.types import GridState, StrategySummary
 
 logger = logging.getLogger("SimulationEngine")
+
+LOG_SIM_ORDER_DETAILS = env_bool("LIGHTER_LOG_SIM_ORDER_DETAILS", default=False)
 
 
 class SimulationEngine(BaseEngine):
@@ -196,7 +199,7 @@ class SimulationEngine(BaseEngine):
                     logger.info("[SIMULATION] Run loop cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"[SIMULATION] Error in run loop: {e}")
+                    logger.error("[SIMULATION] Error in run loop: %s", e, exc_info=True)
                     await asyncio.sleep(tick_interval)
 
         finally:
@@ -216,14 +219,28 @@ class SimulationEngine(BaseEngine):
         if not self.ctx:
             return
 
+        queued_orders = 0
         while self.ctx.order_queue:
             order = self.ctx.order_queue.pop(0)
 
             if isinstance(order, LimitOrderRequest) and order.cloid:
                 self.pending_orders[order.cloid] = order
-                logger.info(
-                    f"[SIMULATION] Order queued: {order.side} {order.sz} @ {order.price} (cloid={order.cloid.as_int()})"
-                )
+                queued_orders += 1
+                if LOG_SIM_ORDER_DETAILS:
+                    logger.debug(
+                        "[SIMULATION] Order queued side=%s size=%s price=%s cloid=%s",
+                        order.side,
+                        order.sz,
+                        order.price,
+                        order.cloid.as_int(),
+                    )
+
+        if queued_orders:
+            logger.info(
+                "[SIMULATION] queued_orders=%d pending_total=%d",
+                queued_orders,
+                len(self.pending_orders),
+            )
 
     def _check_and_simulate_fills(self, current_price: Decimal):
         """
@@ -236,6 +253,7 @@ class SimulationEngine(BaseEngine):
             return
 
         filled_cloids: List[Cloid] = []
+        filled_count = 0
 
         for cloid, order in self.pending_orders.items():
             should_fill = False
@@ -260,9 +278,14 @@ class SimulationEngine(BaseEngine):
                     reduce_only=order.reduce_only,
                 )
 
-                logger.info(
-                    f"[SIMULATION] Order filled: {order.side} {order.sz} @ {fill_price} (cloid={cloid.as_int()})"
-                )
+                if LOG_SIM_ORDER_DETAILS:
+                    logger.debug(
+                        "[SIMULATION] Order filled side=%s size=%s price=%s cloid=%s",
+                        order.side,
+                        order.sz,
+                        fill_price,
+                        cloid.as_int(),
+                    )
 
                 # Notify strategy
                 self.strategy.on_order_filled(fill, self.ctx)
@@ -271,10 +294,18 @@ class SimulationEngine(BaseEngine):
                 self._update_balances_on_fill(order, fill)
 
                 filled_cloids.append(cloid)
+                filled_count += 1
 
         # Remove filled orders
         for cloid in filled_cloids:
             del self.pending_orders[cloid]
+
+        if filled_count:
+            logger.info(
+                "[SIMULATION] filled_orders=%d pending_remaining=%d",
+                filled_count,
+                len(self.pending_orders),
+            )
 
     def _update_balances_on_fill(self, order: LimitOrderRequest, fill: OrderFill):
         """Update simulated balances after a fill."""
@@ -364,5 +395,5 @@ class SimulationEngine(BaseEngine):
                 return (best_ask + best_bid) / 2.0
             return best_ask or best_bid
         except Exception as e:
-            logger.error(f"Price fetch failed: {e}")
+            logger.error("Price fetch failed: %s", e, exc_info=True)
             return 0.0
