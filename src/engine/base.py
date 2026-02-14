@@ -279,7 +279,7 @@ class BaseEngine:
         """
         if not self.api_client:
             logger.warning("API client not initialized")
-            return []
+            return None
 
         # Use provided account index or fallback to self.account_index
         account_index = (
@@ -289,11 +289,14 @@ class BaseEngine:
         )
         if account_index is None:
             logger.error("No account index available for fetching orders")
-            return []
+            return None
 
         try:
             # Generate or retrieve cached auth token
             auth_token = await self._get_api_token()
+            if auth_token is None:
+                logger.error("No API auth token available for fetching active orders")
+                return None
 
             order_api = lighter.OrderApi(self.api_client)
 
@@ -322,7 +325,7 @@ class BaseEngine:
         """
         if not self.api_client:
             logger.warning("API client not initialized")
-            return []
+            return None
 
         # Use provided account index or fallback to self.account_index
         account_index = (
@@ -332,11 +335,14 @@ class BaseEngine:
         )
         if account_index is None:
             logger.error("No account index available for fetching orders")
-            return []
+            return None
 
         try:
             # Generate or retrieve cached auth token
             auth_token = await self._get_api_token()
+            if auth_token is None:
+                logger.error("No API auth token available for fetching inactive orders")
+                return None
 
             order_api = lighter.OrderApi(self.api_client)
 

@@ -1,13 +1,14 @@
+import time
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, MagicMock
 
 from src.config import ExchangeConfig, SpotGridConfig
-from src.constants import MAX_BATCH_SIZE
+from src.constants import COMPLETED_CLOID_CACHE_TTL_SECONDS, MAX_BATCH_SIZE
 from src.engine.context import MarketInfo, StrategyContext
 from src.engine.engine import Engine
-from src.model import LimitOrderRequest, OrderSide, PendingOrder
+from src.model import Cloid, LimitOrderRequest, OrderSide, PendingOrder
 from src.strategy.types import GridType
 
 
@@ -335,3 +336,116 @@ class TestEngineResilience(IsolatedAsyncioTestCase):
         fill = self.strategy.on_order_filled.call_args[0][0]
         self.assertEqual(fill.size, order.sz)
         self.assertEqual(fill.price, order.price)
+
+    async def test_user_fill_recovers_missing_oid_mapping_from_single_candidate(self):
+        assert self.engine.ctx is not None
+
+        order = LimitOrderRequest(
+            symbol=self.config.symbol,
+            side=OrderSide.BUY,
+            price=Decimal("1.2500"),
+            sz=Decimal("1.0"),
+            reduce_only=False,
+        )
+        cloid = self.engine.ctx.place_order(order)
+        self.engine.pending_orders[cloid] = PendingOrder(
+            target_size=order.sz,
+            side=order.side,
+            filled_size=Decimal("0"),
+            weighted_avg_px=Decimal("0"),
+            accumulated_fees=Decimal("0"),
+            reduce_only=order.reduce_only,
+            oid=None,
+            created_at=0.0,
+            price=order.price,
+        )
+
+        trades_data = {
+            "trades": {
+                "2049": [
+                    {
+                        "type": "trade",
+                        "market_id": 2049,
+                        "size": "1.0",
+                        "price": "1.2500",
+                        "usd_amount": "1.25",
+                        "ask_id": 999,
+                        "bid_id": 777,
+                        "ask_account_id": 2,
+                        "bid_account_id": 1,
+                        "is_maker_ask": True,
+                        "taker_fee": 20,
+                        "maker_fee": 10,
+                    }
+                ]
+            }
+        }
+
+        await self.engine._handle_user_fills_msg("1", trades_data)
+
+        self.assertNotIn(cloid, self.engine.pending_orders)
+        self.strategy.on_order_filled.assert_called_once()
+        fill = self.strategy.on_order_filled.call_args[0][0]
+        self.assertEqual(fill.cloid, cloid)
+        cached = self.engine.oid_to_cloid.get(777)
+        self.assertIsNotNone(cached)
+        assert cached is not None
+        self.assertEqual(cached[0], cloid)
+        self.assertNotIn(777, self.engine.unresolved_oid_fill_counts)
+
+    async def test_user_fill_unresolved_oid_routes_synthetic_fill(self):
+        trades_data = {
+            "trades": {
+                "2049": [
+                    {
+                        "type": "trade",
+                        "market_id": 2049,
+                        "size": "0.5",
+                        "price": "1.2200",
+                        "usd_amount": "0.61",
+                        "ask_id": 1001,
+                        "bid_id": 888,
+                        "ask_account_id": 2,
+                        "bid_account_id": 1,
+                        "is_maker_ask": True,
+                        "taker_fee": 20,
+                        "maker_fee": 10,
+                    }
+                ]
+            }
+        }
+
+        await self.engine._handle_user_fills_msg("1", trades_data)
+
+        self.strategy.on_order_filled.assert_called_once()
+        fill = self.strategy.on_order_filled.call_args[0][0]
+        self.assertIsNone(fill.cloid)
+        self.assertEqual(fill.raw_dir, "unresolved_oid")
+        self.assertEqual(self.engine.unresolved_oid_fill_counts.get(888), 1)
+
+    def test_completed_cloid_cache_expires_stale_entries(self):
+        cloid = Cloid(123)
+        self.engine.completed_cloids[cloid] = (
+            time.time() - COMPLETED_CLOID_CACHE_TTL_SECONDS - 5
+        )
+
+        self.assertFalse(self.engine._is_cloid_completed(cloid))
+        self.assertNotIn(cloid, self.engine.completed_cloids)
+
+    async def test_get_active_orders_returns_none_when_api_client_missing(self):
+        self.engine.api_client = None
+        result = await self.engine.get_active_orders(market_id=2049)
+        self.assertIsNone(result)
+
+    async def test_get_inactive_orders_returns_none_when_account_missing(self):
+        self.engine.account_index = None
+        result = await self.engine.get_inactive_orders(limit=1, market_id=2049)
+        self.assertIsNone(result)
+
+    async def test_get_active_orders_returns_none_when_auth_token_unavailable(self):
+        token_mock = AsyncMock(return_value=None)
+        object.__setattr__(self.engine, "_get_api_token", token_mock)
+
+        result = await self.engine.get_active_orders(market_id=2049)
+        self.assertIsNone(result)
+        token_mock.assert_awaited_once()

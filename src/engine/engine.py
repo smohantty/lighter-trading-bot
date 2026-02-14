@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import lighter
 
@@ -10,13 +11,18 @@ import src.broadcast.types as btypes
 from src.broadcast.server import StatusBroadcaster
 from src.config import ExchangeConfig, StrategyConfig
 from src.constants import (
+    COMPLETED_CLOID_CACHE_MAX_SIZE,
+    COMPLETED_CLOID_CACHE_TTL_SECONDS,
     DEGRADED_MODE_COOLDOWN_SECONDS,
     MAX_BATCH_SIZE,
+    OID_CLOID_CACHE_MAX_SIZE,
+    OID_CLOID_CACHE_TTL_SECONDS,
     ORDER_LOST_TIMEOUT_SECONDS,
     ORDER_PROPAGATION_GRACE_SECONDS,
     RECONCILIATION_ENABLED,
     RECONCILIATION_HEALTHY_SNAPSHOTS_TO_EXIT_DEGRADED,
     RECONCILIATION_INTERVAL_SECONDS,
+    UNRESOLVED_OID_FILL_ALERT_THRESHOLD,
 )
 from src.engine.base import BaseEngine
 from src.engine.context import StrategyContext
@@ -27,6 +33,7 @@ from src.model import (
     MarketOrderRequest,
     OrderFailure,
     OrderFill,
+    OrderSide,
     PendingOrder,
     TradeRole,
 )
@@ -59,7 +66,11 @@ class Engine(BaseEngine):
 
         # Partial fill tracking (mirroring Rust SDK)
         self.pending_orders: Dict[Cloid, PendingOrder] = {}
-        self.completed_cloids: set[Cloid] = set()
+        self.completed_cloids: OrderedDict[Cloid, float] = OrderedDict()
+        self.last_completed_cloid_cache_log_ts = 0.0
+        self.oid_to_cloid: OrderedDict[int, Tuple[Cloid, float]] = OrderedDict()
+        self.unresolved_oid_fill_counts: Dict[int, int] = {}
+        self.unresolved_oid_fills_total = 0
         # Reconciliation guard: require repeated misses before declaring lost.
         self.reconciliation_miss_counts: Dict[Cloid, int] = {}
         # Degraded mode gate: pause exchange submissions until snapshots recover.
@@ -245,12 +256,193 @@ class Engine(BaseEngine):
                 logger.error(f"Error in broadcast loop: {e}", exc_info=True)
                 await asyncio.sleep(5.0)
 
+    @staticmethod
+    def _as_positive_int(value: Any) -> Optional[int]:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed <= 0:
+            return None
+        return parsed
+
+    def _prune_oid_cloid_cache(self, now: Optional[float] = None):
+        prune_now = time.time() if now is None else now
+        removed = 0
+
+        while self.oid_to_cloid:
+            first_oid = next(iter(self.oid_to_cloid))
+            _, first_seen_at = self.oid_to_cloid[first_oid]
+            if (prune_now - first_seen_at) <= OID_CLOID_CACHE_TTL_SECONDS:
+                break
+            self.oid_to_cloid.pop(first_oid, None)
+            self.unresolved_oid_fill_counts.pop(first_oid, None)
+            removed += 1
+
+        while len(self.oid_to_cloid) > OID_CLOID_CACHE_MAX_SIZE:
+            oldest_oid, _ = self.oid_to_cloid.popitem(last=False)
+            self.unresolved_oid_fill_counts.pop(oldest_oid, None)
+            removed += 1
+
+        if removed:
+            logger.info(
+                f"[OID_CLOID_CACHE] pruned={removed} size={len(self.oid_to_cloid)}"
+            )
+
+    def _remember_oid_cloid(self, oid: Any, cloid: Optional[Cloid]):
+        if not cloid:
+            return
+
+        cloid_int = cloid.as_int()
+        if cloid_int <= 0:
+            return
+
+        oid_int = self._as_positive_int(oid)
+        if oid_int is None:
+            return
+
+        now = time.time()
+        self.oid_to_cloid[oid_int] = (cloid, now)
+        self.oid_to_cloid.move_to_end(oid_int)
+        self.unresolved_oid_fill_counts.pop(oid_int, None)
+        self._prune_oid_cloid_cache(now)
+
+    def _sync_oid_cloid_map_from_orders(self, orders: List[Any]):
+        for order in orders:
+            cloid_int = self._as_positive_int(
+                getattr(order, "client_order_index", None)
+            )
+            oid_int = self._as_positive_int(getattr(order, "order_index", None))
+            if oid_int is None:
+                oid_int = self._as_positive_int(getattr(order, "order_id", None))
+
+            if cloid_int is None or oid_int is None:
+                continue
+
+            self._remember_oid_cloid(oid_int, Cloid(cloid_int))
+
+    def _prune_completed_cloids(self, now: Optional[float] = None):
+        prune_now = time.time() if now is None else now
+        removed = 0
+
+        while self.completed_cloids:
+            first_cloid = next(iter(self.completed_cloids))
+            first_seen_at = self.completed_cloids[first_cloid]
+            if (prune_now - first_seen_at) <= COMPLETED_CLOID_CACHE_TTL_SECONDS:
+                break
+            self.completed_cloids.pop(first_cloid, None)
+            removed += 1
+
+        while len(self.completed_cloids) > COMPLETED_CLOID_CACHE_MAX_SIZE:
+            self.completed_cloids.popitem(last=False)
+            removed += 1
+
+        if removed and (
+            prune_now - self.last_completed_cloid_cache_log_ts >= 60
+            or not self.last_completed_cloid_cache_log_ts
+        ):
+            logger.info(
+                f"[COMPLETED_CLOID_CACHE] pruned={removed} size={len(self.completed_cloids)}"
+            )
+            self.last_completed_cloid_cache_log_ts = prune_now
+
+    def _mark_cloid_completed(self, cloid: Optional[Cloid]):
+        if not cloid:
+            return
+
+        now = time.time()
+        self.completed_cloids[cloid] = now
+        self.completed_cloids.move_to_end(cloid)
+        self._prune_completed_cloids(now)
+
+    def _is_cloid_completed(self, cloid: Cloid) -> bool:
+        seen_at = self.completed_cloids.get(cloid)
+        if seen_at is None:
+            return False
+
+        now = time.time()
+        if now - seen_at > COMPLETED_CLOID_CACHE_TTL_SECONDS:
+            self.completed_cloids.pop(cloid, None)
+            return False
+
+        self.completed_cloids.move_to_end(cloid)
+        return True
+
+    def _infer_cloid_for_unresolved_fill(
+        self, side: OrderSide, trade_size: Decimal
+    ) -> Optional[Cloid]:
+        candidates: List[Cloid] = []
+        for cloid, pending in self.pending_orders.items():
+            if pending.side != side:
+                continue
+            if pending.oid is not None:
+                continue
+            if trade_size > (pending.target_size * Decimal("1.05")):
+                continue
+            candidates.append(cloid)
+
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+
+    def _emit_unresolved_oid_fill(
+        self,
+        oid: int,
+        side: OrderSide,
+        trade_size: Decimal,
+        trade_price: Decimal,
+        fee: Decimal,
+        role: TradeRole,
+    ):
+        self.unresolved_oid_fills_total += 1
+        unresolved_count = self.unresolved_oid_fill_counts.get(oid, 0) + 1
+        self.unresolved_oid_fill_counts[oid] = unresolved_count
+
+        logger.warning(
+            f"[UNRESOLVED_OID_FILL] oid={oid} count={unresolved_count} total={self.unresolved_oid_fills_total}"
+        )
+        if unresolved_count >= UNRESOLVED_OID_FILL_ALERT_THRESHOLD:
+            logger.error(
+                f"[UNRESOLVED_OID_FILL_ALERT] oid={oid} reached count={unresolved_count}"
+            )
+
+        try:
+            if self.ctx:
+                self.strategy.on_order_filled(
+                    OrderFill(
+                        side=side,
+                        size=trade_size,
+                        price=trade_price,
+                        fee=fee,
+                        role=role,
+                        cloid=None,
+                        reduce_only=None,
+                        raw_dir="unresolved_oid",
+                    ),
+                    self.ctx,
+                )
+        except Exception as e:
+            logger.error(f"Strategy unresolved fill handler error: {e}")
+
     def _find_cloid_by_oid(self, oid: int) -> Optional[Cloid]:
         """
         Finds the CLOID associated with a given Order ID (OID).
         """
+        self._prune_oid_cloid_cache()
+
+        cached = self.oid_to_cloid.get(oid)
+        if cached is not None:
+            cloid, seen_at = cached
+            now = time.time()
+            if now - seen_at <= OID_CLOID_CACHE_TTL_SECONDS:
+                self.oid_to_cloid[oid] = (cloid, now)
+                self.oid_to_cloid.move_to_end(oid)
+                return cloid
+            self.oid_to_cloid.pop(oid, None)
+
         for cloid, pending in self.pending_orders.items():
             if pending.oid == oid:
+                self._remember_oid_cloid(oid, cloid)
                 return cloid
         return None
 
@@ -319,11 +511,18 @@ class Engine(BaseEngine):
                     order = self._parse_order(order_dict)
                     logger.info(f"[Order] {order}")
 
+                    if order.cloid_id == 0:
+                        logger.debug(
+                            f"Ignoring non-bot order in lifecycle tracking (cloid=0): {order}"
+                        )
+                        continue
+
                     if not order.cloid_id:
                         logger.warning(f"Order missing cloid_id: {order}")
                         continue
 
                     cloid = Cloid(order.cloid_id)
+                    self._remember_oid_cloid(order.order_id, cloid)
 
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
@@ -398,7 +597,7 @@ class Engine(BaseEngine):
                         except Exception as e:
                             logger.error(f"Strategy on_order_failed error: {e}")
 
-                        self.completed_cloids.add(cloid)
+                        self._mark_cloid_completed(cloid)
 
                 except Exception as e:
                     logger.error(
@@ -439,15 +638,30 @@ class Engine(BaseEngine):
                     cloid = self._find_cloid_by_oid(oid)
 
                     if not cloid:
-                        logger.warning(
-                            f"Trade matched account but CLOID not found for OID {oid}: {trade}"
-                        )
-                        continue
+                        cloid = self._infer_cloid_for_unresolved_fill(side, trade.size)
+                        if cloid:
+                            logger.warning(
+                                f"[OID_RECOVERY] Inferred cloid={cloid.as_int()} for unresolved oid={oid}."
+                            )
+                            pending = self.pending_orders.get(cloid)
+                            if pending and pending.oid is None:
+                                pending.oid = oid
+                            self._remember_oid_cloid(oid, cloid)
+                        else:
+                            self._emit_unresolved_oid_fill(
+                                oid=oid,
+                                side=side,
+                                trade_size=trade.size,
+                                trade_price=trade.price,
+                                fee=fee,
+                                role=role,
+                            )
+                            continue
 
                     logger.info(f"[Trade] cloid = {cloid.as_int()}, {details}")
 
                     # Idempotency check
-                    if cloid and cloid in self.completed_cloids:
+                    if cloid and self._is_cloid_completed(cloid):
                         logger.info(
                             f"Ignored duplicate fill for completed cloid: {cloid}"
                         )
@@ -525,7 +739,7 @@ class Engine(BaseEngine):
                                 logger.error(f"Strategy on_order_filled error: {e}")
 
                             # Mark as completed for idempotency
-                            self.completed_cloids.add(cloid)
+                            self._mark_cloid_completed(cloid)
                         else:
                             logger.info(
                                 f"[ORDER_FILL_PARTIAL] {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
@@ -631,6 +845,7 @@ class Engine(BaseEngine):
                 )
                 self._enter_degraded_mode("reconciliation_active_orders_fetch_failed")
                 return
+            self._sync_oid_cloid_map_from_orders(active_orders_list)
             active_orders_map = {o.client_order_index: o for o in active_orders_list}
 
         except Exception as e:
@@ -671,6 +886,7 @@ class Engine(BaseEngine):
                 self._enter_degraded_mode("reconciliation_inactive_orders_fetch_failed")
                 return
             if inactive_orders_list:
+                self._sync_oid_cloid_map_from_orders(inactive_orders_list)
                 inactive_orders_map = {
                     o.client_order_index: o for o in inactive_orders_list
                 }
@@ -759,7 +975,7 @@ class Engine(BaseEngine):
                         ),
                         self.ctx,
                     )
-                    self.completed_cloids.add(cloid)
+                    self._mark_cloid_completed(cloid)
 
                 elif self._is_canceled_status(status):
                     logger.info(
@@ -782,7 +998,7 @@ class Engine(BaseEngine):
                         ),
                         self.ctx,
                     )
-                    self.completed_cloids.add(cloid)
+                    self._mark_cloid_completed(cloid)
             else:
                 if now - missing_pending.created_at > ORDER_LOST_TIMEOUT_SECONDS:
                     miss_count = self.reconciliation_miss_counts.get(cloid, 0) + 1
