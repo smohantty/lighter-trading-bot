@@ -58,6 +58,8 @@ class Engine(BaseEngine):
         # Partial fill tracking (mirroring Rust SDK)
         self.pending_orders: Dict[Cloid, PendingOrder] = {}
         self.completed_cloids: set[Cloid] = set()
+        # Reconciliation guard: require repeated misses before declaring lost.
+        self.reconciliation_miss_counts: Dict[Cloid, int] = {}
 
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -326,6 +328,7 @@ class Engine(BaseEngine):
                     # 1. Update OID if missing (Crucial for later cancellation/audit)
                     if order.order_id and not pending.oid:
                         pending.oid = order.order_id
+                        self.reconciliation_miss_counts.pop(cloid, None)
 
                         # Resolve Symbol to get Base Asset
                         logger.info(
@@ -371,6 +374,7 @@ class Engine(BaseEngine):
                             )
 
                         del self.pending_orders[cloid]
+                        self.reconciliation_miss_counts.pop(cloid, None)
 
                         try:
                             failure = OrderFailure(
@@ -493,6 +497,7 @@ class Engine(BaseEngine):
 
                             # Remove from pending
                             del self.pending_orders[cloid]
+                            self.reconciliation_miss_counts.pop(cloid, None)
 
                             # Call strategy callback
                             try:
@@ -592,6 +597,11 @@ class Engine(BaseEngine):
                 return
 
             active_orders_list = await self.get_active_orders(market_id=market_id)
+            if active_orders_list is None:
+                logger.warning(
+                    "[RECONCILIATION] Skipping cycle: failed to fetch active orders."
+                )
+                return
             active_orders_map = {o.client_order_index: o for o in active_orders_list}
 
         except Exception as e:
@@ -611,6 +621,8 @@ class Engine(BaseEngine):
 
             if cloid_int not in active_orders_map:
                 missing_cloids.append(cloid)
+            else:
+                self.reconciliation_miss_counts.pop(cloid, None)
 
         if not missing_cloids:
             logger.info("[RECONCILIATION] No missing orders found.")
@@ -621,12 +633,30 @@ class Engine(BaseEngine):
             inactive_orders_list = await self.get_inactive_orders(
                 limit=50, market_id=market_id
             )
+            if inactive_orders_list is None:
+                logger.warning(
+                    "[RECONCILIATION] Skipping cycle: failed to fetch inactive orders."
+                )
+                return
             if inactive_orders_list:
                 inactive_orders_map = {
                     o.client_order_index: o for o in inactive_orders_list
                 }
         except Exception as e:
             logger.error(f"Reconciliation error fetching inactive orders: {e}")
+            return
+
+        # Safety check for degraded snapshots: if both endpoints return no rows while
+        # we have many tracked pending orders, avoid false "lost" cascades.
+        if (
+            pending_snapshot
+            and not active_orders_map
+            and not inactive_orders_map
+            and len(pending_snapshot) >= 5
+        ):
+            logger.warning(
+                "[RECONCILIATION] Skipping cycle due to empty active/inactive snapshots while pending orders exist."
+            )
             return
 
         for cloid in missing_cloids:
@@ -648,6 +678,7 @@ class Engine(BaseEngine):
 
                     if cloid in self.pending_orders:
                         del self.pending_orders[cloid]
+                    self.reconciliation_miss_counts.pop(cloid, None)
 
                     self.strategy.on_order_filled(
                         OrderFill(
@@ -670,6 +701,7 @@ class Engine(BaseEngine):
                     )
                     if cloid in self.pending_orders:
                         del self.pending_orders[cloid]
+                    self.reconciliation_miss_counts.pop(cloid, None)
 
                     self.strategy.on_order_failed(
                         OrderFailure(
@@ -687,11 +719,21 @@ class Engine(BaseEngine):
                     self.completed_cloids.add(cloid)
             else:
                 if now - missing_pending.created_at > ORDER_LOST_TIMEOUT_SECONDS:
+                    miss_count = self.reconciliation_miss_counts.get(cloid, 0) + 1
+                    self.reconciliation_miss_counts[cloid] = miss_count
+
+                    if miss_count < 2:
+                        logger.warning(
+                            f"[RECONCILIATION] Order {cloid} missing snapshot {miss_count}/2. Waiting one more cycle before marking lost."
+                        )
+                        continue
+
                     logger.warning(
                         f"[RECONCILIATION] Order {cloid} lost (not found in active or recent history). Marking failed."
                     )
                     if cloid in self.pending_orders:
                         del self.pending_orders[cloid]
+                    self.reconciliation_miss_counts.pop(cloid, None)
 
                     self.strategy.on_order_failed(
                         OrderFailure(

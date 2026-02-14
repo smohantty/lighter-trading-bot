@@ -62,7 +62,7 @@ async def main():
                 market_id=market_id, owner_account_index=account_index
             )
             results["active_orders"] = _serialize(active_orders)
-            logger.info(f"Found {len(active_orders)} active orders")
+            logger.info(f"Found {len(active_orders or [])} active orders")
         except Exception as e:
             logger.error(f"Error fetching active orders: {e}")
             results["active_error"] = str(e)
@@ -74,7 +74,7 @@ async def main():
                 limit=10, market_id=market_id, owner_account_index=account_index
             )
             results["inactive_orders"] = _serialize(inactive_orders)
-            logger.info(f"Found {len(inactive_orders)} inactive orders")
+            logger.info(f"Found {len(inactive_orders or [])} inactive orders")
         except Exception as e:
             logger.error(f"Error fetching inactive orders: {e}")
             results["inactive_error"] = str(e)

@@ -270,8 +270,13 @@ class BaseEngine:
 
     async def get_active_orders(
         self, market_id: int, owner_account_index: Optional[int] = None
-    ) -> List[Any]:
-        """Fetch active orders from the exchange."""
+    ) -> Optional[List[Any]]:
+        """Fetch active orders from the exchange.
+
+        Returns:
+            List of orders when the API call succeeds.
+            None when the API call fails (caller should treat as degraded snapshot).
+        """
         if not self.api_client:
             logger.warning("API client not initialized")
             return []
@@ -304,12 +309,17 @@ class BaseEngine:
 
         except Exception as e:
             logger.error(f"Failed to fetch active orders: {e}")
-            return []
+            return None
 
     async def get_inactive_orders(
         self, limit: int, market_id: int, owner_account_index: Optional[int] = None
-    ) -> List[Any]:
-        """Fetch inactive orders from the exchange."""
+    ) -> Optional[List[Any]]:
+        """Fetch inactive orders from the exchange.
+
+        Returns:
+            List of orders when the API call succeeds.
+            None when the API call fails (caller should treat as degraded snapshot).
+        """
         if not self.api_client:
             logger.warning("API client not initialized")
             return []
@@ -340,7 +350,7 @@ class BaseEngine:
 
         except Exception as e:
             logger.error(f"Failed to fetch inactive orders: {e}")
-            return []
+            return None
 
     def _parse_order(self, order_data: dict) -> Order:
         """
