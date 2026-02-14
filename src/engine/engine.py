@@ -10,10 +10,12 @@ import src.broadcast.types as btypes
 from src.broadcast.server import StatusBroadcaster
 from src.config import ExchangeConfig, StrategyConfig
 from src.constants import (
+    DEGRADED_MODE_COOLDOWN_SECONDS,
     MAX_BATCH_SIZE,
     ORDER_LOST_TIMEOUT_SECONDS,
     ORDER_PROPAGATION_GRACE_SECONDS,
     RECONCILIATION_ENABLED,
+    RECONCILIATION_HEALTHY_SNAPSHOTS_TO_EXIT_DEGRADED,
     RECONCILIATION_INTERVAL_SECONDS,
 )
 from src.engine.base import BaseEngine
@@ -60,6 +62,11 @@ class Engine(BaseEngine):
         self.completed_cloids: set[Cloid] = set()
         # Reconciliation guard: require repeated misses before declaring lost.
         self.reconciliation_miss_counts: Dict[Cloid, int] = {}
+        # Degraded mode gate: pause exchange submissions until snapshots recover.
+        self.degraded_mode = False
+        self.degraded_until_ts = 0.0
+        self.healthy_reconciliation_snapshots = 0
+        self.last_degraded_skip_log_ts = 0.0
 
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -601,11 +608,13 @@ class Engine(BaseEngine):
                 logger.warning(
                     "[RECONCILIATION] Skipping cycle: failed to fetch active orders."
                 )
+                self._enter_degraded_mode("reconciliation_active_orders_fetch_failed")
                 return
             active_orders_map = {o.client_order_index: o for o in active_orders_list}
 
         except Exception as e:
             logger.error(f"Reconciliation failed to fetch active orders: {e}")
+            self._enter_degraded_mode("reconciliation_active_orders_exception")
             return
 
         # 2. Iterate pending orders to identify missing ones vs active ones
@@ -626,7 +635,8 @@ class Engine(BaseEngine):
 
         if not missing_cloids:
             logger.info("[RECONCILIATION] No missing orders found.")
-            return
+            if not self.degraded_mode:
+                return
 
         inactive_orders_map = {}
         try:
@@ -637,6 +647,7 @@ class Engine(BaseEngine):
                 logger.warning(
                     "[RECONCILIATION] Skipping cycle: failed to fetch inactive orders."
                 )
+                self._enter_degraded_mode("reconciliation_inactive_orders_fetch_failed")
                 return
             if inactive_orders_list:
                 inactive_orders_map = {
@@ -644,6 +655,7 @@ class Engine(BaseEngine):
                 }
         except Exception as e:
             logger.error(f"Reconciliation error fetching inactive orders: {e}")
+            self._enter_degraded_mode("reconciliation_inactive_orders_exception")
             return
 
         # Safety check for degraded snapshots: if both endpoints return no rows while
@@ -657,7 +669,10 @@ class Engine(BaseEngine):
             logger.warning(
                 "[RECONCILIATION] Skipping cycle due to empty active/inactive snapshots while pending orders exist."
             )
+            self._enter_degraded_mode("reconciliation_empty_snapshots")
             return
+
+        self._record_healthy_reconciliation_snapshot()
 
         for cloid in missing_cloids:
             cloid_int = cloid.as_int()
@@ -773,8 +788,94 @@ class Engine(BaseEngine):
             except Exception as e:
                 logger.error(f"Error in reconciliation loop: {e}", exc_info=True)
 
+    def _enter_degraded_mode(self, reason: str):
+        self.degraded_mode = True
+        self.degraded_until_ts = time.time() + DEGRADED_MODE_COOLDOWN_SECONDS
+        self.healthy_reconciliation_snapshots = 0
+        logger.warning(
+            f"[DEGRADED_MODE] Enabled for {DEGRADED_MODE_COOLDOWN_SECONDS}s. reason={reason}"
+        )
+
+    def _record_healthy_reconciliation_snapshot(self):
+        self.healthy_reconciliation_snapshots += 1
+        if (
+            self.degraded_mode
+            and time.time() >= self.degraded_until_ts
+            and self.healthy_reconciliation_snapshots
+            >= RECONCILIATION_HEALTHY_SNAPSHOTS_TO_EXIT_DEGRADED
+        ):
+            self.degraded_mode = False
+            logger.info(
+                f"[DEGRADED_MODE] Disabled after {self.healthy_reconciliation_snapshots} healthy reconciliation snapshot(s)."
+            )
+
+    @staticmethod
+    def _is_transient_batch_code(code: int) -> bool:
+        return code in {429, 500, 502, 503, 504}
+
+    def _requeue_orders_to_front(self, orders: List[Any]):
+        if not self.ctx or not orders:
+            return
+        self.ctx.order_queue = list(orders) + self.ctx.order_queue
+
+    def _notify_order_submit_failed(self, order: Any, reason: str):
+        if not self.ctx:
+            return
+
+        cloid = getattr(order, "cloid", None)
+        if not cloid:
+            return
+
+        if cloid in self.pending_orders:
+            del self.pending_orders[cloid]
+        self.reconciliation_miss_counts.pop(cloid, None)
+
+        if isinstance(order, LimitOrderRequest):
+            try:
+                self.strategy.on_order_failed(
+                    OrderFailure(
+                        cloid=cloid,
+                        side=order.side,
+                        target_size=order.sz,
+                        filled_size=Decimal("0"),
+                        filled_price=Decimal("0"),
+                        accumulated_fees=Decimal("0"),
+                        failure_reason=reason,
+                        reduce_only=order.reduce_only,
+                    ),
+                    self.ctx,
+                )
+            except Exception as e:
+                logger.error(f"Strategy on_order_failed error: {e}")
+        elif isinstance(order, MarketOrderRequest):
+            try:
+                self.strategy.on_order_failed(
+                    OrderFailure(
+                        cloid=cloid,
+                        side=order.side,
+                        target_size=order.sz,
+                        filled_size=Decimal("0"),
+                        filled_price=Decimal("0"),
+                        accumulated_fees=Decimal("0"),
+                        failure_reason=reason,
+                        reduce_only=order.reduce_only,
+                    ),
+                    self.ctx,
+                )
+            except Exception as e:
+                logger.error(f"Strategy on_order_failed error: {e}")
+
     async def process_order_queue(self):
         if not self.ctx or not self.ctx.order_queue:
+            return
+
+        if self.degraded_mode:
+            now = time.time()
+            if now - self.last_degraded_skip_log_ts >= 10:
+                logger.warning(
+                    "[DEGRADED_MODE] Skipping order submission while exchange connectivity is unstable."
+                )
+                self.last_degraded_skip_log_ts = now
             return
 
         assert self.ctx is not None
@@ -784,21 +885,15 @@ class Engine(BaseEngine):
         orders_to_process = list(self.ctx.order_queue)
         self.ctx.order_queue.clear()
 
-        # Batching logic
-        # Lighter supports batch transactions.
-
         tx_types: List[int] = []
         tx_infos: List[str] = []
-
-        # Context to map back results
-        batch_context = []
-
-        # Get API key for this batch - all orders must use the same API key
-        # but each needs a unique nonce
+        # Signed entries preserve order for chunk mapping.
+        signed_entries: List[Dict[str, Any]] = []
         batch_api_key_index = None
+        nonce = 0
+        signed_count = 0
 
-        # Process Orders
-        for i, order in enumerate(orders_to_process):
+        for order in orders_to_process:
             market_id = self.market_map.get(order.symbol)
             if market_id is None:
                 logger.error(f"Market ID not found for {order.symbol}")
@@ -816,16 +911,12 @@ class Engine(BaseEngine):
 
             client_order_index = order.cloid.as_int()
 
-            # For first order, get a new API key. For subsequent orders, reuse the same key
-            # All transactions in a batch must use the same API key but different nonces
-            if i == 0:
+            if signed_count == 0:
                 batch_api_key_index, nonce = (
                     self.signer_client.nonce_manager.next_nonce()
                 )
                 assert batch_api_key_index is not None
             else:
-                # Using ApiNonceManager, next_nonce() fetches from server which hasn't seen our txs yet
-                # So we must manually increment the nonce for the batch
                 nonce += 1
 
             assert batch_api_key_index is not None
@@ -833,20 +924,18 @@ class Engine(BaseEngine):
             error = None
             tx_type = None
             tx_info = None
+            pending_template: Optional[PendingOrder] = None
 
             if isinstance(order, LimitOrderRequest):
-                # Track pending order for partial fill accumulation
-                # PendingOrder uses Decimal fields
-                # order.sz and order.price are already Decimal (from LimitOrderRequest in model.py)
-                self.pending_orders[order.cloid] = PendingOrder(
+                pending_template = PendingOrder(
                     target_size=order.sz,
                     side=order.side,
                     filled_size=Decimal("0"),
                     weighted_avg_px=Decimal("0"),
                     accumulated_fees=Decimal("0"),
                     reduce_only=order.reduce_only,
-                    oid=None,  # Will be set when we get confirmation
-                    created_at=time.time(),  # Track when order was placed
+                    oid=None,
+                    created_at=0.0,
                     price=order.price,
                 )
 
@@ -903,26 +992,29 @@ class Engine(BaseEngine):
 
             if error:
                 logger.error(f"Signing Error: {error}")
-                # Callback?
+                if not isinstance(order, CancelOrderRequest):
+                    self._notify_order_submit_failed(order, "signing_error")
                 continue
 
             assert tx_type is not None
             tx_types.append(cast(int, tx_type))
-            # Ensure tx_info is valid (str) if present, else empty string or similar if allowed.
-            # SDK likely returns str.
             tx_infos.append(str(tx_info) if tx_info is not None else "")
-            batch_context.append(order)
+            signed_entries.append({"order": order, "pending": pending_template})
+            signed_count += 1
 
-        # Process orders in chunks of MAX_BATCH_SIZE using REST API
+        if not tx_types:
+            return
+
         for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
             batch_end = min(batch_start + MAX_BATCH_SIZE, len(tx_types))
             batch_tx_types = tx_types[batch_start:batch_end]
             batch_tx_infos = tx_infos[batch_start:batch_end]
+            batch_entries = signed_entries[batch_start:batch_end]
+            remaining_entries = signed_entries[batch_start:]
             batch_num = (batch_start // MAX_BATCH_SIZE) + 1
             total_batches = (len(tx_types) + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
 
             try:
-                # Use REST API to send batch and get response
                 assert self.signer_client is not None
                 response = await self.signer_client.send_tx_batch(
                     tx_types=batch_tx_types, tx_infos=batch_tx_infos
@@ -932,16 +1024,38 @@ class Engine(BaseEngine):
                     logger.info(
                         f"Batch {batch_num}/{total_batches} accepted: {len(response.tx_hash)} orders"
                     )
-
-                    # TODO: Track tx_hashes for order confirmation
-                    # We can map client_order_index to tx_hash here
+                    created_at = time.time()
+                    for entry in batch_entries:
+                        pending = entry.get("pending")
+                        order_entry = entry.get("order")
+                        if (
+                            isinstance(pending, PendingOrder)
+                            and order_entry
+                            and order_entry.cloid
+                        ):
+                            pending.created_at = created_at
+                            self.pending_orders[order_entry.cloid] = pending
                 else:
                     logger.error(
                         f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}"
                     )
+                    if self._is_transient_batch_code(response.code):
+                        self._enter_degraded_mode(f"batch_send_http_{response.code}")
+                        self._requeue_orders_to_front(
+                            [e["order"] for e in remaining_entries]
+                        )
+                        break
+
+                    for entry in batch_entries:
+                        self._notify_order_submit_failed(
+                            entry["order"], f"batch_rejected_{response.code}"
+                        )
 
             except Exception as e:
                 logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
+                self._enter_degraded_mode("batch_send_exception")
+                self._requeue_orders_to_front([e["order"] for e in remaining_entries])
+                break
 
     async def run(self):
         await self.initialize()
