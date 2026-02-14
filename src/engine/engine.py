@@ -526,15 +526,15 @@ class Engine(BaseEngine):
                 try:
                     processed_orders += 1
                     order = self._parse_order(order_dict)
+                    logger.debug("open_order_event order=%s", order)
                     if LOG_VERBOSE_ORDER_STREAM:
                         logger.info("open_order_event order=%s", order)
 
                     if order.cloid_id == 0:
-                        if LOG_VERBOSE_ORDER_STREAM:
-                            logger.debug(
-                                "Ignoring non-bot order in lifecycle tracking order_id=%s",
-                                order.order_id,
-                            )
+                        logger.debug(
+                            "Ignoring non-bot order in lifecycle tracking order_id=%s",
+                            order.order_id,
+                        )
                         continue
 
                     if not order.cloid_id:
@@ -549,13 +549,12 @@ class Engine(BaseEngine):
                     # Only process if we're tracking this order
                     if cloid not in self.pending_orders:
                         untracked_orders += 1
-                        if LOG_VERBOSE_ORDER_STREAM:
-                            logger.warning(
-                                "Open order not tracked cloid=%s oid=%s status=%s",
-                                cloid.as_int(),
-                                order.order_id,
-                                order.status,
-                            )
+                        logger.debug(
+                            "Open order not tracked cloid=%s oid=%s status=%s",
+                            cloid.as_int(),
+                            order.order_id,
+                            order.status,
+                        )
                         continue
 
                     tracked_orders += 1
@@ -653,16 +652,30 @@ class Engine(BaseEngine):
                         exc_info=True,
                     )
 
-        if processed_orders and (
-            LOG_VERBOSE_ORDER_STREAM or new_oid_mappings or canceled_orders
-        ):
-            logger.info(
+        if processed_orders:
+            logger.debug(
                 "open_orders_update processed=%d tracked=%d mapped=%d canceled=%d untracked=%d pending_total=%d",
                 processed_orders,
                 tracked_orders,
                 new_oid_mappings,
                 canceled_orders,
                 untracked_orders,
+                len(self.pending_orders),
+            )
+
+        if processed_orders and (new_oid_mappings or canceled_orders):
+            logger.info(
+                "open_orders_update mapped=%d canceled=%d pending_total=%d",
+                new_oid_mappings,
+                canceled_orders,
+                len(self.pending_orders),
+            )
+
+        if untracked_orders:
+            logger.warning(
+                "open_orders_update detected_untracked_orders=%d processed=%d pending_total=%d",
+                untracked_orders,
+                processed_orders,
                 len(self.pending_orders),
             )
 
@@ -684,12 +697,11 @@ class Engine(BaseEngine):
                     assert self.account_index is not None
                     details = trade.get_trade_details(self.account_index)
                     if not details:
-                        if LOG_VERBOSE_ORDER_STREAM:
-                            logger.debug(
-                                "Ignored trade not involving account=%s trade=%s",
-                                self.account_index,
-                                trade,
-                            )
+                        logger.debug(
+                            "Ignored trade not involving account=%s trade=%s",
+                            self.account_index,
+                            trade,
+                        )
                         continue
 
                     side = details.side

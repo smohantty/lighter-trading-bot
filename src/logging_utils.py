@@ -56,13 +56,14 @@ def configure_logging(is_simulation: bool = False) -> str:
         else os.path.join(log_dir, "lighter-trading-bot.log")
     )
 
+    base_level = _parse_log_level(os.getenv("LIGHTER_LOG_LEVEL"), logging.INFO)
     console_level = _parse_log_level(
         os.getenv("LIGHTER_CONSOLE_LOG_LEVEL"),
-        _parse_log_level(os.getenv("LIGHTER_LOG_LEVEL"), logging.INFO),
+        base_level,
     )
     file_level = _parse_log_level(
         os.getenv("LIGHTER_FILE_LOG_LEVEL"),
-        _parse_log_level(os.getenv("LIGHTER_LOG_LEVEL"), logging.INFO),
+        _parse_log_level(os.getenv("LIGHTER_LOG_LEVEL"), logging.DEBUG),
     )
     backup_count = int(os.getenv("LIGHTER_LOG_BACKUP_COUNT", "30"))
 

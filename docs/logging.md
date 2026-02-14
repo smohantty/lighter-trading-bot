@@ -16,13 +16,15 @@ Configured format:
 
 ## Production Defaults
 Default behavior favors signal over volume:
+- File logs capture debug detail by default for post-incident forensics.
+- Console logs remain concise (info-level by default).
 - Detailed per-order stream chatter is disabled.
 - Healthy reconciliation heartbeat is debug-level by default.
 - Zone-order fan-out logs are debug-level; summary activation logs remain info-level.
 - Simulation per-order queue/fill logs are debug-level unless explicitly enabled.
 
 ## Runtime Controls
-- `LIGHTER_LOG_LEVEL`: base level for console/file when specific levels are not set.
+- `LIGHTER_LOG_LEVEL`: base level override (console default uses this; file defaults to debug unless explicitly set).
 - `LIGHTER_CONSOLE_LOG_LEVEL`: console handler level.
 - `LIGHTER_FILE_LOG_LEVEL`: file handler level.
 - `LIGHTER_LOG_BACKUP_COUNT`: timed-rotation retention count (default `30`).
@@ -41,8 +43,5 @@ High-volume toggles:
 1. Capture `run_id` from startup log.
 2. Filter logs by `run_id` and timeframe around incident.
 3. Correlate order lifecycle using `cloid`, `oid`, strategy events, and reconciliation messages.
-4. If needed, re-run with:
-   - `LIGHTER_LOG_VERBOSE_ORDER_STREAM=true`
-   - `LIGHTER_LOG_RECONCILIATION_HEALTHY=true`
-   - higher file level (`LIGHTER_FILE_LOG_LEVEL=DEBUG`)
-
+4. Default production logs should contain sufficient error context without requiring a rerun.
+5. Optional: enable high-volume toggles only when deeper stream-level traces are needed.
