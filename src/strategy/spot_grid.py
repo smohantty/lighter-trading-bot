@@ -119,7 +119,12 @@ class SpotGridStrategy(Strategy):
                 if common.check_trigger(
                     price, self.config.trigger_price, self.trigger_reference_price
                 ):
-                    logger.info(f"[SPOT_GRID] [Triggered] at {price}")
+                    logger.info(
+                        "[SPOT_GRID] Triggered at price=%s trigger_price=%s reference_price=%s",
+                        price,
+                        self.config.trigger_price,
+                        self.trigger_reference_price,
+                    )
                     self._transition_to_running(ctx, price)
         elif self.state == StrategyState.Running:
             # Continuously ensure orders are active
@@ -148,21 +153,20 @@ class SpotGridStrategy(Strategy):
 
                 if zone.order_side.is_buy():
                     # Buy Fill
-                    logger.info(
-                        f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled BUY {fill.size} {self.base_asset} @ {fill.price}"
-                    )
                     self.inventory_base += fill.size
                     self.inventory_quote -= fill.size * fill.price
                     # Flip to SELL at upper price
                     zone.order_side = OrderSide.SELL
                     zone.entry_price = fill.price
+                    logger.info(
+                        f"[ORDER_FILLED][SPOT_GRID] Z{idx} BUY {fill.size} {self.base_asset} @ {fill.price} "
+                        f"cloid={fill.cloid.as_int()}. Next: SELL @ {zone.sell_price}. "
+                        f"inv_base={self.inventory_base} inv_quote={self.inventory_quote:.2f}"
+                    )
                     self.place_zone_order(zone, ctx)
                 else:
                     # Sell Fill
                     pnl = (fill.price - zone.entry_price) * fill.size
-                    logger.info(
-                        f"[ORDER_FILLED][SPOT_GRID] GRID_ZONE_{idx} cloid: {fill.cloid.as_int()} Filled SELL {fill.size} {self.base_asset} @ {fill.price:.{self.market.price_decimals}f}. PnL: {pnl:.4f}"
-                    )
                     self.matched_profit += pnl
                     self.inventory_base = max(
                         Decimal("0"), self.inventory_base - fill.size
@@ -173,6 +177,11 @@ class SpotGridStrategy(Strategy):
                     # Flip to BUY at lower price
                     zone.order_side = OrderSide.BUY
                     zone.entry_price = Decimal("0.0")
+                    logger.info(
+                        f"[ORDER_FILLED][SPOT_GRID] Z{idx} SELL {fill.size} {self.base_asset} @ {fill.price:.{self.market.price_decimals}f} "
+                        f"cloid={fill.cloid.as_int()}. PnL: {pnl:.4f}. matched_total={self.matched_profit:.4f} fees={self.total_fees:.4f}. "
+                        f"Next: BUY @ {zone.buy_price}. inv_base={self.inventory_base} inv_quote={self.inventory_quote:.2f}"
+                    )
                     self.place_zone_order(zone, ctx)
 
     def on_order_failed(self, failure: OrderFailure, ctx: StrategyContext):
@@ -354,6 +363,30 @@ class SpotGridStrategy(Strategy):
         logger.info(
             f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}"
         )
+
+        # Log grid plan for production debugging
+        holding = sum(1 for z in self.zones if z.order_side.is_sell())
+        waiting = sum(1 for z in self.zones if z.order_side.is_buy())
+        logger.info(
+            "[SPOT_GRID] [GRID_PLAN] zones=%d holding=%d waiting=%d spacing_pct=%s price=%s range=[%s, %s]",
+            len(self.zones),
+            holding,
+            waiting,
+            self.grid_spacing_pct,
+            initial_price,
+            self.config.lower_price,
+            self.config.upper_price,
+        )
+        for z in self.zones:
+            logger.debug(
+                "[SPOT_GRID] [GRID_PLAN] zone=%d buy=%s sell=%s size=%s side=%s entry=%s",
+                z.index,
+                z.buy_price,
+                z.sell_price,
+                z.size,
+                z.order_side,
+                z.entry_price,
+            )
         self.inventory_base = min(avail_base, required_base)
         self.inventory_quote = min(avail_quote, required_quote)
 
@@ -463,10 +496,16 @@ class SpotGridStrategy(Strategy):
 
         if self.config.trigger_price:
             # Passive Wait Mode
-            logger.info(
-                "[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state."
-            )
             self.trigger_reference_price = self.current_price
+            direction = (
+                "above" if self.config.trigger_price > self.current_price else "below"
+            )
+            logger.info(
+                "[SPOT_GRID] Assets sufficient. Waiting for Trigger. trigger_price=%s direction=%s reference_price=%s",
+                self.config.trigger_price,
+                direction,
+                self.current_price,
+            )
             self.state = StrategyState.WaitingForTrigger
         else:
             # No Trigger, Assets OK -> Running
@@ -556,31 +595,70 @@ class SpotGridStrategy(Strategy):
     ) -> Decimal:
         """Calculate optimal price for acquiring assets during initial setup."""
         if self.config.trigger_price:
-            return self.market.round_price(self.config.trigger_price)
+            price = self.market.round_price(self.config.trigger_price)
+            logger.info(
+                "[SPOT_GRID] [ACQUISITION_PRICE] Using trigger_price=%s side=%s",
+                price,
+                side,
+            )
+            return price
 
         if side == OrderSide.BUY:
-            # Find nearest level LOWER than market to buy at (Limit Buy below market)
             candidates = [
                 z.buy_price for z in self.zones if z.buy_price < current_price
             ]
             if candidates:
-                return self.market.round_price(max(candidates))
+                price = self.market.round_price(max(candidates))
+                logger.info(
+                    "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
+                    side,
+                    price,
+                    current_price,
+                    len(candidates),
+                )
+                return price
             elif self.zones:
-                # Fallback: Price is below grid. Return markdown of current price for BUY.
-                return self.market.round_price(
+                price = self.market.round_price(
                     ACQUISITION_SPREAD.markdown(current_price)
                 )
+                logger.info(
+                    "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=spread_markdown price=%s current=%s",
+                    side,
+                    price,
+                    current_price,
+                )
+                return price
         else:  # SELL
-            # Find nearest level ABOVE market to sell at (Limit Sell above market)
             candidates = [
                 z.sell_price for z in self.zones if z.sell_price > current_price
             ]
             if candidates:
-                return self.market.round_price(min(candidates))
+                price = self.market.round_price(min(candidates))
+                logger.info(
+                    "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
+                    side,
+                    price,
+                    current_price,
+                    len(candidates),
+                )
+                return price
             elif self.zones:
-                # Fallback: Price is above grid. Return markup of current price for SELL.
-                return self.market.round_price(ACQUISITION_SPREAD.markup(current_price))
+                price = self.market.round_price(
+                    ACQUISITION_SPREAD.markup(current_price)
+                )
+                logger.info(
+                    "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=spread_markup price=%s current=%s",
+                    side,
+                    price,
+                    current_price,
+                )
+                return price
 
+        logger.info(
+            "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=fallback_current price=%s",
+            side,
+            current_price,
+        )
         return current_price
 
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:

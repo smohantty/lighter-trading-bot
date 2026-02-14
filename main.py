@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from src.config import ExchangeConfig, PerpGridConfig, SpotGridConfig, load_config
 from src.engine.engine import Engine
-from src.logging_utils import configure_logging
+from src.logging_utils import configure_logging, env_bool
 from src.strategy.base import Strategy
 from src.strategy.perp_grid import PerpGridStrategy
 from src.strategy.spot_grid import SpotGridStrategy
@@ -73,6 +73,12 @@ async def main():
             config.type,
             strategy_config_file,
         )
+        # Dump full strategy config for production debugging (excludes secrets)
+        config_dict = config.model_dump(mode="json", warnings=False)
+        if env_bool("LIGHTER_LOG_CONFIG_DUMP", default=True):
+            logger.info("[CONFIG_DUMP] %s", config_dict)
+        else:
+            logger.debug("[CONFIG_DUMP] %s", config_dict)
     except Exception as e:
         logger.error("Failed to load strategy config: %s", e, exc_info=True)
         return

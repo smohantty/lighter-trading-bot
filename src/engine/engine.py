@@ -84,6 +84,7 @@ class Engine(BaseEngine):
         self.degraded_until_ts = 0.0
         self.healthy_reconciliation_snapshots = 0
         self.last_degraded_skip_log_ts = 0.0
+        self.last_untracked_orders_log_ts = 0.0
 
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -409,7 +410,8 @@ class Engine(BaseEngine):
         self.unresolved_oid_fill_counts[oid] = unresolved_count
 
         logger.warning(
-            f"[UNRESOLVED_OID_FILL] oid={oid} count={unresolved_count} total={self.unresolved_oid_fills_total}"
+            f"[UNRESOLVED_OID_FILL] oid={oid} side={side} size={trade_size} price={trade_price} "
+            f"role={role} count={unresolved_count} total={self.unresolved_oid_fills_total}"
         )
         if unresolved_count >= UNRESOLVED_OID_FILL_ALERT_THRESHOLD:
             logger.error(
@@ -672,12 +674,15 @@ class Engine(BaseEngine):
             )
 
         if untracked_orders:
-            logger.warning(
-                "open_orders_update detected_untracked_orders=%d processed=%d pending_total=%d",
-                untracked_orders,
-                processed_orders,
-                len(self.pending_orders),
-            )
+            now = time.time()
+            if now - self.last_untracked_orders_log_ts >= 60:
+                logger.warning(
+                    "open_orders_update detected_untracked_orders=%d processed=%d pending_total=%d",
+                    untracked_orders,
+                    processed_orders,
+                    len(self.pending_orders),
+                )
+                self.last_untracked_orders_log_ts = now
 
     async def _handle_user_fills_msg(self, account_id: str, trades_data: dict):
         """Process user fills update."""
@@ -789,7 +794,7 @@ class Engine(BaseEngine):
                         if is_fully_filled:
                             # Order is fully filled - notify strategy
                             logger.info(
-                                f"[ORDER_FILLED] {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees:.4f})"
+                                f"[ORDER_FILLED] cloid={cloid.as_int()} oid={pending.oid} {side} {pending.filled_size} @ {pending.weighted_avg_px} (Fee: {pending.accumulated_fees:.4f})"
                             )
 
                             if self.broadcaster:
@@ -844,12 +849,13 @@ class Engine(BaseEngine):
                             self._mark_cloid_completed(cloid)
                         else:
                             logger.info(
-                                f"[ORDER_FILL_PARTIAL] {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
+                                f"[ORDER_FILL_PARTIAL] cloid={cloid.as_int()} oid={pending.oid} {side} {trade.size} @ {trade.price} "
+                                f"(Fee: {fee:.4f}) progress={pending.filled_size}/{pending.target_size}"
                             )
 
                     elif cloid:
                         logger.info(
-                            f"[ORDER_FILL_UNTRACKED] {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
+                            f"[ORDER_FILL_UNTRACKED] cloid={cloid.as_int()} oid={oid} {side} {trade.size} @ {trade.price} (Fee: {fee:.4f})"
                         )
 
                         try:
@@ -1186,6 +1192,38 @@ class Engine(BaseEngine):
             except Exception as e:
                 logger.error(f"Error in reconciliation loop: {e}", exc_info=True)
 
+            # Periodic balance snapshot for production visibility
+            try:
+                await self._log_balance_snapshot()
+            except Exception as e:
+                logger.error(f"Error logging balance snapshot: {e}")
+
+    async def _log_balance_snapshot(self):
+        """Log periodic balance snapshot for production monitoring."""
+        if not self.ctx:
+            return
+        try:
+            await self._fetch_account_balances()
+            symbol = self.strategy_config.symbol
+            summary = self.strategy.get_summary(self.ctx)
+            logger.info(
+                "[BALANCE_SNAPSHOT] symbol=%s pending_orders=%d degraded=%s summary=%s",
+                symbol,
+                len(self.pending_orders),
+                self.degraded_mode,
+                {
+                    "state": getattr(summary, "state", None),
+                    "matched_profit": str(getattr(summary, "matched_profit", 0)),
+                    "total_fees": str(getattr(summary, "total_fees", 0)),
+                    "total_profit": str(getattr(summary, "total_profit", 0)),
+                },
+            )
+        except ValueError:
+            # get_summary raises ValueError before strategy init; expected
+            logger.debug("[BALANCE_SNAPSHOT] skipped: strategy not yet initialized")
+        except Exception as e:
+            logger.error("[BALANCE_SNAPSHOT] failed: %s", e, exc_info=True)
+
     def _enter_degraded_mode(self, reason: str):
         self.degraded_mode = True
         self.degraded_until_ts = time.time() + DEGRADED_MODE_COOLDOWN_SECONDS
@@ -1223,6 +1261,14 @@ class Engine(BaseEngine):
         cloid = getattr(order, "cloid", None)
         if not cloid:
             return
+
+        logger.warning(
+            "[ORDER_SUBMIT_FAILED] cloid=%s side=%s size=%s reason=%s",
+            cloid.as_int(),
+            getattr(order, "side", None),
+            getattr(order, "sz", None),
+            reason,
+        )
 
         if cloid in self.pending_orders:
             del self.pending_orders[cloid]
@@ -1461,8 +1507,14 @@ class Engine(BaseEngine):
                             pending.created_at = created_at
                             self.pending_orders[order_entry.cloid] = pending
                 else:
+                    affected_cloids = [
+                        e["order"].cloid.as_int()
+                        for e in batch_entries
+                        if e.get("order") and getattr(e["order"], "cloid", None)
+                    ]
                     logger.error(
-                        f"Batch {batch_num}/{total_batches} failed: code={response.code}, message={response.message}"
+                        f"Batch {batch_num}/{total_batches} failed: code={response.code}, "
+                        f"message={response.message}, affected_cloids={affected_cloids}"
                     )
                     if self._is_transient_batch_code(response.code):
                         self._enter_degraded_mode(f"batch_send_http_{response.code}")
@@ -1476,10 +1528,19 @@ class Engine(BaseEngine):
                             entry["order"], f"batch_rejected_{response.code}"
                         )
 
-            except Exception as e:
-                logger.error(f"Failed to send batch {batch_num}/{total_batches}: {e}")
+            except Exception as exc:
+                affected_cloids = [
+                    entry["order"].cloid.as_int()
+                    for entry in remaining_entries
+                    if entry.get("order") and getattr(entry["order"], "cloid", None)
+                ]
+                logger.error(
+                    f"Failed to send batch {batch_num}/{total_batches}: {exc} affected_cloids={affected_cloids}"
+                )
                 self._enter_degraded_mode("batch_send_exception")
-                self._requeue_orders_to_front([e["order"] for e in remaining_entries])
+                self._requeue_orders_to_front(
+                    [entry["order"] for entry in remaining_entries]
+                )
                 break
 
     async def run(self):

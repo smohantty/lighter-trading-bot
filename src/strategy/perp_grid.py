@@ -110,7 +110,12 @@ class PerpGridStrategy(Strategy):
                 if common.check_trigger(
                     price, self.config.trigger_price, self.trigger_reference_price
                 ):
-                    logger.info(f"[PERP_GRID] Triggered at {price}")
+                    logger.info(
+                        "[PERP_GRID] Triggered at price=%s trigger_price=%s reference_price=%s",
+                        price,
+                        self.config.trigger_price,
+                        self.trigger_reference_price,
+                    )
                     self.state = StrategyState.Running
                     self.refresh_orders(ctx)
 
@@ -338,6 +343,38 @@ class PerpGridStrategy(Strategy):
             f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}"
         )
 
+        # Log grid plan for production debugging
+        holding = sum(
+            1
+            for z in self.zones
+            if z.order_side.is_sell()
+            if self.grid_bias == GridBias.LONG
+        )
+        if self.grid_bias == GridBias.SHORT:
+            holding = sum(1 for z in self.zones if z.order_side.is_buy())
+        waiting = len(self.zones) - holding
+        logger.info(
+            "[PERP_GRID] [GRID_PLAN] zones=%d holding=%d waiting=%d spacing_pct=%s price=%s range=[%s, %s]",
+            len(self.zones),
+            holding,
+            waiting,
+            self.grid_spacing_pct,
+            price,
+            self.config.lower_price,
+            self.config.upper_price,
+        )
+        for z in self.zones:
+            logger.debug(
+                "[PERP_GRID] [GRID_PLAN] zone=%d buy=%s sell=%s size=%s side=%s mode=%s entry=%s",
+                z.index,
+                z.buy_price,
+                z.sell_price,
+                z.size,
+                z.order_side,
+                z.mode,
+                z.entry_price,
+            )
+
         # Capture Initial Equity
         # Equity = Margin Balance + Unrealized PnL (starts at 0 if pos=0)
         self.initial_equity = available_usdc
@@ -358,9 +395,19 @@ class PerpGridStrategy(Strategy):
         if abs(needed_change) < minimal_size:
             # Negligible
             if self.config.trigger_price:
-                logger.info("[PERP_GRID] Position OK. Waiting for Trigger.")
-                self.state = StrategyState.WaitingForTrigger
                 self.trigger_reference_price = self.current_price
+                direction = (
+                    "above"
+                    if self.config.trigger_price > self.current_price
+                    else "below"
+                )
+                logger.info(
+                    "[PERP_GRID] Position OK. Waiting for Trigger. trigger_price=%s direction=%s reference_price=%s",
+                    self.config.trigger_price,
+                    direction,
+                    self.current_price,
+                )
+                self.state = StrategyState.WaitingForTrigger
             else:
                 logger.info("[PERP_GRID] Position OK. Starting.")
                 self.state = StrategyState.Running
@@ -533,32 +580,72 @@ class PerpGridStrategy(Strategy):
     ) -> Decimal:
         """Calculate optimal price for acquiring assets during initial setup."""
         if self.config.trigger_price:
-            return self.market.round_price(self.config.trigger_price)
+            price = self.market.round_price(self.config.trigger_price)
+            logger.info(
+                "[PERP_GRID] [ACQUISITION_PRICE] Using trigger_price=%s side=%s",
+                price,
+                side,
+            )
+            return price
 
         if side == OrderSide.BUY:
-            # Find nearest level LOWER than market to buy at (Limit Buy below market)
             candidates = [
                 z.buy_price for z in self.zones if z.buy_price < current_price
             ]
             if candidates:
-                return self.market.round_price(max(candidates))
+                price = self.market.round_price(max(candidates))
+                logger.info(
+                    "[PERP_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
+                    side,
+                    price,
+                    current_price,
+                    len(candidates),
+                )
+                return price
             elif self.zones:
-                # Fallback: Price is below grid. Return markdown of current price for BUY.
-                return self.market.round_price(
+                price = self.market.round_price(
                     ACQUISITION_SPREAD.markdown(current_price)
                 )
+                logger.info(
+                    "[PERP_GRID] [ACQUISITION_PRICE] side=%s method=spread_markdown price=%s current=%s",
+                    side,
+                    price,
+                    current_price,
+                )
+                return price
         else:  # SELL
-            # Find nearest level ABOVE market to sell at (Limit Sell above market)
             candidates = [
                 z.sell_price for z in self.zones if z.sell_price > current_price
             ]
             if candidates:
-                return self.market.round_price(min(candidates))
+                price = self.market.round_price(min(candidates))
+                logger.info(
+                    "[PERP_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
+                    side,
+                    price,
+                    current_price,
+                    len(candidates),
+                )
+                return price
             elif self.zones:
-                # Fallback: Price is above grid. Return markup of current price for SELL.
-                return self.market.round_price(ACQUISITION_SPREAD.markup(current_price))
+                price = self.market.round_price(
+                    ACQUISITION_SPREAD.markup(current_price)
+                )
+                logger.info(
+                    "[PERP_GRID] [ACQUISITION_PRICE] side=%s method=spread_markup price=%s current=%s",
+                    side,
+                    price,
+                    current_price,
+                )
+                return price
 
-        return self.market.round_price(current_price)
+        price = self.market.round_price(current_price)
+        logger.info(
+            "[PERP_GRID] [ACQUISITION_PRICE] side=%s method=fallback_current price=%s",
+            side,
+            price,
+        )
+        return price
 
     def _handle_acquisition_fill(self, fill: OrderFill, ctx: StrategyContext) -> None:
         """Handle the fill of an acquisition order during initial setup."""
@@ -600,7 +687,8 @@ class PerpGridStrategy(Strategy):
             zone.entry_price = fill.price
             zone.order_side = OrderSide.SELL
             logger.info(
-                f"[PERP_GRID] Z{zone.index} Buy to Open @ {fill.price}. Next: Sell to Close @ {zone.sell_price}"
+                f"[PERP_GRID] Z{zone.index} Buy to Open @ {fill.price} cloid={fill.cloid.as_int() if fill.cloid else None}. "
+                f"Next: Sell to Close @ {zone.sell_price}. pos={self.position_size}"
             )
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
@@ -610,7 +698,9 @@ class PerpGridStrategy(Strategy):
             zone.order_side = OrderSide.BUY
             zone.roundtrip_count += 1
             logger.info(
-                f"[PERP_GRID] Z{zone.index} Sell to Close @ {fill.price}. PnL: {pnl:.4f}. Next: Buy to Open @ {zone.buy_price}"
+                f"[PERP_GRID] Z{zone.index} Sell to Close @ {fill.price} cloid={fill.cloid.as_int() if fill.cloid else None}. "
+                f"PnL: {pnl:.4f}. matched_total={self.matched_profit + pnl:.4f} fees={self.total_fees:.4f}. "
+                f"Next: Buy to Open @ {zone.buy_price}. pos={self.position_size}"
             )
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
@@ -628,7 +718,8 @@ class PerpGridStrategy(Strategy):
             zone.entry_price = fill.price
             zone.order_side = OrderSide.BUY
             logger.info(
-                f"[PERP_GRID] Z{zone.index} Sell to Open @ {fill.price}. Next: Buy to Close @ {zone.buy_price}"
+                f"[PERP_GRID] Z{zone.index} Sell to Open @ {fill.price} cloid={fill.cloid.as_int() if fill.cloid else None}. "
+                f"Next: Buy to Close @ {zone.buy_price}. pos={self.position_size}"
             )
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
@@ -638,7 +729,9 @@ class PerpGridStrategy(Strategy):
             zone.order_side = OrderSide.SELL
             zone.roundtrip_count += 1
             logger.info(
-                f"[PERP_GRID] Z{zone.index} Buy to Close @ {fill.price}. PnL: {pnl:.4f}. Next: Sell to Open @ {zone.sell_price}"
+                f"[PERP_GRID] Z{zone.index} Buy to Close @ {fill.price} cloid={fill.cloid.as_int() if fill.cloid else None}. "
+                f"PnL: {pnl:.4f}. matched_total={self.matched_profit + pnl:.4f} fees={self.total_fees:.4f}. "
+                f"Next: Sell to Open @ {zone.sell_price}. pos={self.position_size}"
             )
             zone.retry_count = 0
             self.place_zone_order(zone, ctx)
