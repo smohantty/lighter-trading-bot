@@ -243,12 +243,14 @@ class BaseEngine:
 
             # Update spot balances from assets
             spot_asset_count = 0
+            spot_balances: Dict[str, float] = {}
             if account.assets:
                 for asset in account.assets:
                     total_balance = float(asset.balance)
                     locked_balance = float(asset.locked_balance)
                     available_balance = total_balance - locked_balance
                     spot_asset_count += 1
+                    spot_balances[asset.symbol] = available_balance
 
                     self.ctx.update_spot_balance(
                         asset=asset.symbol,
@@ -283,8 +285,8 @@ class BaseEngine:
                 perp_available = Decimal(str(available))
 
             logger.info(
-                "Account balances loaded spot_assets=%d perp_collateral=%s perp_available=%s",
-                spot_asset_count,
+                "Account balances loaded spot=%s perp_collateral=%s perp_available=%s",
+                spot_balances,
                 perp_collateral,
                 perp_available,
             )

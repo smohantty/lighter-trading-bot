@@ -113,5 +113,6 @@ def configure_logging(is_simulation: bool = False) -> str:
 
     logging.getLogger("lighter").setLevel(sdk_level)
     logging.getLogger("websockets").setLevel(websocket_level)
+    logging.getLogger("urllib3").setLevel(third_party_default_level)
 
     return run_id

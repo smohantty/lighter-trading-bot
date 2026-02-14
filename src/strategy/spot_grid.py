@@ -368,11 +368,12 @@ class SpotGridStrategy(Strategy):
         holding = sum(1 for z in self.zones if z.order_side.is_sell())
         waiting = sum(1 for z in self.zones if z.order_side.is_buy())
         logger.info(
-            "[SPOT_GRID] [GRID_PLAN] zones=%d holding=%d waiting=%d spacing_pct=%s price=%s range=[%s, %s]",
+            "[SPOT_GRID] [GRID_PLAN] zones=%d holding=%d waiting=%d spacing_pct=(%s, %s) price=%s range=[%s, %s]",
             len(self.zones),
             holding,
             waiting,
-            self.grid_spacing_pct,
+            float(self.grid_spacing_pct[0]),
+            float(self.grid_spacing_pct[1]),
             initial_price,
             self.config.lower_price,
             self.config.upper_price,
