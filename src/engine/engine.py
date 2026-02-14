@@ -586,12 +586,33 @@ class Engine(BaseEngine):
         Reconcile local pending orders with exchange state.
         Handles missed fills and cancellations.
         """
-        if (
-            not self.pending_orders
-            or not self.api_client
-            or not self.account_index
-            or not self.ctx
-        ):
+        if not self.api_client or not self.account_index or not self.ctx:
+            return
+
+        # Degraded mode recovery probe:
+        # with zero pending orders, still probe API snapshot health so degraded
+        # mode can self-clear after connectivity recovers.
+        if not self.pending_orders:
+            if not self.degraded_mode:
+                return
+
+            market_id = self.market_map.get(self.strategy_config.symbol)
+            if not market_id:
+                return
+
+            active_probe = await self.get_active_orders(market_id=market_id)
+            if active_probe is None:
+                self._enter_degraded_mode("reconciliation_active_probe_failed")
+                return
+
+            inactive_probe = await self.get_inactive_orders(
+                limit=1, market_id=market_id
+            )
+            if inactive_probe is None:
+                self._enter_degraded_mode("reconciliation_inactive_probe_failed")
+                return
+
+            self._record_healthy_reconciliation_snapshot()
             return
 
         # Snapshots to avoid modification during iteration if we remove items
@@ -684,12 +705,42 @@ class Engine(BaseEngine):
             if cloid_int in inactive_orders_map:
                 found_inactive = inactive_orders_map[cloid_int]
                 status = found_inactive.status
-                filled_amount = Decimal(found_inactive.filled_base_amount)
+                try:
+                    filled_amount = Decimal(str(found_inactive.filled_base_amount))
+                except Exception:
+                    filled_amount = Decimal("0")
+                try:
+                    filled_quote_amount = Decimal(
+                        str(getattr(found_inactive, "filled_quote_amount", "0"))
+                    )
+                except Exception:
+                    filled_quote_amount = Decimal("0")
 
                 if status == "filled":
                     logger.info(
                         f"[RECONCILIATION] Order {cloid} found FILLED in history."
                     )
+
+                    reconciled_size = (
+                        filled_amount
+                        if filled_amount > 0
+                        else missing_pending.filled_size
+                    )
+                    if reconciled_size <= 0:
+                        reconciled_size = missing_pending.target_size
+
+                    if filled_amount > 0 and filled_quote_amount > 0:
+                        reconciled_price = filled_quote_amount / filled_amount
+                    elif missing_pending.weighted_avg_px > 0:
+                        reconciled_price = missing_pending.weighted_avg_px
+                        logger.info(
+                            "[RECONCILIATION] reconciled_fill_with_fallback_price using weighted average."
+                        )
+                    else:
+                        reconciled_price = missing_pending.price
+                        logger.info(
+                            "[RECONCILIATION] reconciled_fill_with_fallback_price using limit price."
+                        )
 
                     if cloid in self.pending_orders:
                         del self.pending_orders[cloid]
@@ -698,8 +749,8 @@ class Engine(BaseEngine):
                     self.strategy.on_order_filled(
                         OrderFill(
                             side=missing_pending.side,
-                            size=missing_pending.filled_size,
-                            price=missing_pending.price,
+                            size=reconciled_size,
+                            price=reconciled_price,
                             fee=Decimal("0"),
                             role=TradeRole.TAKER,
                             cloid=cloid,

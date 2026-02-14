@@ -1,5 +1,6 @@
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.config import ExchangeConfig, SpotGridConfig
@@ -33,20 +34,24 @@ class TestMarketLoading(unittest.IsolatedAsyncioTestCase):
             patch("src.engine.engine.lighter") as mock_lighter_engine,
             patch("src.engine.base.lighter") as mock_lighter_base,
         ):
-            # Setup Mocks to default to the same mock for simplicity or handle separately
-            # We want them to share behavior usually
-
-            # Mock ApiClient on Engine side
+            # BaseEngine initializes API/Signer clients from src.engine.base.lighter.
             mock_api_client = MagicMock()
-            mock_lighter_engine.ApiClient.return_value = mock_api_client
-
-            # Mock SignerClient on Engine side
+            mock_lighter_base.Configuration.return_value = MagicMock()
+            mock_lighter_base.ApiClient.return_value = mock_api_client
             mock_signer = MagicMock()
-            mock_lighter_engine.SignerClient.return_value = mock_signer
             mock_signer.create_auth_token_with_expiry.return_value = (
                 "fake_token",
                 None,
             )
+            mock_lighter_base.SignerClient.return_value = mock_signer
+            mock_lighter_engine.QueueWsClient.return_value = MagicMock()
+
+            # Keep balance fetch non-fatal and deterministic.
+            mock_account_api = MagicMock()
+            mock_account_api.account = AsyncMock(
+                return_value=SimpleNamespace(accounts=[])
+            )
+            mock_lighter_base.AccountApi.return_value = mock_account_api
 
             # Mock OrderApi on Base side (used in _load_markets)
             mock_order_api = MagicMock()
