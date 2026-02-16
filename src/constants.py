@@ -41,8 +41,8 @@ MAX_ORDER_RETRIES = 5
 # Spread & Buffer Configuration
 ACQUISITION_SPREAD = Spread("0.1")  # 0.1% spread for off-grid acquisition
 INVESTMENT_BUFFER_PERP = Spread("0.05")  # 0.05% buffer for perp grids
-INVESTMENT_BUFFER_SPOT = Spread("0.1")  # 0.1% buffer for spot grids
-FEE_BUFFER = Spread("0.05")  # 0.05% fee buffer for spot
+INVESTMENT_BUFFER_SPOT = Spread("0.05")  # 0.1% buffer for spot grids
+FEE_BUFFER = Spread("0.02")  # 0.02% fee buffer for spot
 
 
 # =============================================================================
