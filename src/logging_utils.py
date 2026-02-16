@@ -44,6 +44,32 @@ class RuntimeLogContextFilter(logging.Filter):
         return True
 
 
+class BenignWebSocketHandshakeFilter(logging.Filter):
+    """Suppress noisy websocket handshake errors from non-HTTP probe traffic."""
+
+    _HANDSHAKE_ERROR_MESSAGE = "opening handshake failed"
+    _BENIGN_EXCEPTION_TEXT = "did not receive a valid HTTP request"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "websockets.server":
+            return True
+        if record.levelno < logging.ERROR:
+            return True
+        if record.getMessage() != self._HANDSHAKE_ERROR_MESSAGE:
+            return True
+
+        exc = record.exc_info[1] if record.exc_info else None
+        return not self._is_benign_exception(exc)
+
+    def _is_benign_exception(self, exc: BaseException | None) -> bool:
+        current = exc
+        while current is not None:
+            if self._BENIGN_EXCEPTION_TEXT in str(current):
+                return True
+            current = current.__cause__
+        return False
+
+
 def configure_logging(is_simulation: bool = False) -> str:
     mode = "simulation" if is_simulation else "live"
     run_id = os.getenv("LIGHTER_RUN_ID", uuid.uuid4().hex[:12])
@@ -113,6 +139,12 @@ def configure_logging(is_simulation: bool = False) -> str:
 
     logging.getLogger("lighter").setLevel(sdk_level)
     logging.getLogger("websockets").setLevel(websocket_level)
+    websocket_server_logger = logging.getLogger("websockets.server")
+    if not any(
+        isinstance(existing_filter, BenignWebSocketHandshakeFilter)
+        for existing_filter in websocket_server_logger.filters
+    ):
+        websocket_server_logger.addFilter(BenignWebSocketHandshakeFilter())
     logging.getLogger("urllib3").setLevel(third_party_default_level)
 
     return run_id
