@@ -74,8 +74,8 @@ def load_simulation_config(path: Optional[str] = None) -> SimulationConfig:
 
 class BaseGridConfig(BaseModel):
     symbol: str
-    upper_price: Decimal
-    lower_price: Decimal
+    grid_range_high: Decimal
+    grid_range_low: Decimal
     grid_type: Annotated[GridType, BeforeValidator(case_insensitive_enum_validator)]
     total_investment: Decimal
     grid_count: Optional[int] = None
@@ -124,18 +124,18 @@ class BaseGridConfig(BaseModel):
                     f"Grid count {self.grid_count} must be greater than 2."
                 )
 
-        if self.upper_price <= self.lower_price:
+        if self.grid_range_high <= self.grid_range_low:
             raise ValueError(
-                f"Upper price {self.upper_price} must be greater than lower price {self.lower_price}."
+                f"Upper price {self.grid_range_high} must be greater than lower price {self.grid_range_low}."
             )
 
         if self.trigger_price is not None:
             if (
-                self.trigger_price < self.lower_price
-                or self.trigger_price > self.upper_price
+                self.trigger_price < self.grid_range_low
+                or self.trigger_price > self.grid_range_high
             ):
                 raise ValueError(
-                    f"Trigger price {self.trigger_price} is outside the grid range [{self.lower_price}, {self.upper_price}]."
+                    f"Trigger price {self.trigger_price} is outside the grid range [{self.grid_range_low}, {self.grid_range_high}]."
                 )
 
         return self

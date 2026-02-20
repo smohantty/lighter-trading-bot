@@ -78,7 +78,7 @@ class ConsoleRenderer:
             print(f"Grid Count:  {grid_len}")
 
         if isinstance(c, (SpotGridConfig, PerpGridConfig)):
-            print(f"Range:       {c.lower_price:.3f} - {c.upper_price:.3f}")
+            print(f"Range:       {c.grid_range_low:.3f} - {c.grid_range_high:.3f}")
 
         if hasattr(c, "trigger_price") and c.trigger_price:
             print(f"Trigger:     {c.trigger_price:.3f}")

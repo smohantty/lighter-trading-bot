@@ -37,7 +37,10 @@ def check_trigger(
 
 
 def calculate_grid_prices(
-    grid_type: GridType, lower_price: Decimal, upper_price: Decimal, grid_count: int
+    grid_type: GridType,
+    grid_range_low: Decimal,
+    grid_range_high: Decimal,
+    grid_count: int,
 ) -> List[Decimal]:
     prices: List[Decimal] = []
     if grid_count <= 1:
@@ -46,26 +49,26 @@ def calculate_grid_prices(
     n_minus_1 = Decimal(grid_count - 1)
 
     if grid_type == GridType.ARITHMETIC:
-        step = (upper_price - lower_price) / n_minus_1
+        step = (grid_range_high - grid_range_low) / n_minus_1
         for i in range(grid_count):
-            price = lower_price + (Decimal(i) * step)
+            price = grid_range_low + (Decimal(i) * step)
             prices.append(price)
 
     elif grid_type == GridType.GEOMETRIC:
         # Decimal pow: (ratio) = (up/low) ** (1/n-1)
-        ratio = (upper_price / lower_price) ** (Decimal("1") / n_minus_1)
+        ratio = (grid_range_high / grid_range_low) ** (Decimal("1") / n_minus_1)
         for i in range(grid_count):
-            price = lower_price * (ratio ** Decimal(i))
+            price = grid_range_low * (ratio ** Decimal(i))
             prices.append(price)
 
     return prices
 
 
 def calculate_grid_prices_by_spread(
-    lower_price: Decimal, upper_price: Decimal, spread_bips: Decimal
+    grid_range_low: Decimal, grid_range_high: Decimal, spread_bips: Decimal
 ) -> List[Decimal]:
     prices: List[Decimal] = []
-    if lower_price >= upper_price:
+    if grid_range_low >= grid_range_high:
         return prices
 
     # 1 bip = 0.01% = 0.0001
@@ -73,8 +76,8 @@ def calculate_grid_prices_by_spread(
     # ratio = 1 + (spread_bips / 10000)
     ratio = Decimal("1") + (spread_bips / Decimal("10000"))
 
-    current_price = lower_price
-    while current_price <= upper_price:
+    current_price = grid_range_low
+    while current_price <= grid_range_high:
         prices.append(current_price)
         current_price = current_price * ratio
 
@@ -82,16 +85,19 @@ def calculate_grid_prices_by_spread(
 
 
 def calculate_grid_spacing_pct(
-    grid_type: GridType, lower_price: Decimal, upper_price: Decimal, grid_count: int
+    grid_type: GridType,
+    grid_range_low: Decimal,
+    grid_range_high: Decimal,
+    grid_count: int,
 ) -> Tuple[Decimal, Decimal]:
     n = Decimal(grid_count)
 
     if grid_type == GridType.GEOMETRIC:
-        ratio = (upper_price / lower_price) ** (Decimal("1") / n)
+        ratio = (grid_range_high / grid_range_low) ** (Decimal("1") / n)
         spacing_pct = (ratio - Decimal("1")) * Decimal("100")
         return (spacing_pct, spacing_pct)
     else:
-        spacing = (upper_price - lower_price) / n
-        min_pct = (spacing / upper_price) * Decimal("100")
-        max_pct = (spacing / lower_price) * Decimal("100")
+        spacing = (grid_range_high - grid_range_low) / n
+        min_pct = (spacing / grid_range_high) * Decimal("100")
+        max_pct = (spacing / grid_range_low) * Decimal("100")
         return (min_pct, max_pct)

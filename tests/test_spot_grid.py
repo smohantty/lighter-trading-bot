@@ -13,8 +13,8 @@ class TestSpotGrid(unittest.TestCase):
     def setUp(self):
         self.spot_config = SpotGridConfig(
             symbol="LIT/USDC",
-            upper_price=Decimal("2.0"),
-            lower_price=Decimal("1.0"),
+            grid_range_high=Decimal("2.0"),
+            grid_range_low=Decimal("1.0"),
             grid_type=GridType.ARITHMETIC,
             grid_count=3,
             total_investment=Decimal("100.0"),

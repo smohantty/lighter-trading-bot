@@ -1,7 +1,7 @@
 type: spot_grid
 symbol: LIT/USDC
-upper_price: 2.9
-lower_price:  2.6
+grid_range_high: 2.9
+grid_range_low:  2.6
 grid_type: Geometric # Arithmetic or Geometric
 grid_count: 55
 total_investment: 40000

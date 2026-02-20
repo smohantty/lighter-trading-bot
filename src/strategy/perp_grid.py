@@ -79,8 +79,8 @@ class PerpGridStrategy(Strategy):
         if self.config.spread_bips:
             # Calculate grid count based on spread
             prices = common.calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.spread_bips,
             )
             self.grid_count = len(prices)
@@ -91,8 +91,8 @@ class PerpGridStrategy(Strategy):
             self.grid_count = self.config.grid_count
             self.grid_spacing_pct = common.calculate_grid_spacing_pct(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.grid_count,
             )
 
@@ -207,8 +207,8 @@ class PerpGridStrategy(Strategy):
             leverage=self.leverage,
             grid_bias=self.config.grid_bias.value,
             grid_count=len(self.zones),
-            range_low=self.config.lower_price,
-            range_high=self.config.upper_price,
+            grid_range_low=self.config.grid_range_low,
+            grid_range_high=self.config.grid_range_high,
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             margin_balance=margin_balance,
@@ -253,8 +253,8 @@ class PerpGridStrategy(Strategy):
         # 1. Generate Levels
         if self.config.spread_bips:
             prices = common.calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.spread_bips,
             )
             # Update grid_count
@@ -263,8 +263,8 @@ class PerpGridStrategy(Strategy):
             assert self.config.grid_count is not None
             prices = common.calculate_grid_prices(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.grid_count,
             )
         prices = [self.market.round_price(p) for p in prices]
@@ -274,7 +274,7 @@ class PerpGridStrategy(Strategy):
         notional_per_zone = adjusted_investment / Decimal(str(self.grid_count - 1))
 
         # Validation
-        max_size_estimate = notional_per_zone / Decimal(str(self.config.lower_price))
+        max_size_estimate = notional_per_zone / Decimal(str(self.config.grid_range_low))
         min_size_limit = self.market.min_base_amount
         if max_size_estimate < min_size_limit:
             logger.warning(
@@ -361,8 +361,8 @@ class PerpGridStrategy(Strategy):
             float(self.grid_spacing_pct[0]),
             float(self.grid_spacing_pct[1]),
             price,
-            self.config.lower_price,
-            self.config.upper_price,
+            self.config.grid_range_low,
+            self.config.grid_range_high,
         )
         for z in self.zones:
             logger.debug(

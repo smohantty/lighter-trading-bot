@@ -104,8 +104,8 @@ class PerpGridSummary:
     leverage: int
     grid_bias: str
     grid_count: int
-    range_low: Decimal
-    range_high: Decimal
+    grid_range_low: Decimal
+    grid_range_high: Decimal
     grid_spacing_pct: Tuple[Decimal, Decimal]
     roundtrips: int
     margin_balance: Decimal
@@ -123,8 +123,8 @@ class SpotGridSummary:
     total_fees: Decimal
     initial_entry_price: Optional[Decimal]
     grid_count: int
-    range_low: Decimal
-    range_high: Decimal
+    grid_range_low: Decimal
+    grid_range_high: Decimal
     grid_spacing_pct: Tuple[Decimal, Decimal]
     roundtrips: int
     base_balance: Decimal

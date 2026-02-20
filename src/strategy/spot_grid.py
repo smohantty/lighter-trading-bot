@@ -63,8 +63,8 @@ class SpotGridStrategy(Strategy):
         if self.config.spread_bips:
             # Calculate grid count based on spread
             prices = common.calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.spread_bips,
             )
             # grid_count describes levels, so len(prices)
@@ -80,8 +80,8 @@ class SpotGridStrategy(Strategy):
             self.grid_count = self.config.grid_count
             self.grid_spacing_pct = common.calculate_grid_spacing_pct(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.grid_count,
             )
 
@@ -225,8 +225,8 @@ class SpotGridStrategy(Strategy):
             total_fees=self.total_fees,
             initial_entry_price=self.initial_entry_price,
             grid_count=len(self.zones),
-            range_low=self.config.lower_price,
-            range_high=self.config.upper_price,
+            grid_range_low=self.config.grid_range_low,
+            grid_range_high=self.config.grid_range_high,
             grid_spacing_pct=self.grid_spacing_pct,
             roundtrips=sum(z.roundtrip_count for z in self.zones),
             base_balance=self.inventory_base,
@@ -266,8 +266,8 @@ class SpotGridStrategy(Strategy):
     ) -> tuple[List[GridZone], Decimal, Decimal]:
         if self.config.spread_bips:
             prices = common.calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.spread_bips,
             )
             # Update grid_count to match actual generated levels
@@ -276,8 +276,8 @@ class SpotGridStrategy(Strategy):
             assert self.config.grid_count is not None
             prices = common.calculate_grid_prices(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.grid_count,
             )
         prices = [self.market.round_price(p) for p in prices]
@@ -375,8 +375,8 @@ class SpotGridStrategy(Strategy):
             float(self.grid_spacing_pct[0]),
             float(self.grid_spacing_pct[1]),
             initial_price,
-            self.config.lower_price,
-            self.config.upper_price,
+            self.config.grid_range_low,
+            self.config.grid_range_high,
         )
         for z in self.zones:
             logger.debug(

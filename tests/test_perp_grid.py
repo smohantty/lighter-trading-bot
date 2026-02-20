@@ -35,8 +35,8 @@ def test_perp_grid_init_long_bias():
     config = PerpGridConfig(
         symbol=symbol,
         leverage=1,
-        upper_price=Decimal("110.0"),
-        lower_price=Decimal("90.0"),
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
         grid_type=GridType.ARITHMETIC,
         grid_count=3,
         total_investment=Decimal("100.0"),
@@ -87,8 +87,8 @@ def test_perp_grid_execution_flow():
     config = PerpGridConfig(
         symbol=symbol,
         leverage=1,
-        upper_price=Decimal("110.0"),
-        lower_price=Decimal("90.0"),
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
         grid_type=GridType.ARITHMETIC,
         grid_count=3,
         total_investment=Decimal("200.0"),  # 100 per zone. Mid ~100. Size ~1.
@@ -148,8 +148,8 @@ def test_perp_grid_short_bias():
     config = PerpGridConfig(
         symbol=symbol,
         leverage=1,
-        upper_price=Decimal("110.0"),
-        lower_price=Decimal("90.0"),
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
         grid_type=GridType.ARITHMETIC,
         grid_count=3,
         total_investment=Decimal("200.0"),

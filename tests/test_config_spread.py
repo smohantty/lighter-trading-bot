@@ -12,8 +12,8 @@ class TestConfigSpread(unittest.TestCase):
         # Should not raise
         SpotGridConfig(
             symbol="ETH/USDC",
-            upper_price=Decimal("2000"),
-            lower_price=Decimal("1000"),
+            grid_range_high=Decimal("2000"),
+            grid_range_low=Decimal("1000"),
             grid_type=GridType.GEOMETRIC,
             total_investment=Decimal("1000"),
             spread_bips=Decimal("100"),  # 1%
@@ -25,8 +25,8 @@ class TestConfigSpread(unittest.TestCase):
         with self.assertRaises(ValidationError) as cm:
             SpotGridConfig(
                 symbol="ETH/USDC",
-                upper_price=Decimal("2000"),
-                lower_price=Decimal("1000"),
+                grid_range_high=Decimal("2000"),
+                grid_range_low=Decimal("1000"),
                 grid_type=GridType.ARITHMETIC,
                 total_investment=Decimal("1000"),
                 spread_bips=Decimal("100"),
@@ -40,8 +40,8 @@ class TestConfigSpread(unittest.TestCase):
         with self.assertRaises(ValidationError) as cm:
             SpotGridConfig(
                 symbol="ETH/USDC",
-                upper_price=Decimal("2000"),
-                lower_price=Decimal("1000"),
+                grid_range_high=Decimal("2000"),
+                grid_range_low=Decimal("1000"),
                 grid_type=GridType.GEOMETRIC,
                 total_investment=Decimal("1000"),
                 spread_bips=None,
@@ -55,8 +55,8 @@ class TestConfigSpread(unittest.TestCase):
         with self.assertRaises(ValidationError) as cm:
             SpotGridConfig(
                 symbol="ETH/USDC",
-                upper_price=Decimal("2000"),
-                lower_price=Decimal("1000"),
+                grid_range_high=Decimal("2000"),
+                grid_range_low=Decimal("1000"),
                 grid_type=GridType.GEOMETRIC,
                 total_investment=Decimal("1000"),
                 spread_bips=Decimal("10"),  # < 15
@@ -72,8 +72,8 @@ class TestConfigSpread(unittest.TestCase):
         # Valid case where both present (if permitted by validator logic)
         SpotGridConfig(
             symbol="ETH/USDC",
-            upper_price=Decimal("2000"),
-            lower_price=Decimal("1000"),
+            grid_range_high=Decimal("2000"),
+            grid_range_low=Decimal("1000"),
             grid_type=GridType.GEOMETRIC,
             total_investment=Decimal("1000"),
             spread_bips=Decimal("100"),
