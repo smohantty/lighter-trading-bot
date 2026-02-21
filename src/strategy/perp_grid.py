@@ -117,6 +117,7 @@ class PerpGridStrategy(Strategy):
                         self.trigger_reference_price,
                     )
                     self.state = StrategyState.Running
+                    self.start_time = time.time()
                     self.refresh_orders(ctx)
 
         elif self.state == StrategyState.Running:
@@ -674,6 +675,7 @@ class PerpGridStrategy(Strategy):
         )
 
         self.state = StrategyState.Running
+        self.start_time = time.time()
         self.initial_entry_price = fill.price
         self.refresh_orders(ctx)
 

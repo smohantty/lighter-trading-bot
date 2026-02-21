@@ -589,6 +589,7 @@ class SpotGridStrategy(Strategy):
         self.initial_entry_price = price
         self.initial_equity = (self.inventory_base * price) + self.inventory_quote
         self.state = StrategyState.Running
+        self.start_time = time.time()
         self.refresh_orders(ctx)
 
     def _calculate_acquisition_price(
