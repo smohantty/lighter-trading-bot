@@ -720,7 +720,8 @@ class SpotGridStrategy(Strategy):
                 z.buy_price for z in self.zones if z.buy_price < current_price
             ]
             if candidates:
-                price = self.market.round_price(max(candidates))
+                spread_price = ACQUISITION_SPREAD.markdown(current_price)
+                price = self.market.round_price(max(max(candidates), spread_price))
                 logger.info(
                     "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
                     side,
@@ -745,7 +746,8 @@ class SpotGridStrategy(Strategy):
                 z.sell_price for z in self.zones if z.sell_price > current_price
             ]
             if candidates:
-                price = self.market.round_price(min(candidates))
+                spread_price = ACQUISITION_SPREAD.markup(current_price)
+                price = self.market.round_price(min(min(candidates), spread_price))
                 logger.info(
                     "[SPOT_GRID] [ACQUISITION_PRICE] side=%s method=nearest_level price=%s current=%s candidates=%d",
                     side,

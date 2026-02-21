@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 from src.config import SpotGridConfig
+from src.constants import ACQUISITION_SPREAD
 from src.engine.context import MarketInfo, StrategyContext
 from src.model import Cloid, OrderFill, OrderSide
 from src.strategy.spot_grid import SpotGridStrategy
@@ -366,9 +367,11 @@ class TestSpotGrid(unittest.TestCase):
         self.assertEqual(strategy.state, StrategyState.AcquiringAssets)
         req = self.context.place_order.call_args[0][0]
 
-        expected_price = max(
+        grid_price = max(
             z.buy_price for z in strategy.zones if z.buy_price < strategy.current_price
         )
+        spread_price = ACQUISITION_SPREAD.markdown(strategy.current_price)
+        expected_price = self.market_info.round_price(max(grid_price, spread_price))
         self.assertEqual(req.side, OrderSide.BUY)
         self.assertEqual(req.price, expected_price)
         self.assertNotEqual(req.price, trigger_config.trigger_price)
