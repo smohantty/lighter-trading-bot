@@ -92,6 +92,7 @@ class SpotGridStrategy(Strategy):
         self.start_time = time.time()
         self.initial_entry_price: Optional[Decimal] = None
         self.trigger_reference_price: Optional[Decimal] = None
+        self.trigger_activated = False
 
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: Decimal = Decimal("0")
@@ -115,17 +116,17 @@ class SpotGridStrategy(Strategy):
         if self.state == StrategyState.Initializing:
             self.initialize_zones(price, ctx)
         elif self.state == StrategyState.WaitingForTrigger:
-            if self.config.trigger_price and self.trigger_reference_price:
-                if common.check_trigger(
-                    price, self.config.trigger_price, self.trigger_reference_price
-                ):
+            if self.config.trigger_price:
+                if self.trigger_reference_price is None:
+                    self.trigger_reference_price = price
+                if self._is_trigger_satisfied(price):
                     logger.info(
                         "[SPOT_GRID] Triggered at price=%s trigger_price=%s reference_price=%s",
                         price,
                         self.config.trigger_price,
                         self.trigger_reference_price,
                     )
-                    self._transition_to_running(ctx, price)
+                    self._resume_deferred_acquisition_after_trigger(ctx)
         elif self.state == StrategyState.Running:
             # Continuously ensure orders are active
             self.refresh_orders(ctx)
@@ -330,6 +331,7 @@ class SpotGridStrategy(Strategy):
 
     def initialize_zones(self, initial_price: Decimal, ctx: StrategyContext):
         self.current_price = initial_price
+        startup_price = initial_price
         market_info = ctx.market_info(self.config.symbol)
         if not market_info:
             raise ValueError(f"No market info for {self.config.symbol}")
@@ -337,19 +339,19 @@ class SpotGridStrategy(Strategy):
 
         # Calculate Grid
         self.zones, required_base, required_quote = self.calculate_grid_plan(
-            initial_price
+            startup_price
         )
 
         # Seed inventory
         avail_base = ctx.get_spot_available(self.base_asset)
         avail_quote = ctx.get_spot_available(self.quote_asset)
 
-        initial_price = (
-            self.config.trigger_price if self.config.trigger_price else initial_price
+        planning_price = (
+            self.config.trigger_price if self.config.trigger_price else startup_price
         )
 
         # Upfront Total Investment Validation
-        total_wallet_value = (avail_base * initial_price) + avail_quote
+        total_wallet_value = (avail_base * planning_price) + avail_quote
         if total_wallet_value < self.total_investment:
             msg = f"Insufficient Total Portfolio Value! Required: {self.total_investment:.2f}, Have approx: {total_wallet_value:.2f} (Base: {avail_base}, Quote: {avail_quote})"
             logger.error(f"[SPOT_GRID] {msg}")
@@ -361,7 +363,13 @@ class SpotGridStrategy(Strategy):
         self.initial_avail_quote = avail_quote
 
         logger.info(
-            f"[SPOT_GRID] Setup completed. Required: {required_base:.4f} {self.base_asset}, {required_quote:.2f} {self.quote_asset}"
+            "[SPOT_GRID] Setup completed. startup_current_price=%s planning_price=%s Required: %.4f %s, %.2f %s",
+            startup_price,
+            planning_price,
+            required_base,
+            self.base_asset,
+            required_quote,
+            self.quote_asset,
         )
 
         # Log grid plan for production debugging
@@ -374,7 +382,7 @@ class SpotGridStrategy(Strategy):
             waiting,
             float(self.grid_spacing_pct[0]),
             float(self.grid_spacing_pct[1]),
-            initial_price,
+            planning_price,
             self.config.grid_range_low,
             self.config.grid_range_high,
         )
@@ -393,7 +401,7 @@ class SpotGridStrategy(Strategy):
 
         # Capture Initial Equity (managed assets only)
         self.initial_equity = (
-            self.inventory_base * initial_price
+            self.inventory_base * planning_price
         ) + self.inventory_quote
 
         # Check Assets & Rebalance
@@ -408,12 +416,39 @@ class SpotGridStrategy(Strategy):
         total_quote_required: Decimal,
         available_base: Decimal,
         available_quote: Decimal,
+        allow_wait_for_trigger: bool = True,
     ) -> None:
+        if self.config.trigger_price and self.trigger_reference_price is None:
+            self.trigger_reference_price = self.current_price
+            logger.info(
+                "[SPOT_GRID] Trigger reference initialized trigger_price=%s reference_price=%s",
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+
+        self.inventory_base = min(available_base, total_base_required)
+        self.inventory_quote = min(available_quote, total_quote_required)
+
         base_deficit = total_base_required - available_base
         quote_deficit = total_quote_required - available_quote
 
         if base_deficit > 0:
             # Case 1: Not enough base asset. Need to BUY base asset.
+            should_acquire_now, policy_reason = self._acquisition_policy_decision(
+                OrderSide.BUY, allow_wait_for_trigger
+            )
+            logger.info(
+                "[SPOT_GRID] [ACQUISITION_POLICY] side=%s action=%s reason=%s current=%s trigger=%s reference=%s",
+                OrderSide.BUY,
+                "acquire_now" if should_acquire_now else "wait_for_trigger",
+                policy_reason,
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+            if not should_acquire_now:
+                self.state = StrategyState.WaitingForTrigger
+                return
 
             base_deficit = FEE_BUFFER.markup(base_deficit)
 
@@ -431,6 +466,8 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
+            self.initial_avail_base = available_base
+            self.initial_avail_quote = available_quote
             cloid = ctx.place_order(
                 LimitOrderRequest(
                     symbol=self.config.symbol,
@@ -452,6 +489,22 @@ class SpotGridStrategy(Strategy):
             return
 
         elif quote_deficit > 0:
+            should_acquire_now, policy_reason = self._acquisition_policy_decision(
+                OrderSide.SELL, allow_wait_for_trigger
+            )
+            logger.info(
+                "[SPOT_GRID] [ACQUISITION_POLICY] side=%s action=%s reason=%s current=%s trigger=%s reference=%s",
+                OrderSide.SELL,
+                "acquire_now" if should_acquire_now else "wait_for_trigger",
+                policy_reason,
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+            if not should_acquire_now:
+                self.state = StrategyState.WaitingForTrigger
+                return
+
             acquisition_price = self._calculate_acquisition_price(
                 OrderSide.SELL, self.current_price
             )
@@ -470,6 +523,8 @@ class SpotGridStrategy(Strategy):
                 logger.error(f"[SPOT_GRID] {msg}")
                 raise ValueError(msg)
 
+            self.initial_avail_base = available_base
+            self.initial_avail_quote = available_quote
             logger.info(
                 f"[ORDER_REQUEST] [SPOT_GRID] [ACQUISITION] LIMIT SELL {base_to_sell} {self.base_asset} @ {acquisition_price}"
             )
@@ -495,9 +550,12 @@ class SpotGridStrategy(Strategy):
                 f"[SPOT_GRID] Initial Position Size: {self.inventory_base} {self.base_asset}. (No Rebalancing Needed)"
             )
 
-        if self.config.trigger_price:
+        if (
+            self.config.trigger_price
+            and allow_wait_for_trigger
+            and not self._is_trigger_satisfied(self.current_price)
+        ):
             # Passive Wait Mode
-            self.trigger_reference_price = self.current_price
             direction = (
                 "above" if self.config.trigger_price > self.current_price else "below"
             )
@@ -505,12 +563,20 @@ class SpotGridStrategy(Strategy):
                 "[SPOT_GRID] Assets sufficient. Waiting for Trigger. trigger_price=%s direction=%s reference_price=%s",
                 self.config.trigger_price,
                 direction,
-                self.current_price,
+                self.trigger_reference_price,
             )
             self.state = StrategyState.WaitingForTrigger
         else:
             # No Trigger, Assets OK -> Running
-            logger.info("[SPOT_GRID] Assets verified. Starting Grid.")
+            if self.config.trigger_price:
+                logger.info(
+                    "[SPOT_GRID] Assets verified. Trigger satisfied. Starting Grid. trigger_price=%s reference_price=%s current_price=%s",
+                    self.config.trigger_price,
+                    self.trigger_reference_price,
+                    self.current_price,
+                )
+            else:
+                logger.info("[SPOT_GRID] Assets verified. Starting Grid.")
             self._transition_to_running(ctx, self.current_price)
 
     # =========================================================================
@@ -592,19 +658,63 @@ class SpotGridStrategy(Strategy):
         self.start_time = time.time()
         self.refresh_orders(ctx)
 
+    def _is_trigger_satisfied(self, price: Decimal) -> bool:
+        if not self.config.trigger_price:
+            return True
+        if self.trigger_activated:
+            return True
+        if self.trigger_reference_price is None:
+            return False
+        is_hit = common.check_trigger(
+            price, self.config.trigger_price, self.trigger_reference_price
+        )
+        if is_hit:
+            self.trigger_activated = True
+        return is_hit
+
+    def _acquisition_policy_decision(
+        self, side: OrderSide, allow_wait_for_trigger: bool
+    ) -> tuple[bool, str]:
+        if not self.config.trigger_price:
+            return True, "no_trigger"
+        if self._is_trigger_satisfied(self.current_price):
+            return True, "trigger_satisfied"
+        if not allow_wait_for_trigger:
+            return True, "trigger_fired_resume_acquire_now"
+
+        trigger_price = self.config.trigger_price
+        if side.is_buy():
+            if self.current_price < trigger_price:
+                return True, "buy_below_trigger_acquire_now"
+            return False, "buy_above_trigger_wait"
+
+        if self.current_price > trigger_price:
+            return True, "sell_above_trigger_acquire_now"
+        return False, "sell_below_trigger_wait"
+
+    def _resume_deferred_acquisition_after_trigger(self, ctx: StrategyContext) -> None:
+        available_base = ctx.get_spot_available(self.base_asset)
+        available_quote = ctx.get_spot_available(self.quote_asset)
+        logger.info(
+            "[SPOT_GRID] [TRIGGER_RESUME] recompute deficits available_base=%s available_quote=%s required_base=%s required_quote=%s",
+            available_base,
+            available_quote,
+            self.required_base,
+            self.required_quote,
+        )
+        self.check_initial_acquisition(
+            ctx,
+            self.required_base,
+            self.required_quote,
+            available_base,
+            available_quote,
+            allow_wait_for_trigger=False,
+        )
+
     def _calculate_acquisition_price(
         self, side: OrderSide, current_price: Decimal
     ) -> Decimal:
         """Calculate optimal price for acquiring assets during initial setup."""
-        if self.config.trigger_price:
-            price = self.market.round_price(self.config.trigger_price)
-            logger.info(
-                "[SPOT_GRID] [ACQUISITION_PRICE] Using trigger_price=%s side=%s",
-                price,
-                side,
-            )
-            return price
-
         if side == OrderSide.BUY:
             candidates = [
                 z.buy_price for z in self.zones if z.buy_price < current_price
@@ -683,4 +793,25 @@ class SpotGridStrategy(Strategy):
             f"[SPOT_GRID] [ACQUISITION] Complete. Real Avail: {new_real_base:.4f} {self.base_asset}, {new_real_quote:.2f} {self.quote_asset}. Inventory Set: {self.inventory_base}."
         )
 
+        self.acquisition_cloid = None
+        self.acquisition_target_size = Decimal("0")
+
+        if self.config.trigger_price and not self._is_trigger_satisfied(
+            self.current_price
+        ):
+            logger.info(
+                "[SPOT_GRID] [ACQUISITION] post_fill action=wait_for_trigger current=%s trigger=%s reference=%s",
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+            self.state = StrategyState.WaitingForTrigger
+            return
+
+        logger.info(
+            "[SPOT_GRID] [ACQUISITION] post_fill action=running current=%s trigger=%s reference=%s",
+            self.current_price,
+            self.config.trigger_price,
+            self.trigger_reference_price,
+        )
         self._transition_to_running(ctx, fill.price)

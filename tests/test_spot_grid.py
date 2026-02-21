@@ -242,6 +242,143 @@ class TestSpotGrid(unittest.TestCase):
         summary = strategy.get_summary(self.context)
         self.assertEqual(summary.total_profit, Decimal("-0.1"))
 
+    def test_trigger_buy_above_waits_then_acquires_on_trigger(self):
+        trigger_config = SpotGridConfig(
+            symbol="LIT/USDC",
+            grid_range_high=Decimal("2.0"),
+            grid_range_low=Decimal("1.0"),
+            grid_type=GridType.ARITHMETIC,
+            grid_count=4,
+            total_investment=Decimal("120.0"),
+            trigger_price=Decimal("1.5"),
+            type="spot_grid",
+        )
+
+        def get_balance(asset):
+            if asset == "LIT":
+                return Decimal("0")
+            if asset == "USDC":
+                return Decimal("1000")
+            return Decimal("0")
+
+        self.context.get_spot_available.side_effect = get_balance
+
+        strategy = SpotGridStrategy(trigger_config)
+        strategy.initialize_zones(Decimal("1.52"), self.context)
+
+        self.assertEqual(strategy.state, StrategyState.WaitingForTrigger)
+        self.assertEqual(self.context.place_order.call_count, 0)
+
+        strategy.on_tick(Decimal("1.49"), self.context)
+
+        self.assertEqual(strategy.state, StrategyState.AcquiringAssets)
+        self.assertEqual(self.context.place_order.call_count, 1)
+        req = self.context.place_order.call_args[0][0]
+        self.assertEqual(req.side, OrderSide.BUY)
+
+    def test_trigger_sell_below_waits_then_acquires_on_trigger(self):
+        trigger_config = SpotGridConfig(
+            symbol="LIT/USDC",
+            grid_range_high=Decimal("2.0"),
+            grid_range_low=Decimal("1.0"),
+            grid_type=GridType.ARITHMETIC,
+            grid_count=4,
+            total_investment=Decimal("120.0"),
+            trigger_price=Decimal("1.5"),
+            type="spot_grid",
+        )
+
+        def get_balance(asset):
+            if asset == "LIT":
+                return Decimal("1000")
+            if asset == "USDC":
+                return Decimal("0")
+            return Decimal("0")
+
+        self.context.get_spot_available.side_effect = get_balance
+
+        strategy = SpotGridStrategy(trigger_config)
+        strategy.initialize_zones(Decimal("1.48"), self.context)
+
+        self.assertEqual(strategy.state, StrategyState.WaitingForTrigger)
+        self.assertEqual(self.context.place_order.call_count, 0)
+
+        strategy.on_tick(Decimal("1.51"), self.context)
+
+        self.assertEqual(strategy.state, StrategyState.AcquiringAssets)
+        self.assertEqual(self.context.place_order.call_count, 1)
+        req = self.context.place_order.call_args[0][0]
+        self.assertEqual(req.side, OrderSide.SELL)
+
+    def test_trigger_equal_price_acquires_immediately(self):
+        trigger_config = SpotGridConfig(
+            symbol="LIT/USDC",
+            grid_range_high=Decimal("2.0"),
+            grid_range_low=Decimal("1.0"),
+            grid_type=GridType.ARITHMETIC,
+            grid_count=4,
+            total_investment=Decimal("120.0"),
+            trigger_price=Decimal("1.5"),
+            type="spot_grid",
+        )
+
+        def get_balance(asset):
+            if asset == "LIT":
+                return Decimal("0")
+            if asset == "USDC":
+                return Decimal("1000")
+            return Decimal("0")
+
+        self.context.get_spot_available.side_effect = get_balance
+
+        strategy = SpotGridStrategy(trigger_config)
+        strategy.initialize_zones(Decimal("1.5"), self.context)
+
+        self.assertEqual(strategy.state, StrategyState.AcquiringAssets)
+        self.assertEqual(self.context.place_order.call_count, 1)
+        req = self.context.place_order.call_args[0][0]
+        self.assertEqual(req.side, OrderSide.BUY)
+
+    def test_post_fill_waits_if_trigger_still_not_hit(self):
+        trigger_config = SpotGridConfig(
+            symbol="LIT/USDC",
+            grid_range_high=Decimal("2.0"),
+            grid_range_low=Decimal("1.0"),
+            grid_type=GridType.ARITHMETIC,
+            grid_count=4,
+            total_investment=Decimal("120.0"),
+            trigger_price=Decimal("1.5"),
+            type="spot_grid",
+        )
+
+        def get_balance(asset):
+            if asset == "LIT":
+                return Decimal("0")
+            if asset == "USDC":
+                return Decimal("1000")
+            return Decimal("0")
+
+        self.context.get_spot_available.side_effect = get_balance
+
+        strategy = SpotGridStrategy(trigger_config)
+        strategy.initialize_zones(Decimal("1.48"), self.context)
+        self.assertEqual(strategy.state, StrategyState.AcquiringAssets)
+
+        acquisition_cloid = strategy.acquisition_cloid
+        self.assertIsNotNone(acquisition_cloid)
+
+        fill = OrderFill(
+            side=OrderSide.BUY,
+            size=strategy.acquisition_target_size,
+            price=Decimal("1.48"),
+            fee=Decimal("0.1"),
+            cloid=acquisition_cloid,
+        )
+        strategy.on_order_filled(fill, self.context)
+
+        self.assertEqual(strategy.state, StrategyState.WaitingForTrigger)
+        self.assertIsNone(strategy.acquisition_cloid)
+
 
 if __name__ == "__main__":
     unittest.main()

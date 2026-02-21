@@ -69,10 +69,12 @@ class PerpGridStrategy(Strategy):
         self.start_time = time.time()
         self.initial_entry_price: Optional[Decimal] = None
         self.trigger_reference_price: Optional[Decimal] = None
+        self.trigger_activated = False
 
         # Acquisition State
         self.acquisition_cloid: Optional[Cloid] = None
         self.acquisition_target_size: Decimal = Decimal("0")
+        self.target_position_size = Decimal("0")
         self.market: MarketInfo = None  # type: ignore
         self._last_dead_zone_warning_ts = 0.0
 
@@ -106,19 +108,17 @@ class PerpGridStrategy(Strategy):
             self.initialize_zones(price, ctx)
 
         elif self.state == StrategyState.WaitingForTrigger:
-            if self.config.trigger_price and self.trigger_reference_price:
-                if common.check_trigger(
-                    price, self.config.trigger_price, self.trigger_reference_price
-                ):
+            if self.config.trigger_price:
+                if self.trigger_reference_price is None:
+                    self.trigger_reference_price = price
+                if self._is_trigger_satisfied(price):
                     logger.info(
                         "[PERP_GRID] Triggered at price=%s trigger_price=%s reference_price=%s",
                         price,
                         self.config.trigger_price,
                         self.trigger_reference_price,
                     )
-                    self.state = StrategyState.Running
-                    self.start_time = time.time()
-                    self.refresh_orders(ctx)
+                    self._resume_deferred_acquisition_after_trigger(ctx)
 
         elif self.state == StrategyState.Running:
             # Continuously ensure orders are active
@@ -338,10 +338,20 @@ class PerpGridStrategy(Strategy):
             logger.error(f"[PERP_GRID] {msg}")
             raise ValueError(msg)
 
-        self.zones, required_position_size = self.calculate_grid_plan(price)
+        startup_price = price
+        self.zones, required_position_size = self.calculate_grid_plan(startup_price)
+        self.target_position_size = required_position_size
+
+        planning_price = (
+            self.config.trigger_price if self.config.trigger_price else startup_price
+        )
 
         logger.info(
-            f"[PERP_GRID] Setup Complete. Bias: {self.grid_bias}. Required Net Position: {required_position_size:.4f}"
+            "[PERP_GRID] Setup complete. startup_current_price=%s planning_price=%s Bias=%s Required Net Position=%.4f",
+            startup_price,
+            planning_price,
+            self.grid_bias,
+            required_position_size,
         )
 
         # Log grid plan for production debugging
@@ -361,7 +371,7 @@ class PerpGridStrategy(Strategy):
             waiting,
             float(self.grid_spacing_pct[0]),
             float(self.grid_spacing_pct[1]),
-            price,
+            planning_price,
             self.config.grid_range_low,
             self.config.grid_range_high,
         )
@@ -385,19 +395,32 @@ class PerpGridStrategy(Strategy):
         self.check_initial_acquisition(ctx, required_position_size)
 
     def check_initial_acquisition(
-        self, ctx: StrategyContext, target_position: Decimal
+        self,
+        ctx: StrategyContext,
+        target_position: Decimal,
+        allow_wait_for_trigger: bool = True,
     ) -> None:
         """
         Calculates required acquisition based on target position.
-        Assumes starting from 0 internal position.
         """
-        needed_change = target_position
+        if self.config.trigger_price and self.trigger_reference_price is None:
+            self.trigger_reference_price = self.current_price
+            logger.info(
+                "[PERP_GRID] Trigger reference initialized trigger_price=%s reference_price=%s",
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+
+        needed_change = target_position - self.position_size
         minimal_size = self.market.min_base_amount
 
         if abs(needed_change) < minimal_size:
             # Negligible
-            if self.config.trigger_price:
-                self.trigger_reference_price = self.current_price
+            if (
+                self.config.trigger_price
+                and allow_wait_for_trigger
+                and not self._is_trigger_satisfied(self.current_price)
+            ):
                 direction = (
                     "above"
                     if self.config.trigger_price > self.current_price
@@ -411,13 +434,39 @@ class PerpGridStrategy(Strategy):
                 )
                 self.state = StrategyState.WaitingForTrigger
             else:
-                logger.info("[PERP_GRID] Position OK. Starting.")
+                if self.config.trigger_price:
+                    logger.info(
+                        "[PERP_GRID] Position OK. Trigger satisfied. Starting. trigger_price=%s reference_price=%s current_price=%s",
+                        self.config.trigger_price,
+                        self.trigger_reference_price,
+                        self.current_price,
+                    )
+                else:
+                    logger.info("[PERP_GRID] Position OK. Starting.")
                 self.state = StrategyState.Running
+                self.initial_entry_price = self.current_price
+                self.start_time = time.time()
                 self.refresh_orders(ctx)
             return
 
         # Need to Acquire
         side = OrderSide.BUY if needed_change > 0 else OrderSide.SELL
+        should_acquire_now, policy_reason = self._acquisition_policy_decision(
+            side, allow_wait_for_trigger
+        )
+        logger.info(
+            "[PERP_GRID] [ACQUISITION_POLICY] side=%s action=%s reason=%s current=%s trigger=%s reference=%s",
+            side,
+            "acquire_now" if should_acquire_now else "wait_for_trigger",
+            policy_reason,
+            self.current_price,
+            self.config.trigger_price,
+            self.trigger_reference_price,
+        )
+        if not should_acquire_now:
+            self.state = StrategyState.WaitingForTrigger
+            return
+
         size = self.market.round_size(abs(needed_change))
 
         # Price determination
@@ -577,19 +626,56 @@ class PerpGridStrategy(Strategy):
             if current_abs > 0:
                 self.avg_entry_price = (old_val + fill_val) / current_abs
 
+    def _is_trigger_satisfied(self, price: Decimal) -> bool:
+        if not self.config.trigger_price:
+            return True
+        if self.trigger_activated:
+            return True
+        if self.trigger_reference_price is None:
+            return False
+        is_hit = common.check_trigger(
+            price, self.config.trigger_price, self.trigger_reference_price
+        )
+        if is_hit:
+            self.trigger_activated = True
+        return is_hit
+
+    def _acquisition_policy_decision(
+        self, side: OrderSide, allow_wait_for_trigger: bool
+    ) -> tuple[bool, str]:
+        if not self.config.trigger_price:
+            return True, "no_trigger"
+        if self._is_trigger_satisfied(self.current_price):
+            return True, "trigger_satisfied"
+        if not allow_wait_for_trigger:
+            return True, "trigger_fired_resume_acquire_now"
+
+        trigger_price = self.config.trigger_price
+        if side.is_buy():
+            if self.current_price < trigger_price:
+                return True, "buy_below_trigger_acquire_now"
+            return False, "buy_above_trigger_wait"
+
+        if self.current_price > trigger_price:
+            return True, "sell_above_trigger_acquire_now"
+        return False, "sell_below_trigger_wait"
+
+    def _resume_deferred_acquisition_after_trigger(self, ctx: StrategyContext) -> None:
+        logger.info(
+            "[PERP_GRID] [TRIGGER_RESUME] recompute position deficit target_position=%s current_position=%s",
+            self.target_position_size,
+            self.position_size,
+        )
+        self.check_initial_acquisition(
+            ctx,
+            self.target_position_size,
+            allow_wait_for_trigger=False,
+        )
+
     def _calculate_acquisition_price(
         self, side: OrderSide, current_price: Decimal
     ) -> Decimal:
         """Calculate optimal price for acquiring assets during initial setup."""
-        if self.config.trigger_price:
-            price = self.market.round_price(self.config.trigger_price)
-            logger.info(
-                "[PERP_GRID] [ACQUISITION_PRICE] Using trigger_price=%s side=%s",
-                price,
-                side,
-            )
-            return price
-
         if side == OrderSide.BUY:
             candidates = [
                 z.buy_price for z in self.zones if z.buy_price < current_price
@@ -674,6 +760,27 @@ class PerpGridStrategy(Strategy):
             f"[PERP_GRID] Acquisition Complete. Pos: {self.position_size}. AvgEntry: {self.avg_entry_price}"
         )
 
+        self.acquisition_cloid = None
+        self.acquisition_target_size = Decimal("0")
+
+        if self.config.trigger_price and not self._is_trigger_satisfied(
+            self.current_price
+        ):
+            logger.info(
+                "[PERP_GRID] [ACQUISITION] post_fill action=wait_for_trigger current=%s trigger=%s reference=%s",
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price,
+            )
+            self.state = StrategyState.WaitingForTrigger
+            return
+
+        logger.info(
+            "[PERP_GRID] [ACQUISITION] post_fill action=running current=%s trigger=%s reference=%s",
+            self.current_price,
+            self.config.trigger_price,
+            self.trigger_reference_price,
+        )
         self.state = StrategyState.Running
         self.start_time = time.time()
         self.initial_entry_price = fill.price

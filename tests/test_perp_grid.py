@@ -4,7 +4,7 @@ from src.config import PerpGridConfig
 from src.engine.context import MarketInfo, StrategyContext
 from src.model import LimitOrderRequest, OrderFill, OrderSide
 from src.strategy.perp_grid import PerpGridStrategy
-from src.strategy.types import GridBias, GridType, ZoneMode
+from src.strategy.types import GridBias, GridType, StrategyState, ZoneMode
 
 
 def create_test_context(symbol: str = "HYPE") -> StrategyContext:
@@ -179,3 +179,119 @@ def test_perp_grid_short_bias():
     assert isinstance(o1, LimitOrderRequest)
     assert o1.side == OrderSide.SELL
     assert o1.price == Decimal("100.0")
+
+
+def test_perp_trigger_buy_above_waits_then_acquires_on_trigger():
+    symbol = "HYPE"
+    ctx = create_test_context(symbol)
+
+    config = PerpGridConfig(
+        symbol=symbol,
+        leverage=1,
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
+        grid_type=GridType.ARITHMETIC,
+        grid_count=4,
+        total_investment=Decimal("300.0"),
+        grid_bias=GridBias.LONG,
+        trigger_price=Decimal("100.0"),
+    )
+    strategy = PerpGridStrategy(config)
+    strategy.initialize_zones(Decimal("102.0"), ctx)
+
+    assert strategy.state == StrategyState.WaitingForTrigger
+    assert len(ctx.order_queue) == 0
+
+    strategy.on_tick(Decimal("99.0"), ctx)
+
+    assert strategy.state == StrategyState.AcquiringAssets
+    assert len(ctx.order_queue) == 1
+    assert ctx.order_queue[0].side == OrderSide.BUY
+
+
+def test_perp_trigger_sell_below_waits_then_acquires_on_trigger():
+    symbol = "HYPE"
+    ctx = create_test_context(symbol)
+
+    config = PerpGridConfig(
+        symbol=symbol,
+        leverage=1,
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
+        grid_type=GridType.ARITHMETIC,
+        grid_count=4,
+        total_investment=Decimal("300.0"),
+        grid_bias=GridBias.SHORT,
+        trigger_price=Decimal("100.0"),
+    )
+    strategy = PerpGridStrategy(config)
+    strategy.initialize_zones(Decimal("98.0"), ctx)
+
+    assert strategy.state == StrategyState.WaitingForTrigger
+    assert len(ctx.order_queue) == 0
+
+    strategy.on_tick(Decimal("101.0"), ctx)
+
+    assert strategy.state == StrategyState.AcquiringAssets
+    assert len(ctx.order_queue) == 1
+    assert ctx.order_queue[0].side == OrderSide.SELL
+
+
+def test_perp_trigger_equal_price_acquires_immediately():
+    symbol = "HYPE"
+    ctx = create_test_context(symbol)
+
+    config = PerpGridConfig(
+        symbol=symbol,
+        leverage=1,
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
+        grid_type=GridType.ARITHMETIC,
+        grid_count=4,
+        total_investment=Decimal("300.0"),
+        grid_bias=GridBias.LONG,
+        trigger_price=Decimal("100.0"),
+    )
+    strategy = PerpGridStrategy(config)
+    strategy.initialize_zones(Decimal("100.0"), ctx)
+
+    assert strategy.state == StrategyState.AcquiringAssets
+    assert len(ctx.order_queue) == 1
+    assert ctx.order_queue[0].side == OrderSide.BUY
+
+
+def test_perp_post_fill_waits_if_trigger_not_hit():
+    symbol = "HYPE"
+    ctx = create_test_context(symbol)
+
+    config = PerpGridConfig(
+        symbol=symbol,
+        leverage=1,
+        grid_range_high=Decimal("110.0"),
+        grid_range_low=Decimal("90.0"),
+        grid_type=GridType.ARITHMETIC,
+        grid_count=4,
+        total_investment=Decimal("300.0"),
+        grid_bias=GridBias.LONG,
+        trigger_price=Decimal("100.0"),
+    )
+    strategy = PerpGridStrategy(config)
+    strategy.initialize_zones(Decimal("98.0"), ctx)
+
+    assert strategy.state == StrategyState.AcquiringAssets
+    assert len(ctx.order_queue) == 1
+
+    acq_order = ctx.order_queue[0]
+    assert acq_order.cloid is not None
+
+    fill = OrderFill(
+        side=OrderSide.BUY,
+        size=acq_order.sz,
+        price=acq_order.price,
+        fee=Decimal("0.1"),
+        cloid=acq_order.cloid,
+    )
+    strategy.on_order_filled(fill, ctx)
+
+    assert strategy.state == StrategyState.WaitingForTrigger
+    assert strategy.acquisition_cloid is None
