@@ -509,6 +509,8 @@ class SpotGridStrategy(Strategy):
                 OrderSide.SELL, self.current_price
             )
 
+            quote_deficit = FEE_BUFFER.markup(quote_deficit)
+
             base_to_sell = quote_deficit / acquisition_price
             base_to_sell = max(base_to_sell, self.market.min_base_amount)
             base_to_sell = self.market.round_size(base_to_sell)
