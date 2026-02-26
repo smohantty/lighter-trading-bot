@@ -1254,107 +1254,21 @@ class Engine(BaseEngine):
             return
         self.ctx.order_queue = list(orders) + self.ctx.order_queue
 
-    def _notify_order_submit_failed(self, order: Any, reason: str):
-        if not self.ctx:
-            return
+    def _sign_orders(
+        self,
+        orders_to_process: list,
+        tx_types: List[int],
+        tx_infos: List[str],
+        signed_entries: List[Dict[str, Any]],
+        failed_cloids: set,
+    ) -> None:
+        """Sign all orders in the batch. Raises on unrecoverable errors (e.g. SSL).
 
-        cloid = getattr(order, "cloid", None)
-        if not cloid:
-            return
-
-        logger.warning(
-            "[ORDER_SUBMIT_FAILED] cloid=%s side=%s size=%s reason=%s",
-            cloid.as_int(),
-            getattr(order, "side", None),
-            getattr(order, "sz", None),
-            reason,
-        )
-
-        if cloid in self.pending_orders:
-            del self.pending_orders[cloid]
-        self.reconciliation_miss_counts.pop(cloid, None)
-
-        if isinstance(order, LimitOrderRequest):
-            try:
-                self.strategy.on_order_failed(
-                    OrderFailure(
-                        cloid=cloid,
-                        side=order.side,
-                        target_size=order.sz,
-                        filled_size=Decimal("0"),
-                        filled_price=Decimal("0"),
-                        accumulated_fees=Decimal("0"),
-                        failure_reason=reason,
-                        reduce_only=order.reduce_only,
-                    ),
-                    self.ctx,
-                )
-            except Exception as e:
-                logger.error(
-                    "Strategy on_order_failed callback error cloid=%s: %s",
-                    cloid.as_int(),
-                    e,
-                    exc_info=True,
-                )
-        elif isinstance(order, MarketOrderRequest):
-            try:
-                self.strategy.on_order_failed(
-                    OrderFailure(
-                        cloid=cloid,
-                        side=order.side,
-                        target_size=order.sz,
-                        filled_size=Decimal("0"),
-                        filled_price=Decimal("0"),
-                        accumulated_fees=Decimal("0"),
-                        failure_reason=reason,
-                        reduce_only=order.reduce_only,
-                    ),
-                    self.ctx,
-                )
-            except Exception as e:
-                logger.error(
-                    "Strategy on_order_failed callback error cloid=%s: %s",
-                    cloid.as_int(),
-                    e,
-                    exc_info=True,
-                )
-
-    async def process_order_queue(self):
-        if not self.ctx or not self.ctx.order_queue:
-            return
-
-        if self.degraded_mode:
-            now = time.time()
-            if now - self.last_degraded_skip_log_ts >= 10:
-                logger.warning(
-                    "[DEGRADED_MODE] Skipping order submission while exchange connectivity is unstable."
-                )
-                self.last_degraded_skip_log_ts = now
-            return
-
+        Populates failed_cloids with CLOIDs that already had failures reported
+        via _notify_order_submit_failed (e.g. signing_error), so callers can
+        avoid double-reporting on crash recovery.
+        """
         assert self.ctx is not None
-        assert self.ctx.order_queue is not None  # If order_queue is Optional
-
-        # Drain queue
-        orders_to_process = list(self.ctx.order_queue)
-        self.ctx.order_queue.clear()
-        if len(orders_to_process) >= 5:
-            logger.info(
-                "Submitting queued orders count=%d pending_tracked=%d",
-                len(orders_to_process),
-                len(self.pending_orders),
-            )
-        else:
-            logger.debug(
-                "Submitting queued orders count=%d pending_tracked=%d",
-                len(orders_to_process),
-                len(self.pending_orders),
-            )
-
-        tx_types: List[int] = []
-        tx_infos: List[str] = []
-        # Signed entries preserve order for chunk mapping.
-        signed_entries: List[Dict[str, Any]] = []
         batch_api_key_index = None
         nonce = 0
         signed_count = 0
@@ -1465,6 +1379,7 @@ class Engine(BaseEngine):
                 )
                 if not isinstance(order, CancelOrderRequest):
                     self._notify_order_submit_failed(order, "signing_error")
+                    failed_cloids.add(order.cloid)
                 continue
 
             assert tx_type is not None
@@ -1472,6 +1387,135 @@ class Engine(BaseEngine):
             tx_infos.append(str(tx_info) if tx_info is not None else "")
             signed_entries.append({"order": order, "pending": pending_template})
             signed_count += 1
+
+    def _notify_order_submit_failed(self, order: Any, reason: str):
+        if not self.ctx:
+            return
+
+        cloid = getattr(order, "cloid", None)
+        if not cloid:
+            return
+
+        logger.warning(
+            "[ORDER_SUBMIT_FAILED] cloid=%s side=%s size=%s reason=%s",
+            cloid.as_int(),
+            getattr(order, "side", None),
+            getattr(order, "sz", None),
+            reason,
+        )
+
+        if cloid in self.pending_orders:
+            del self.pending_orders[cloid]
+        self.reconciliation_miss_counts.pop(cloid, None)
+
+        if isinstance(order, LimitOrderRequest):
+            try:
+                self.strategy.on_order_failed(
+                    OrderFailure(
+                        cloid=cloid,
+                        side=order.side,
+                        target_size=order.sz,
+                        filled_size=Decimal("0"),
+                        filled_price=Decimal("0"),
+                        accumulated_fees=Decimal("0"),
+                        failure_reason=reason,
+                        reduce_only=order.reduce_only,
+                    ),
+                    self.ctx,
+                )
+            except Exception as e:
+                logger.error(
+                    "Strategy on_order_failed callback error cloid=%s: %s",
+                    cloid.as_int(),
+                    e,
+                    exc_info=True,
+                )
+        elif isinstance(order, MarketOrderRequest):
+            try:
+                self.strategy.on_order_failed(
+                    OrderFailure(
+                        cloid=cloid,
+                        side=order.side,
+                        target_size=order.sz,
+                        filled_size=Decimal("0"),
+                        filled_price=Decimal("0"),
+                        accumulated_fees=Decimal("0"),
+                        failure_reason=reason,
+                        reduce_only=order.reduce_only,
+                    ),
+                    self.ctx,
+                )
+            except Exception as e:
+                logger.error(
+                    "Strategy on_order_failed callback error cloid=%s: %s",
+                    cloid.as_int(),
+                    e,
+                    exc_info=True,
+                )
+
+    async def process_order_queue(self):
+        if not self.ctx or not self.ctx.order_queue:
+            return
+
+        if self.degraded_mode:
+            now = time.time()
+            if now - self.last_degraded_skip_log_ts >= 10:
+                logger.warning(
+                    "[DEGRADED_MODE] Skipping order submission while exchange connectivity is unstable."
+                )
+                self.last_degraded_skip_log_ts = now
+            return
+
+        assert self.ctx is not None
+        assert self.ctx.order_queue is not None  # If order_queue is Optional
+
+        # Drain queue
+        orders_to_process = list(self.ctx.order_queue)
+        self.ctx.order_queue.clear()
+        if len(orders_to_process) >= 5:
+            logger.info(
+                "Submitting queued orders count=%d pending_tracked=%d",
+                len(orders_to_process),
+                len(self.pending_orders),
+            )
+        else:
+            logger.debug(
+                "Submitting queued orders count=%d pending_tracked=%d",
+                len(orders_to_process),
+                len(self.pending_orders),
+            )
+
+        tx_types: List[int] = []
+        tx_infos: List[str] = []
+        # Signed entries preserve order for chunk mapping.
+        signed_entries: List[Dict[str, Any]] = []
+        failed_cloids: set = set()
+
+        try:
+            self._sign_orders(
+                orders_to_process, tx_types, tx_infos, signed_entries, failed_cloids
+            )
+        except Exception as exc:
+            logger.error(
+                "[ORDER_SIGNING_CRASH] Signing loop failed: %s. "
+                "Notifying strategy for %d unsent orders.",
+                exc,
+                len(orders_to_process),
+            )
+            # Notify strategy for every dequeued order that was never successfully
+            # signed or already reported as failed, so zone.cloid gets reset.
+            already_handled = failed_cloids | {
+                e["order"].cloid
+                for e in signed_entries
+                if e.get("order") and getattr(e["order"], "cloid", None)
+            }
+            for order in orders_to_process:
+                if isinstance(order, CancelOrderRequest):
+                    continue
+                cloid = getattr(order, "cloid", None)
+                if cloid and cloid not in already_handled:
+                    self._notify_order_submit_failed(order, "signing_crash")
+            self._enter_degraded_mode("order_signing_crash")
 
         if not tx_types:
             return
