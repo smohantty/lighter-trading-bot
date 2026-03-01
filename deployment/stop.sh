@@ -1,7 +1,8 @@
 #!/bin/bash
+set -euo pipefail
 
 SESSION_NAME="lighter-bot"
-MAX_WAIT_SECONDS="${LIGHTER_STOP_WAIT_SECONDS:-20}"
+MAX_WAIT_SECONDS="${LIGHTER_STOP_WAIT_SECONDS:-10}"
 
 if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
     echo "No session named '$SESSION_NAME' found."
@@ -9,8 +10,8 @@ if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
 fi
 
 echo "Sending SIGINT to the bot in session '$SESSION_NAME'..."
-# Send Ctrl+C to the active pane
-tmux send-keys -t "$SESSION_NAME" C-c
+# Send Ctrl+C to the primary pane
+tmux send-keys -t "${SESSION_NAME}:0.0" C-c
 
 # Wait for graceful shutdown, including exchange cancel requests on exit
 elapsed=0

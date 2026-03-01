@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SESSION_NAME="lighter-bot"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -11,7 +11,14 @@ CONFIG_PATH=""
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --config) CONFIG_PATH="$2"; shift ;;
+        --config)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --config requires a file path."
+                exit 1
+            fi
+            CONFIG_PATH="$2"
+            shift
+            ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -57,12 +64,8 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo "Starting new tmux session '$SESSION_NAME' with config: $CONFIG_PATH"
-# Create a new detached session
-tmux new-session -d -s "$SESSION_NAME"
-
-# Run the bot in the session
-# We use 'exec' or just run it. Using uv run.
-tmux send-keys -t "$SESSION_NAME" "uv run python main.py --config \"$CONFIG_PATH\"" C-m
+# Run the bot directly as the session command. When the bot exits, tmux session exits.
+tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_ROOT" "exec uv run python main.py --config \"$CONFIG_PATH\""
 
 echo "Bot started in background."
 echo "View logs/process with: tmux attach -t $SESSION_NAME"
