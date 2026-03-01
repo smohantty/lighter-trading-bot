@@ -449,3 +449,38 @@ class TestEngineResilience(IsolatedAsyncioTestCase):
         result = await self.engine.get_active_orders(market_id=2049)
         self.assertIsNone(result)
         token_mock.assert_awaited_once()
+
+    async def test_stop_cancels_pending_orders_once(self):
+        self.engine.api_client = MagicMock()
+        self.engine.api_client.close = AsyncMock()
+
+        signer = self._configure_signer(
+            [SimpleNamespace(code=200, tx_hash=["a", "b"], message="accepted")]
+        )
+        signer.close = AsyncMock()
+
+        cloid_1 = Cloid(91001)
+        cloid_2 = Cloid(91002)
+        self.engine.pending_orders[cloid_1] = PendingOrder(
+            target_size=Decimal("1.0"),
+            side=OrderSide.BUY,
+            price=Decimal("1.2345"),
+            created_at=0.0,
+        )
+        self.engine.pending_orders[cloid_2] = PendingOrder(
+            target_size=Decimal("2.0"),
+            side=OrderSide.SELL,
+            price=Decimal("1.3456"),
+            created_at=0.0,
+        )
+
+        await self.engine.stop()
+        await self.engine.stop()
+
+        self.assertTrue(self.engine._shutdown_event.is_set())
+        self.assertEqual(signer.sign_cancel_order.call_count, 2)
+        order_indexes = [
+            call.kwargs["order_index"] for call in signer.sign_cancel_order.call_args_list
+        ]
+        self.assertCountEqual(order_indexes, [cloid_1.as_int(), cloid_2.as_int()])
+        signer.send_tx_batch.assert_awaited_once()

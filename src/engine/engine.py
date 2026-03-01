@@ -85,6 +85,7 @@ class Engine(BaseEngine):
         self.healthy_reconciliation_snapshots = 0
         self.last_degraded_skip_log_ts = 0.0
         self.last_untracked_orders_log_ts = 0.0
+        self._stop_called = False
 
     async def initialize(self):
         logger.info("Initializing Engine...")
@@ -1587,6 +1588,108 @@ class Engine(BaseEngine):
                 )
                 break
 
+    async def _cancel_pending_orders_on_shutdown(self):
+        if not self.pending_orders:
+            logger.info(
+                "Shutdown order cleanup skipped: no pending bot orders tracked."
+            )
+            return
+
+        if not self.signer_client:
+            logger.warning(
+                "Shutdown order cleanup skipped: signer client unavailable pending_tracked=%d",
+                len(self.pending_orders),
+            )
+            return
+
+        cancel_requests = [
+            CancelOrderRequest(cloid=cloid, symbol=self.strategy_config.symbol)
+            for cloid in list(self.pending_orders.keys())
+        ]
+        logger.info(
+            "Shutdown order cleanup started pending_tracked=%d symbol=%s",
+            len(cancel_requests),
+            self.strategy_config.symbol,
+        )
+
+        tx_types: List[int] = []
+        tx_infos: List[str] = []
+        signed_entries: List[Dict[str, Any]] = []
+        failed_cloids: set = set()
+
+        try:
+            self._sign_orders(
+                cancel_requests, tx_types, tx_infos, signed_entries, failed_cloids
+            )
+        except Exception as exc:
+            logger.error(
+                "Shutdown order cleanup signing failed pending=%d err=%s",
+                len(cancel_requests),
+                exc,
+                exc_info=True,
+            )
+            return
+
+        if not tx_types:
+            logger.warning(
+                "Shutdown order cleanup produced no cancel transactions pending=%d",
+                len(cancel_requests),
+            )
+            return
+
+        accepted_cancels = 0
+        failed_cancels = 0
+
+        for batch_start in range(0, len(tx_types), MAX_BATCH_SIZE):
+            batch_end = min(batch_start + MAX_BATCH_SIZE, len(tx_types))
+            batch_tx_types = tx_types[batch_start:batch_end]
+            batch_tx_infos = tx_infos[batch_start:batch_end]
+            batch_num = (batch_start // MAX_BATCH_SIZE) + 1
+            total_batches = (len(tx_types) + MAX_BATCH_SIZE - 1) // MAX_BATCH_SIZE
+
+            try:
+                assert self.signer_client is not None
+                response = await self.signer_client.send_tx_batch(
+                    tx_types=batch_tx_types, tx_infos=batch_tx_infos
+                )
+
+                if response.code == 200:
+                    accepted_cancels += len(batch_tx_types)
+                    logger.info(
+                        "Shutdown cancel batch accepted %d/%d size=%d",
+                        batch_num,
+                        total_batches,
+                        len(batch_tx_types),
+                    )
+                else:
+                    failed_cancels += len(batch_tx_types)
+                    logger.error(
+                        "Shutdown cancel batch failed %d/%d code=%s message=%s size=%d",
+                        batch_num,
+                        total_batches,
+                        response.code,
+                        response.message,
+                        len(batch_tx_types),
+                    )
+            except Exception as exc:
+                failed_cancels += len(batch_tx_types)
+                logger.error(
+                    "Shutdown cancel batch exception %d/%d err=%s size=%d",
+                    batch_num,
+                    total_batches,
+                    exc,
+                    len(batch_tx_types),
+                    exc_info=True,
+                )
+
+        logger.info(
+            "Shutdown order cleanup finished attempted=%d accepted=%d failed=%d tracked_pending=%d",
+            len(tx_types),
+            accepted_cancels,
+            failed_cancels,
+            len(self.pending_orders),
+        )
+
     async def run(self):
         await self.initialize()
         self.running = True
@@ -1620,13 +1723,25 @@ class Engine(BaseEngine):
                 logger.info("Engine Stopped.")
 
     async def stop(self):
+        if self._stop_called:
+            return
+        self._stop_called = True
+
         logger.info("Stopping Engine...")
         self.running = False
         self._shutdown_event.set()
-        if self.ws_client:
-            # self.ws_client.stop() # method might not exist, relying on task cancellation
-            pass
-        if self.broadcaster:
-            await self.broadcaster.stop()
-        # Clean up API clients from BaseEngine
-        await self.cleanup()
+
+        try:
+            await self._cancel_pending_orders_on_shutdown()
+        except Exception as e:
+            logger.error("Shutdown order cleanup failed: %s", e, exc_info=True)
+
+        try:
+            if self.ws_client:
+                # self.ws_client.stop() # method might not exist, relying on task cancellation
+                pass
+            if self.broadcaster:
+                await self.broadcaster.stop()
+        finally:
+            # Clean up API clients from BaseEngine
+            await self.cleanup()
