@@ -66,6 +66,9 @@ class Engine(BaseEngine):
 
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
         self._shutdown_event = asyncio.Event()
+        self._run_cleanup_complete = asyncio.Event()
+        self._run_cleanup_complete.set()
+        self._run_task_active = False
 
         # Track last price per symbol to avoid duplicate on_tick calls
         self.last_price: Dict[str, Decimal] = {}
@@ -1697,6 +1700,8 @@ class Engine(BaseEngine):
 
         # Start WS Loop and Message Processor
         if self.ws_client:
+            self._run_task_active = True
+            self._run_cleanup_complete.clear()
             tasks = [
                 asyncio.create_task(self.ws_client.run_async()),
                 asyncio.create_task(self._message_processor()),
@@ -1712,15 +1717,19 @@ class Engine(BaseEngine):
             except asyncio.CancelledError:
                 logger.info("Engine run cancelled.")
             finally:
-                logger.info("Shutting down engine tasks...")
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
+                try:
+                    logger.info("Shutting down engine tasks...")
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Clean up API clients
-                await self.cleanup()
+                    # Clean up API clients
+                    await self.cleanup()
 
-                logger.info("Engine Stopped.")
+                    logger.info("Engine Stopped.")
+                finally:
+                    self._run_task_active = False
+                    self._run_cleanup_complete.set()
 
     async def stop(self):
         if self._stop_called:
@@ -1729,12 +1738,13 @@ class Engine(BaseEngine):
 
         logger.info("Stopping Engine...")
         self.running = False
-        self._shutdown_event.set()
 
         try:
             await self._cancel_pending_orders_on_shutdown()
         except Exception as e:
             logger.error("Shutdown order cleanup failed: %s", e, exc_info=True)
+
+        self._shutdown_event.set()
 
         try:
             if self.ws_client:
@@ -1743,5 +1753,9 @@ class Engine(BaseEngine):
             if self.broadcaster:
                 await self.broadcaster.stop()
         finally:
-            # Clean up API clients from BaseEngine
-            await self.cleanup()
+            # If run() is active, let its shutdown path own cleanup to avoid
+            # concurrent client closes while awaiting cancellation batches.
+            if self._run_task_active:
+                await self._run_cleanup_complete.wait()
+            else:
+                await self.cleanup()

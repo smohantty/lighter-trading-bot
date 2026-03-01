@@ -1,3 +1,4 @@
+import asyncio
 import time
 from decimal import Decimal
 from types import SimpleNamespace
@@ -451,8 +452,9 @@ class TestEngineResilience(IsolatedAsyncioTestCase):
         token_mock.assert_awaited_once()
 
     async def test_stop_cancels_pending_orders_once(self):
-        self.engine.api_client = MagicMock()
-        self.engine.api_client.close = AsyncMock()
+        api_client = MagicMock()
+        api_client.close = AsyncMock()
+        self.engine.api_client = api_client
 
         signer = self._configure_signer(
             [SimpleNamespace(code=200, tx_hash=["a", "b"], message="accepted")]
@@ -484,3 +486,42 @@ class TestEngineResilience(IsolatedAsyncioTestCase):
         ]
         self.assertCountEqual(order_indexes, [cloid_1.as_int(), cloid_2.as_int()])
         signer.send_tx_batch.assert_awaited_once()
+        signer.close.assert_awaited_once()
+        api_client.close.assert_awaited_once()
+
+    async def test_stop_sets_shutdown_after_cancel_attempt(self):
+        async def _cancel_side_effect():
+            self.assertFalse(self.engine._shutdown_event.is_set())
+
+        cancel_mock = AsyncMock(side_effect=_cancel_side_effect)
+        cleanup_mock = AsyncMock()
+        object.__setattr__(self.engine, "_cancel_pending_orders_on_shutdown", cancel_mock)
+        object.__setattr__(self.engine, "cleanup", cleanup_mock)
+
+        await self.engine.stop()
+
+        cancel_mock.assert_awaited_once()
+        self.assertTrue(self.engine._shutdown_event.is_set())
+        cleanup_mock.assert_awaited_once()
+
+    async def test_stop_waits_for_run_cleanup_when_run_active(self):
+        cancel_mock = AsyncMock()
+        cleanup_mock = AsyncMock()
+        object.__setattr__(self.engine, "_cancel_pending_orders_on_shutdown", cancel_mock)
+        object.__setattr__(self.engine, "cleanup", cleanup_mock)
+
+        self.engine._run_task_active = True
+        self.engine._run_cleanup_complete.clear()
+
+        stop_task = asyncio.create_task(self.engine.stop())
+        await asyncio.sleep(0)
+
+        self.assertFalse(stop_task.done())
+        cleanup_mock.assert_not_awaited()
+        self.assertTrue(self.engine._shutdown_event.is_set())
+        cancel_mock.assert_awaited_once()
+
+        self.engine._run_cleanup_complete.set()
+        await stop_task
+
+        cleanup_mock.assert_not_awaited()
